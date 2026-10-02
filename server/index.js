@@ -1,7 +1,6 @@
 import http from 'node:http';
-import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { defaultBom, inputFields } from '../shared/bom.js';
+import { defaultBom } from '../shared/bom.js';
 import { renderProjectReport } from '../shared/report.js';
 import { PostgresStore, StorageConflictError } from './postgres-store.js';
 import { AuthError, authenticateRequest, authorizeRequest, publicPrincipal, handleAuthRequest, authorizeAsset, canAccessProject, canAccessAsset } from './auth.js';
@@ -29,29 +28,20 @@ import { createLegacyApiHandler } from './routes/legacy-api.js';
 import { createProjectRouter } from './routes/project-router.js';
 import { createGovernanceService } from './governance-service.js';
 import { createActivityService } from './activity-service.js';
+import { createServerConfig } from './config.js';
+import { createFactParser } from './fact-parser.js';
 
-const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const storage = process.env.RULES_DATA_FILE || path.join(root, 'data', 'rules.json');
-const port = Number(process.env.API_PORT || 8787);
-const rulesBuildUrl = process.env.RULES_BUILD_URL || process.env.ENGINE_URL || 'http://127.0.0.1:8788';
-const rulesResUrl = process.env.RULES_RES_URL || process.env.RES_URL || 'http://127.0.0.1:8790';
-const cepBuildUrl = process.env.CEP_BUILD_URL || 'http://127.0.0.1:8791';
-const cepResUrl = process.env.CEP_RES_URL || 'http://127.0.0.1:8792';
-const cepApiKey = process.env.CEP_API_KEY || '';
-const dataDir = path.dirname(storage);
-const assetFiles = {
-  tables: process.env.RULES_TABLES_FILE || path.join(dataDir, 'tables.json'),
-  flows: process.env.RULES_FLOWS_FILE || path.join(dataDir, 'flows.json'),
-  eventStreams: process.env.RULES_EVENT_STREAMS_FILE || path.join(dataDir, 'event-streams.json'),
-  releases: process.env.RULES_RELEASES_FILE || path.join(dataDir, 'releases.json'),
-  testSuites: process.env.RULES_TEST_SUITES_FILE || path.join(dataDir, 'test-suites.json'),
-  bom: process.env.RULES_BOM_FILE || path.join(dataDir, 'bom.json'),
-  changeSets: process.env.RULES_CHANGE_SETS_FILE || path.join(dataDir, 'change-sets.json'),
-  auditEvents: process.env.RULES_AUDIT_FILE || path.join(dataDir, 'audit-events.json'),
-  adminUsers: process.env.RULES_ADMIN_USERS_FILE || path.join(dataDir, 'admin-users.json'),
-  projects: process.env.RULES_PROJECTS_FILE || path.join(dataDir, 'projects.json'),
-  packages: process.env.RULES_PACKAGES_FILE || path.join(dataDir, 'packages.json'),
-};
+const {
+  storage,
+  port,
+  rulesBuildUrl,
+  rulesResUrl,
+  cepBuildUrl,
+  cepResUrl,
+  cepApiKey,
+  dataDir,
+  assetFiles,
+} = createServerConfig();
 
 const { engine, executionServer } = createEngineClients({
   rulesBuildUrl,
@@ -65,39 +55,7 @@ const { engine, executionServer } = createEngineClients({
 let currentBom = defaultBom();
 let postgresStore = null;
 
-/**
- * 按当前 BOM 校验并规范化调用方传入的 facts。
- * 返回 null 表示有未知字段或类型不合法。
- */
-function parseFacts(raw, bom = currentBom) {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-  const inputs = inputFields(bom);
-  if (Object.keys(raw).some(key => !inputs.some(f => f.key === key))) return null;
-  const facts = {};
-  for (const field of inputs) {
-    const value = raw[field.key];
-    if (value === undefined || value === '' || value === null) {
-      if (field.required === true) return null;
-      continue;
-    }
-    if (field.type === 'Integer') {
-      if (!Number.isInteger(value) || value < -2147483648 || value > 2147483647) return null;
-      if (field.min != null && value < field.min) return null;
-      if (field.max != null && value > field.max) return null;
-    } else if (field.type === 'Double') {
-      if (typeof value !== 'number' || !Number.isFinite(value)) return null;
-      if (field.min != null && value < field.min) return null;
-      if (field.max != null && value > field.max) return null;
-    } else if (field.type === 'Boolean') {
-      if (typeof value !== 'boolean') return null;
-    } else if (field.type === 'String') {
-      if (typeof value !== 'string' || value.length > 200) return null;
-      if (field.enum && !field.enum.includes(value)) return null;
-    }
-    facts[field.key] = value;
-  }
-  return facts;
-}
+const parseFacts = createFactParser({ getCurrentBom: () => currentBom });
 
 function actorOf(req) {
   if (req?.principal?.id) return req.principal.id;
