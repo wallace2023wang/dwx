@@ -35,8 +35,8 @@ import {
   Workflow,
   X,
 } from 'lucide-react';
-import { generateDrl, operators, validateRule } from '../shared/rules.js';
-import { flowSnapshot, hitPolicies, tableDrl, validateFlow, validateTable } from '../shared/assets.js';
+import { generateDrl, operators, validateRule } from '../../../shared/rules.js';
+import { flowSnapshot, hitPolicies, tableDrl, validateFlow, validateTable } from '../../../shared/assets.js';
 import './style.css';
 
 // BOM 在应用启动时从 /api/bom 加载；BOM 管理页保存后会重新赋值并触发重渲染。

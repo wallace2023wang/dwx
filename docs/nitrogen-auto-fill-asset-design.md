@@ -229,7 +229,17 @@ tickSeq += 1
 |---|---|---|---|
 | 驱动代码里比较 | 代码常量 | 改代码 + 重启 | ✗ 现状，不满足 |
 | 决策表字面量（`>=95`） | 表单元格 | 改表 + 重新发布 + 重新部署 | ✗ 随 Release 冻结 |
-| **BAL raw 条件（`nitrogenPct >= maxPct`）** | **facts 参数** | **改参数，立即生效** | ✓ 采用 |
+| **BAL 声明式字段引用（`valueSource:"field"` + `valueField:"maxPct"`）** | **facts 参数** | **改参数，立即生效** | ✓ 采用 |
+
+实现形态（平台升级后新增能力，`shared/rules.js:257`）：
+
+```jsonc
+{ "field": "nitrogenPct", "operator": ">=", "valueSource": "field", "valueField": "maxPct", "value": "" }
+// → 生成 RuleInput( nitrogenPct >= maxPct )
+```
+
+比 `raw: "nitrogenPct >= maxPct"` 更好：编辑器可正常显示/编辑、后端会校验类型（须同为 Double）、
+拒绝自比较与非法运算符、语义明确可评审。**早期曾用 `raw` 写法，已全部替换。**
 
 ### 3.2 规则清单（salience 由高到低）
 
@@ -256,6 +266,7 @@ tickSeq += 1
 | 机制 | 实测结论 | 影响 |
 |---|---|---|
 | **m1 动作只能写 output** | 给 input 字段赋值报"动作字段无效或重复" | 阈值**不能**算成中间字段（如 `pctAtLeastMax`），必须把比较内联进每条迁移规则 |
+| **m4 字段引用仅 BAL 支持，决策表不支持** | `shared/assets.js` 全无 `valueSource` 处理 | 必须用 BAL；决策表仍只能写字面量，因此决策表方案无法满足"阈值随时调整" |
 | **m2 salience 高的先执行、低的后执行，后写覆盖** | 两条规则同写 `nextPhase` 时，**salience 低的那条胜出** | 要"压过"别的规则，salience 必须**更低**。故"暂停全关"=60（先）、"到达结束时间完成"=55（后，覆盖暂停） |
 | **m3 同一轮内规则无法串接** | `启动充氮` 只写 `nextPhase`、不改 `phase`，所以同轮里 `phase == "FILLING"` 的规则不可能成立 | 需要**驱动器执行到不动点**（见 §3.4） |
 

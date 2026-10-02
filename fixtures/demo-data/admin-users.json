@@ -1,0 +1,47 @@
+[
+  {
+    "id": "wallace",
+    "username": "wallace",
+    "displayName": "Wallace",
+    "email": "wallace@company.com",
+    "role": "admin",
+    "lastLogin": "2026-09-29 09:30",
+    "status": "active"
+  },
+  {
+    "id": "chen",
+    "username": "chen",
+    "displayName": "陈分析师",
+    "email": "chen@company.com",
+    "role": "author",
+    "lastLogin": "2026-09-28 17:20",
+    "status": "active"
+  },
+  {
+    "id": "li",
+    "username": "li",
+    "displayName": "李审核员",
+    "email": "li@company.com",
+    "role": "reviewer",
+    "lastLogin": "2026-09-28 14:05",
+    "status": "active"
+  },
+  {
+    "id": "ops",
+    "username": "ops",
+    "displayName": "运维张",
+    "email": "ops@company.com",
+    "role": "release-manager",
+    "lastLogin": "2026-09-27 11:00",
+    "status": "active"
+  },
+  {
+    "id": "guest",
+    "username": "guest",
+    "displayName": "访客账号",
+    "email": "guest@company.com",
+    "role": "viewer",
+    "lastLogin": "2026-09-15 08:42",
+    "status": "disabled"
+  }
+]

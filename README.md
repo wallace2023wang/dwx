@@ -12,17 +12,39 @@ DWX（Decision Workbench X）是一个面向规则、决策流和复杂事件处
 
 产品按规则设计中心、规则治理中心和独立规则执行中心（RES）三个边界演进。详细规划见 [产品需求说明](docs/product-requirements.md)、[技术设计](docs/technical-design.md) 和 [交付任务拆分](docs/delivery-plan.md)。
 
+## 项目结构
+
+```text
+frontend/                 # 维护中的 React + Vite 前端应用
+server/                   # Team Server API、认证、存储适配与数据库迁移
+shared/                   # 前后端共享的规则、BOM、发布、测试和报表领域逻辑
+engine/                   # Drools 设计期 Build Service
+res/                      # 独立规则执行中心（RES）
+cep/                      # Esper CEP Build/Runtime Service
+fixtures/demo-data/       # 可版本化的演示种子数据，供测试与本地初始化使用
+data/                     # 本地运行时 JSON 存储目录，已被 .gitignore 忽略
+e2e/                      # Playwright 端到端测试
+test/                     # Node.js 单元与 API 测试
+docs/                     # 产品、技术、设计与用户文档
+archive/legacy-prototype/ # 早期单文件原型，仅保留为参考
+```
+
+用户操作手册位于 `docs/user-guides/DWX决策工作台-用户操作手册.docx`。
+
 ## 运行
 
-需要 Node.js 20+ 和 Docker。根目录 `npm install` 安装后端依赖，`cd frontend && npm install` 安装维护中的前端依赖（根 `npm run dev`/`build`/`lint` 都通过 `--prefix frontend` 调用，不会自动安装 `frontend/` 的依赖）。启动规则引擎和 CEP 容器后：
+需要 Node.js 20+ 和 Docker。根目录 `npm install` 安装后端依赖，`cd frontend && npm install` 安装维护中的前端依赖（根 `npm run dev`/`build`/`lint` 都通过 `--prefix frontend` 调用，不会自动安装 `frontend/` 的依赖）。`data/` 是本地运行时目录，不提交到代码库；首次克隆后可用 `fixtures/demo-data/` 初始化演示数据。启动规则引擎和 CEP 容器后：
 
 ```bash
 npm install
 cd frontend && npm install && cd ..
+npm run seed  # 首次克隆后初始化 data/*.json；已有文件不会覆盖
 docker compose up --build -d engine res cep-build cep-res
-npm run api   # Team Server，默认监听 127.0.0.1:8787
-npm run dev   # frontend/ 前端开发服务器，默认 http://127.0.0.1:5173
+API_PORT=8789 npm run api   # Team Server，与 frontend/ 代理端口保持一致
+npm run dev                 # frontend/ 前端开发服务器，默认 http://127.0.0.1:5173
 ```
+
+如需重置本地演示数据，可执行 `npm run seed:force`，它会用 `fixtures/demo-data/` 覆盖 `data/*.json`。
 
 浏览器打开 `http://127.0.0.1:5173`。未设置 `DATABASE_URL` 时继续使用 `data/*.json`。设计时 Build Service 健康检查地址是 `http://127.0.0.1:8788/health`，独立 RES 健康检查地址是 `http://127.0.0.1:8790/health`；RES 的 Drools 会话池大小在 `res/config/res.properties` 配置，默认每个 Release 步骤 `2` 个会话。
 
@@ -42,7 +64,7 @@ npm run api
 
 默认 `AUTH_MODE=local`，仅用于本机开发。管理 API 可切换到 `AUTH_MODE=oidc`，此时必须配置 `OIDC_ISSUER` 和 `OIDC_AUDIENCE`，服务会通过 OIDC discovery 获取 JWKS 并验证 Bearer JWT；也可用 `OIDC_JWKS_URI` 显式覆盖。内置角色为 `viewer`、`author`、`reviewer`、`release-manager`、`admin`，支持顶层 `roles`、Keycloak realm roles 和指定 `OIDC_CLIENT_ID` 的 client roles。浏览器使用 Authorization Code + PKCE 建立 HttpOnly BFF 会话，`GET /api/session` 返回当前已验证主体和权限。
 
-后端默认端口是 `8787`（可用 `API_PORT` 覆盖），而 `frontend/vite.config.ts` 的 `/api` 代理固定指向 `http://127.0.0.1:8789`。本地联调需让两者一致：`API_PORT=8789 npm run api`。`API_TARGET` 只被旧原型入口 `npm run dev:legacy`（根 `vite.config.js`，未设置时代理 `8787`）读取，对 `frontend/` 无效。前端默认端口 `5173`，如需改端口请用 `cd frontend && npm run dev -- --port 5175`。
+后端默认端口是 `8787`（可用 `API_PORT` 覆盖），而 `frontend/vite.config.ts` 的 `/api` 代理固定指向 `http://127.0.0.1:8789`。本地联调需让两者一致：`API_PORT=8789 npm run api`。`API_TARGET` 只被旧原型入口 `npm run dev:legacy`（`archive/legacy-prototype/`，未设置时代理 `8787`）读取，对 `frontend/` 无效。前端默认端口 `5173`，如需改端口请用 `cd frontend && npm run dev -- --port 5175`。旧原型默认端口调整为 `5174`，避免和主前端冲突。
 
 容器基础镜像默认从 `docker.1ms.run` 拉取，构建阶段通过 `engine/settings.xml` 使用阿里云 Maven 公共仓库，不修改 Docker daemon 或全局 Maven 配置。镜像站不可用时可用 Docker 构建参数 `BUILD_IMAGE` 和 `RUNTIME_IMAGE` 指定其他可访问的镜像地址。`registry.cn-hangzhou.aliyuncs.com` 是阿里云容器仓库，不能直接将 Docker Hub 的 `library/...` 路径替换到该域名下。
 
@@ -57,7 +79,8 @@ npm run api
 - 决策表是中文结构化表格编辑器：每个启用行转换为一条生成的 DRL 规则，并参与全局发布编译和导出。编辑器支持 XLSX/CSV 导入导出、列匹配校验和应用前行级差异预览。
 - 规则流支持公共线性步骤、单个排他条件网关、默认分支和节点输入输出映射；每次发布都会冻结引用资产版本、DRL、路由和映射，试运行返回逐节点轨迹。它不是 BPMN/jBPM 流程，不包含多级/并行网关、人工任务、审批或定时器。
 - `engine/` 是允许编译临时 DRL 的设计时服务；`res/` 是独立执行项目，只接受 Team Server 生成且校验和有效的 Release。两者均仅供本机原型调用，尚未实现鉴权、签名、隔离与执行配额，不应暴露到公网。
-- 根目录的 `index.html` 与 `src/main.jsx` 是早期单文件原型，已不再作为默认入口，仅保留 `npm run dev:legacy` 可访问；维护中的前端位于 `frontend/`，根 `dev`/`build`/`lint` 均指向它。
+- 早期单文件原型已移动到 `archive/legacy-prototype/`，不再作为默认入口，仅保留 `npm run dev:legacy` 可访问；维护中的前端位于 `frontend/`，根 `dev`/`build`/`lint` 均指向它。
+- `fixtures/demo-data/` 是可提交的演示种子数据，`data/` 是本地运行时 JSON 存储目录并被忽略；测试中的默认演示数据兼容性校验读取 `fixtures/demo-data/`，避免干净克隆后依赖本机状态。
 
 ## 项目报告
 

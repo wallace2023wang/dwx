@@ -1,0 +1,4644 @@
+[
+  {
+    "id": "f8fd2c70-5e6e-4cac-99ee-caddafa61408",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "release.deployed",
+    "resourceType": "release",
+    "resourceId": "bd06f153-a5b3-4ea8-a166-b0782ec79575",
+    "summary": "部署 Release：自动充氮控制 v3（规则内阈值判定）",
+    "details": {
+      "environment": "local",
+      "deploymentId": "local:bd06f153-a5b3-4ea8-a166-b0782ec79575"
+    },
+    "occurredAt": "2026-10-02T03:06:30.200Z"
+  },
+  {
+    "id": "c9ae82b9-4a22-48c2-9271-1e589a1b5834",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "release.created",
+    "resourceType": "release",
+    "resourceId": "bd06f153-a5b3-4ea8-a166-b0782ec79575",
+    "summary": "创建 Release：自动充氮控制 v3（规则内阈值判定）",
+    "details": {
+      "decisionService": "project-63dbe140/nitrogen-control",
+      "version": 3,
+      "checksum": "sha256:ac1947cdc899413f0b1d0c59f83bc276bbbee7a7ee4cd3e1289bb2f76a78ec55"
+    },
+    "occurredAt": "2026-10-02T03:06:30.091Z"
+  },
+  {
+    "id": "f35924cc-01e5-4e0f-a344-512e58f24c04",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "flow",
+    "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
+    "summary": "发布规则流：自动充氮控制规则流",
+    "details": {
+      "revision": 18,
+      "version": 6
+    },
+    "occurredAt": "2026-10-02T03:06:29.209Z"
+  },
+  {
+    "id": "546c91e0-8315-40a6-9e71-8fe4a4eecd7b",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "flow",
+    "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
+    "summary": "保存规则流：自动充氮控制规则流",
+    "details": {
+      "revision": 17
+    },
+    "occurredAt": "2026-10-02T03:06:29.100Z"
+  },
+  {
+    "id": "4df62ee4-db18-47a0-8d6f-876145222ef9",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "dd101a87-49b9-4791-ae9c-9bad80062c95",
+    "summary": "发布规则：到达结束时间完成",
+    "details": {
+      "revision": 8,
+      "version": 4
+    },
+    "occurredAt": "2026-10-02T03:06:29.069Z"
+  },
+  {
+    "id": "0b7c642d-6edf-4e02-83a2-36ac433c4bbe",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "6034e621-c7ab-42e9-a0d4-f04de29ace30",
+    "summary": "发布规则：暂停全关",
+    "details": {
+      "revision": 8,
+      "version": 4
+    },
+    "occurredAt": "2026-10-02T03:06:28.987Z"
+  },
+  {
+    "id": "dccbd1f9-60bf-4f48-a670-2828bc907b90",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "eebde768-1f99-4a4e-a64b-bca2c4d65895",
+    "summary": "发布规则：启动充氮",
+    "details": {
+      "revision": 6,
+      "version": 3
+    },
+    "occurredAt": "2026-10-02T03:06:28.912Z"
+  },
+  {
+    "id": "bbb8b60c-a892-4974-9102-dc096ba1f132",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "e349d1da-e1c0-493f-ba91-15fe638b3635",
+    "summary": "发布规则：充氮未达标保持",
+    "details": {
+      "revision": 6,
+      "version": 3
+    },
+    "occurredAt": "2026-10-02T03:06:28.836Z"
+  },
+  {
+    "id": "539c0864-e097-4fa8-944e-ce2915675bad",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "93679885-07a3-476e-a12c-54eeb5175677",
+    "summary": "发布规则：充氮达标转环流",
+    "details": {
+      "revision": 6,
+      "version": 3
+    },
+    "occurredAt": "2026-10-02T03:06:28.759Z"
+  },
+  {
+    "id": "c6aa1321-0559-4559-9fb5-ec71339d3fdc",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "2d824f54-08b1-412b-8011-27ae1463b021",
+    "summary": "发布规则：环流未满保持",
+    "details": {
+      "revision": 6,
+      "version": 3
+    },
+    "occurredAt": "2026-10-02T03:06:28.683Z"
+  },
+  {
+    "id": "d09fe889-b67b-4ecf-9dc0-1bfa62071195",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "50748dea-b2a3-4e0a-a784-94948e225022",
+    "summary": "发布规则：环流期满转保氮",
+    "details": {
+      "revision": 6,
+      "version": 3
+    },
+    "occurredAt": "2026-10-02T03:06:28.598Z"
+  },
+  {
+    "id": "2da810d5-f911-4600-b2d7-48b0364ea1db",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "384fc19c-cc64-41a2-9fdf-ac5f83ba7437",
+    "summary": "发布规则：保氮正常保持",
+    "details": {
+      "revision": 6,
+      "version": 3
+    },
+    "occurredAt": "2026-10-02T03:06:28.517Z"
+  },
+  {
+    "id": "c6451b34-e3e3-4125-a32c-afe69dc8f1b7",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "4e706d78-9918-45cd-bcfe-a3cf6df8f8cf",
+    "summary": "发布规则：保氮过低转补氮",
+    "details": {
+      "revision": 6,
+      "version": 3
+    },
+    "occurredAt": "2026-10-02T03:06:28.437Z"
+  },
+  {
+    "id": "a0416a6f-f33c-4348-87f6-153238dba61d",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "9068b9c9-af0e-48fe-adf5-d3274eade6cd",
+    "summary": "发布规则：补氮未达标保持",
+    "details": {
+      "revision": 6,
+      "version": 3
+    },
+    "occurredAt": "2026-10-02T03:06:28.360Z"
+  },
+  {
+    "id": "7f95b50c-f745-4f78-ab39-e50e2464c0ae",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "c721380a-f8e6-47ab-864f-a53d3e340142",
+    "summary": "发布规则：补氮达标转环流",
+    "details": {
+      "revision": 6,
+      "version": 3
+    },
+    "occurredAt": "2026-10-02T03:06:28.284Z"
+  },
+  {
+    "id": "a7d53735-f050-49b6-9b44-98bae359f7a5",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "c721380a-f8e6-47ab-864f-a53d3e340142",
+    "summary": "保存规则：补氮达标转环流",
+    "details": {
+      "revision": 5
+    },
+    "occurredAt": "2026-10-02T03:06:21.283Z"
+  },
+  {
+    "id": "0ae04b5a-e456-409d-bc41-561a21504f3d",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "9068b9c9-af0e-48fe-adf5-d3274eade6cd",
+    "summary": "保存规则：补氮未达标保持",
+    "details": {
+      "revision": 5
+    },
+    "occurredAt": "2026-10-02T03:06:21.258Z"
+  },
+  {
+    "id": "6e804e0f-220c-4207-b85f-cda43d34cacc",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "4e706d78-9918-45cd-bcfe-a3cf6df8f8cf",
+    "summary": "保存规则：保氮过低转补氮",
+    "details": {
+      "revision": 5
+    },
+    "occurredAt": "2026-10-02T03:06:21.233Z"
+  },
+  {
+    "id": "0f63a536-aeb4-4ff4-b486-2f6038fe0fdc",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "384fc19c-cc64-41a2-9fdf-ac5f83ba7437",
+    "summary": "保存规则：保氮正常保持",
+    "details": {
+      "revision": 5
+    },
+    "occurredAt": "2026-10-02T03:06:21.209Z"
+  },
+  {
+    "id": "66d2bd76-e450-4de2-bbee-ee5c6777497d",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "50748dea-b2a3-4e0a-a784-94948e225022",
+    "summary": "保存规则：环流期满转保氮",
+    "details": {
+      "revision": 5
+    },
+    "occurredAt": "2026-10-02T03:06:21.184Z"
+  },
+  {
+    "id": "eac298fa-b50b-41a4-a0c8-5193871428a8",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "2d824f54-08b1-412b-8011-27ae1463b021",
+    "summary": "保存规则：环流未满保持",
+    "details": {
+      "revision": 5
+    },
+    "occurredAt": "2026-10-02T03:06:21.160Z"
+  },
+  {
+    "id": "7105b18c-b592-4e80-9e5e-2731fe3bd66c",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "93679885-07a3-476e-a12c-54eeb5175677",
+    "summary": "保存规则：充氮达标转环流",
+    "details": {
+      "revision": 5
+    },
+    "occurredAt": "2026-10-02T03:06:21.133Z"
+  },
+  {
+    "id": "822769b6-9758-469a-81c8-a1eff16a5aba",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "e349d1da-e1c0-493f-ba91-15fe638b3635",
+    "summary": "保存规则：充氮未达标保持",
+    "details": {
+      "revision": 5
+    },
+    "occurredAt": "2026-10-02T03:06:21.106Z"
+  },
+  {
+    "id": "5be607c4-9c0e-4543-bcd8-0ef47264f76f",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "eebde768-1f99-4a4e-a64b-bca2c4d65895",
+    "summary": "保存规则：启动充氮",
+    "details": {
+      "revision": 5
+    },
+    "occurredAt": "2026-10-02T03:06:21.081Z"
+  },
+  {
+    "id": "5e44f1a6-6a17-4e7e-bede-c830ef5fee00",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "6034e621-c7ab-42e9-a0d4-f04de29ace30",
+    "summary": "保存规则：暂停全关",
+    "details": {
+      "revision": 7
+    },
+    "occurredAt": "2026-10-02T03:06:21.053Z"
+  },
+  {
+    "id": "ed096cab-5d69-4198-bffe-3cb16e21d2c2",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "dd101a87-49b9-4791-ae9c-9bad80062c95",
+    "summary": "保存规则：到达结束时间完成",
+    "details": {
+      "revision": 7
+    },
+    "occurredAt": "2026-10-02T03:06:21.026Z"
+  },
+  {
+    "id": "2d7a9ebc-9ca2-4a45-83e6-b7c2c7f39863",
+    "projectId": "project-c429a9a0",
+    "actor": "wallace",
+    "action": "change-set.approve",
+    "resourceType": "change-set",
+    "resourceId": "e9a38d80-7838-4aa3-bcd6-7994e028e41f",
+    "summary": "批准：审核：整仓均温告警",
+    "details": {
+      "revision": 2,
+      "comment": ""
+    },
+    "occurredAt": "2026-10-02T03:04:38.325Z"
+  },
+  {
+    "id": "5cd7ba0a-76bd-43c5-911a-f47a2d8e7aba",
+    "projectId": "project-c429a9a0",
+    "actor": "wallace",
+    "action": "change-set.submit",
+    "resourceType": "change-set",
+    "resourceId": "e9a38d80-7838-4aa3-bcd6-7994e028e41f",
+    "summary": "提交审核：审核：整仓均温告警",
+    "details": {
+      "revision": 1,
+      "itemCount": 1,
+      "assetId": "6f2541d4-e7f2-42af-a4c0-f2c4c44ce585"
+    },
+    "occurredAt": "2026-10-02T03:04:33.129Z"
+  },
+  {
+    "id": "0f7d19f1-1705-43ad-9d9f-faeee126de43",
+    "projectId": "project-c429a9a0",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "6f2541d4-e7f2-42af-a4c0-f2c4c44ce585",
+    "summary": "保存规则：整仓均温告警",
+    "details": {
+      "revision": 4
+    },
+    "occurredAt": "2026-10-02T03:04:31.955Z"
+  },
+  {
+    "id": "38930b02-2191-4229-aa05-bec96267ce38",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "release.deployed",
+    "resourceType": "release",
+    "resourceId": "4b89f668-9bf1-420c-acdd-01d568d6fdbc",
+    "summary": "部署 Release：自动充氮控制 v2（规则内阈值判定）",
+    "details": {
+      "environment": "local",
+      "deploymentId": "local:4b89f668-9bf1-420c-acdd-01d568d6fdbc"
+    },
+    "occurredAt": "2026-10-02T01:29:02.998Z"
+  },
+  {
+    "id": "23f04859-b3c5-4006-b255-9afb76c073bd",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "release.created",
+    "resourceType": "release",
+    "resourceId": "4b89f668-9bf1-420c-acdd-01d568d6fdbc",
+    "summary": "创建 Release：自动充氮控制 v2（规则内阈值判定）",
+    "details": {
+      "decisionService": "project-63dbe140/nitrogen-control",
+      "version": 2,
+      "checksum": "sha256:c0df841a2b69e0fd4561dfec3988648ed32879d55a4b430bdfd5837a6873fece"
+    },
+    "occurredAt": "2026-10-02T01:27:37.627Z"
+  },
+  {
+    "id": "6e685932-e646-415a-9278-3298d5dc13a8",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "flow",
+    "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
+    "summary": "发布规则流：自动充氮控制规则流",
+    "details": {
+      "revision": 16,
+      "version": 5
+    },
+    "occurredAt": "2026-10-02T01:27:36.682Z"
+  },
+  {
+    "id": "e35e9c80-9901-44ed-8af5-2f2ca38f7027",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "flow",
+    "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
+    "summary": "保存规则流：自动充氮控制规则流",
+    "details": {
+      "revision": 15
+    },
+    "occurredAt": "2026-10-02T01:27:36.580Z"
+  },
+  {
+    "id": "634fb8bb-794b-463c-bebd-e074eef126c7",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "dd101a87-49b9-4791-ae9c-9bad80062c95",
+    "summary": "发布规则：到达结束时间完成",
+    "details": {
+      "revision": 6,
+      "version": 3
+    },
+    "occurredAt": "2026-10-02T01:27:36.551Z"
+  },
+  {
+    "id": "55f1c947-fc4e-42b3-bd04-ceed85be588b",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "6034e621-c7ab-42e9-a0d4-f04de29ace30",
+    "summary": "发布规则：暂停全关",
+    "details": {
+      "revision": 6,
+      "version": 3
+    },
+    "occurredAt": "2026-10-02T01:27:36.480Z"
+  },
+  {
+    "id": "f8e66b8d-101b-4e91-980d-ab82cc6d0eab",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "6034e621-c7ab-42e9-a0d4-f04de29ace30",
+    "summary": "保存规则：暂停全关",
+    "details": {
+      "revision": 5
+    },
+    "occurredAt": "2026-10-02T01:27:24.904Z"
+  },
+  {
+    "id": "63d0b0e9-e610-4fad-805b-5453c797e4cf",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "dd101a87-49b9-4791-ae9c-9bad80062c95",
+    "summary": "保存规则：到达结束时间完成",
+    "details": {
+      "revision": 5
+    },
+    "occurredAt": "2026-10-02T01:27:24.877Z"
+  },
+  {
+    "id": "369f8412-0fc0-4e86-8027-f3ad241311d5",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "flow",
+    "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
+    "summary": "发布规则流：自动充氮控制规则流",
+    "details": {
+      "revision": 14,
+      "version": 4
+    },
+    "occurredAt": "2026-10-02T01:27:10.139Z"
+  },
+  {
+    "id": "6ea39eef-f9f6-46b6-bb9b-80136c0f454d",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "flow",
+    "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
+    "summary": "保存规则流：自动充氮控制规则流",
+    "details": {
+      "revision": 13
+    },
+    "occurredAt": "2026-10-02T01:27:10.010Z"
+  },
+  {
+    "id": "7d7f1da8-d208-4b16-a5ed-8e610e004af8",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "table",
+    "resourceId": "94a34ecf-8f4c-4f2b-9909-39476b21c4fb",
+    "summary": "保存决策表：充氮结束处理表",
+    "details": {
+      "revision": 8
+    },
+    "occurredAt": "2026-10-02T01:27:08.206Z"
+  },
+  {
+    "id": "728a3091-aa60-4955-988a-59be8c850870",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "table",
+    "resourceId": "e65de44d-c757-4bfb-9dd2-2862a2b43635",
+    "summary": "保存决策表：充氮状态迁移表",
+    "details": {
+      "revision": 9
+    },
+    "occurredAt": "2026-10-02T01:27:08.189Z"
+  },
+  {
+    "id": "dff28505-b744-470a-acfe-2d54ec459d6f",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "flow",
+    "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
+    "summary": "保存规则流：自动充氮控制规则流",
+    "details": {
+      "revision": 12
+    },
+    "occurredAt": "2026-10-02T01:26:55.654Z"
+  },
+  {
+    "id": "39e82b5f-74bb-4bd6-b91c-5defda5a3a10",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "dd101a87-49b9-4791-ae9c-9bad80062c95",
+    "summary": "发布规则：到达结束时间完成",
+    "details": {
+      "revision": 4,
+      "version": 2
+    },
+    "occurredAt": "2026-10-02T01:26:55.629Z"
+  },
+  {
+    "id": "363b2895-4b24-47da-b7a7-aaab728f121d",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.created",
+    "resourceType": "change-set",
+    "resourceId": "1ad66ec0-2952-42fc-b57e-010845d28efc",
+    "summary": "创建变更集：修订号复位：到达结束时间完成",
+    "details": {
+      "revision": 1,
+      "itemCount": 1
+    },
+    "occurredAt": "2026-10-02T01:26:55.598Z"
+  },
+  {
+    "id": "ac2bacfc-f97f-465e-a4f8-126052b9db16",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "6034e621-c7ab-42e9-a0d4-f04de29ace30",
+    "summary": "发布规则：暂停全关",
+    "details": {
+      "revision": 4,
+      "version": 2
+    },
+    "occurredAt": "2026-10-02T01:26:55.581Z"
+  },
+  {
+    "id": "e522eb3f-61dc-442c-9372-d1788c60156b",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.created",
+    "resourceType": "change-set",
+    "resourceId": "4b68b2e7-b806-4729-9bda-de33f618b7a8",
+    "summary": "创建变更集：修订号复位：暂停全关",
+    "details": {
+      "revision": 1,
+      "itemCount": 1
+    },
+    "occurredAt": "2026-10-02T01:26:55.510Z"
+  },
+  {
+    "id": "a69e3e6b-8c90-46bd-9cf2-ad89bc8143fc",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "eebde768-1f99-4a4e-a64b-bca2c4d65895",
+    "summary": "发布规则：启动充氮",
+    "details": {
+      "revision": 4,
+      "version": 2
+    },
+    "occurredAt": "2026-10-02T01:26:55.497Z"
+  },
+  {
+    "id": "5c1fcbe2-93b7-4aa9-b824-ebbf68bf7dc9",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.created",
+    "resourceType": "change-set",
+    "resourceId": "6129063b-67b8-450f-ad25-36b9a45cacd5",
+    "summary": "创建变更集：修订号复位：启动充氮",
+    "details": {
+      "revision": 1,
+      "itemCount": 1
+    },
+    "occurredAt": "2026-10-02T01:26:55.465Z"
+  },
+  {
+    "id": "97b5c801-3744-4ebe-9091-cc7eee1d8562",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "e349d1da-e1c0-493f-ba91-15fe638b3635",
+    "summary": "发布规则：充氮未达标保持",
+    "details": {
+      "revision": 4,
+      "version": 2
+    },
+    "occurredAt": "2026-10-02T01:26:55.446Z"
+  },
+  {
+    "id": "26d2c1ba-d39b-48b0-9905-de8a5532d77a",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.created",
+    "resourceType": "change-set",
+    "resourceId": "f205af03-5b4c-4b96-bd65-810b92a01e95",
+    "summary": "创建变更集：修订号复位：充氮未达标保持",
+    "details": {
+      "revision": 1,
+      "itemCount": 1
+    },
+    "occurredAt": "2026-10-02T01:26:55.352Z"
+  },
+  {
+    "id": "cb54f3fe-bff2-4542-8234-b29808b084b8",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "93679885-07a3-476e-a12c-54eeb5175677",
+    "summary": "发布规则：充氮达标转环流",
+    "details": {
+      "revision": 4,
+      "version": 2
+    },
+    "occurredAt": "2026-10-02T01:26:55.335Z"
+  },
+  {
+    "id": "dbdfeb8f-7e4a-4a18-b771-ae1b7110f8e3",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.created",
+    "resourceType": "change-set",
+    "resourceId": "fe46dfaf-1cb4-4875-9519-d9d5a79ab191",
+    "summary": "创建变更集：修订号复位：充氮达标转环流",
+    "details": {
+      "revision": 1,
+      "itemCount": 1
+    },
+    "occurredAt": "2026-10-02T01:26:55.261Z"
+  },
+  {
+    "id": "7820ece9-3ddc-4d01-83d4-37d3fc9458d0",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "2d824f54-08b1-412b-8011-27ae1463b021",
+    "summary": "发布规则：环流未满保持",
+    "details": {
+      "revision": 4,
+      "version": 2
+    },
+    "occurredAt": "2026-10-02T01:26:55.245Z"
+  },
+  {
+    "id": "06f7b4ea-1a7f-409d-bef6-d19a08f4a97f",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.created",
+    "resourceType": "change-set",
+    "resourceId": "c2125111-6d73-4c14-896f-b6e1b92e5cda",
+    "summary": "创建变更集：修订号复位：环流未满保持",
+    "details": {
+      "revision": 1,
+      "itemCount": 1
+    },
+    "occurredAt": "2026-10-02T01:26:55.212Z"
+  },
+  {
+    "id": "38827685-db2f-42b6-aa48-bafe833302cd",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "50748dea-b2a3-4e0a-a784-94948e225022",
+    "summary": "发布规则：环流期满转保氮",
+    "details": {
+      "revision": 4,
+      "version": 2
+    },
+    "occurredAt": "2026-10-02T01:26:55.191Z"
+  },
+  {
+    "id": "9afb386a-79df-48fc-a867-c35b8a30693c",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.created",
+    "resourceType": "change-set",
+    "resourceId": "634e1d5e-089c-49ed-ab89-10e197c9806d",
+    "summary": "创建变更集：修订号复位：环流期满转保氮",
+    "details": {
+      "revision": 1,
+      "itemCount": 1
+    },
+    "occurredAt": "2026-10-02T01:26:55.118Z"
+  },
+  {
+    "id": "65e8d776-4012-486e-823d-1b33efdf3e1d",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "384fc19c-cc64-41a2-9fdf-ac5f83ba7437",
+    "summary": "发布规则：保氮正常保持",
+    "details": {
+      "revision": 4,
+      "version": 2
+    },
+    "occurredAt": "2026-10-02T01:26:55.104Z"
+  },
+  {
+    "id": "10071d45-608d-428d-9f54-7f2be263ad0f",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.created",
+    "resourceType": "change-set",
+    "resourceId": "837c947c-7cd5-4e84-b839-84e5866dc3ee",
+    "summary": "创建变更集：修订号复位：保氮正常保持",
+    "details": {
+      "revision": 1,
+      "itemCount": 1
+    },
+    "occurredAt": "2026-10-02T01:26:55.026Z"
+  },
+  {
+    "id": "49c67805-d7df-49e3-86fb-2016c5864526",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "4e706d78-9918-45cd-bcfe-a3cf6df8f8cf",
+    "summary": "发布规则：保氮过低转补氮",
+    "details": {
+      "revision": 4,
+      "version": 2
+    },
+    "occurredAt": "2026-10-02T01:26:55.012Z"
+  },
+  {
+    "id": "60f21d8b-4ada-4298-8a24-8b2df14f0926",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.created",
+    "resourceType": "change-set",
+    "resourceId": "bd0c9b0f-16c6-4343-99d6-c9d4d03ab764",
+    "summary": "创建变更集：修订号复位：保氮过低转补氮",
+    "details": {
+      "revision": 1,
+      "itemCount": 1
+    },
+    "occurredAt": "2026-10-02T01:26:54.937Z"
+  },
+  {
+    "id": "a383b0f1-4898-41fd-a72d-efe573ad1ae5",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "9068b9c9-af0e-48fe-adf5-d3274eade6cd",
+    "summary": "发布规则：补氮未达标保持",
+    "details": {
+      "revision": 4,
+      "version": 2
+    },
+    "occurredAt": "2026-10-02T01:26:54.923Z"
+  },
+  {
+    "id": "fee3669c-22d5-42b1-a3fc-14667efc79e2",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.created",
+    "resourceType": "change-set",
+    "resourceId": "3b337a17-b25a-4dca-bf52-7ec07b7794b4",
+    "summary": "创建变更集：修订号复位：补氮未达标保持",
+    "details": {
+      "revision": 1,
+      "itemCount": 1
+    },
+    "occurredAt": "2026-10-02T01:26:54.848Z"
+  },
+  {
+    "id": "ad794860-b09d-49d4-8c42-2eb2c5119a0e",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "c721380a-f8e6-47ab-864f-a53d3e340142",
+    "summary": "发布规则：补氮达标转环流",
+    "details": {
+      "revision": 4,
+      "version": 2
+    },
+    "occurredAt": "2026-10-02T01:26:54.834Z"
+  },
+  {
+    "id": "26c72f99-a199-456f-8ce9-e967a153a7c3",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.created",
+    "resourceType": "change-set",
+    "resourceId": "fb4b3349-263a-4582-af23-19fe734369ea",
+    "summary": "创建变更集：修订号复位：补氮达标转环流",
+    "details": {
+      "revision": 1,
+      "itemCount": 1
+    },
+    "occurredAt": "2026-10-02T01:26:54.802Z"
+  },
+  {
+    "id": "a35b49f1-46a6-4235-8d76-82f1343af17c",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "flow",
+    "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
+    "summary": "保存规则流：自动充氮控制规则流",
+    "details": {
+      "revision": 11
+    },
+    "occurredAt": "2026-10-02T01:26:50.365Z"
+  },
+  {
+    "id": "a3623dd7-73f1-41ed-9d93-6278ab84829f",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "bom.updated",
+    "resourceType": "bom",
+    "resourceId": "project-63dbe140",
+    "summary": "更新字段模型到 v7",
+    "details": {
+      "version": 7,
+      "warnings": []
+    },
+    "occurredAt": "2026-10-02T01:26:47.740Z"
+  },
+  {
+    "id": "8b5740b5-99b1-4e95-9eca-6b316b781f4a",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "flow",
+    "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
+    "summary": "发布规则流：自动充氮控制规则流",
+    "details": {
+      "revision": 10,
+      "version": 3
+    },
+    "occurredAt": "2026-10-02T01:26:27.747Z"
+  },
+  {
+    "id": "5c7f33fe-1c82-4a4b-93b6-be72f3d6cd88",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "flow",
+    "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
+    "summary": "保存规则流：自动充氮控制规则流",
+    "details": {
+      "revision": 9
+    },
+    "occurredAt": "2026-10-02T01:26:27.607Z"
+  },
+  {
+    "id": "fc1a943b-ad33-4891-8a05-ea1d86332a02",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "test-suite.updated",
+    "resourceType": "test-suite",
+    "resourceId": "0411ccc6-d142-4b93-bc05-8c38d1ef1147",
+    "summary": "更新测试套件：自动充氮状态机回归（发布门禁）",
+    "details": {
+      "revision": 5
+    },
+    "occurredAt": "2026-10-02T01:26:25.513Z"
+  },
+  {
+    "id": "066b65e8-0dd8-4472-b409-92cb8d7bcaf7",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "flow",
+    "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
+    "summary": "发布规则流：自动充氮控制规则流",
+    "details": {
+      "revision": 8,
+      "version": 2
+    },
+    "occurredAt": "2026-10-02T01:26:21.586Z"
+  },
+  {
+    "id": "cdc76b49-d1f2-4a67-b9f5-288d4b5e4276",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "flow",
+    "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
+    "summary": "保存规则流：自动充氮控制规则流",
+    "details": {
+      "revision": 7
+    },
+    "occurredAt": "2026-10-02T01:26:21.453Z"
+  },
+  {
+    "id": "c26ec1f0-557f-4868-b703-8a852570f389",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "dd101a87-49b9-4791-ae9c-9bad80062c95",
+    "summary": "发布规则：到达结束时间完成",
+    "details": {
+      "revision": 3,
+      "version": 1
+    },
+    "occurredAt": "2026-10-02T01:26:21.425Z"
+  },
+  {
+    "id": "d9ffe877-c7fa-47d3-b6c0-6a87f4c98f5f",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "6034e621-c7ab-42e9-a0d4-f04de29ace30",
+    "summary": "发布规则：暂停全关",
+    "details": {
+      "revision": 3,
+      "version": 1
+    },
+    "occurredAt": "2026-10-02T01:26:21.345Z"
+  },
+  {
+    "id": "88e8391f-597b-4b58-a8d6-7d1a651a9335",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "eebde768-1f99-4a4e-a64b-bca2c4d65895",
+    "summary": "发布规则：启动充氮",
+    "details": {
+      "revision": 3,
+      "version": 1
+    },
+    "occurredAt": "2026-10-02T01:26:21.266Z"
+  },
+  {
+    "id": "1eacb340-df24-499b-8a21-c76f9866df3b",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "e349d1da-e1c0-493f-ba91-15fe638b3635",
+    "summary": "发布规则：充氮未达标保持",
+    "details": {
+      "revision": 3,
+      "version": 1
+    },
+    "occurredAt": "2026-10-02T01:26:21.195Z"
+  },
+  {
+    "id": "897c76d8-7ae3-46c7-85dc-70115f473a5d",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "93679885-07a3-476e-a12c-54eeb5175677",
+    "summary": "发布规则：充氮达标转环流",
+    "details": {
+      "revision": 3,
+      "version": 1
+    },
+    "occurredAt": "2026-10-02T01:26:21.118Z"
+  },
+  {
+    "id": "77715c19-79c1-4877-ba3b-6f9f1ca84f2a",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "2d824f54-08b1-412b-8011-27ae1463b021",
+    "summary": "发布规则：环流未满保持",
+    "details": {
+      "revision": 3,
+      "version": 1
+    },
+    "occurredAt": "2026-10-02T01:26:21.040Z"
+  },
+  {
+    "id": "a19d6937-2697-4f6b-9c0b-ec992434c9f1",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "50748dea-b2a3-4e0a-a784-94948e225022",
+    "summary": "发布规则：环流期满转保氮",
+    "details": {
+      "revision": 3,
+      "version": 1
+    },
+    "occurredAt": "2026-10-02T01:26:20.966Z"
+  },
+  {
+    "id": "9dd57659-c4b6-4a74-8d49-3109811c0d36",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "384fc19c-cc64-41a2-9fdf-ac5f83ba7437",
+    "summary": "发布规则：保氮正常保持",
+    "details": {
+      "revision": 3,
+      "version": 1
+    },
+    "occurredAt": "2026-10-02T01:26:20.888Z"
+  },
+  {
+    "id": "bded9e3b-74db-4904-a80b-14289b7366b4",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "4e706d78-9918-45cd-bcfe-a3cf6df8f8cf",
+    "summary": "发布规则：保氮过低转补氮",
+    "details": {
+      "revision": 3,
+      "version": 1
+    },
+    "occurredAt": "2026-10-02T01:26:20.801Z"
+  },
+  {
+    "id": "3673617d-b56b-4f93-8bdb-7c4efd4f0a72",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "9068b9c9-af0e-48fe-adf5-d3274eade6cd",
+    "summary": "发布规则：补氮未达标保持",
+    "details": {
+      "revision": 3,
+      "version": 1
+    },
+    "occurredAt": "2026-10-02T01:26:20.723Z"
+  },
+  {
+    "id": "2a748107-dfbe-44eb-a579-d2fdc7660c7f",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "c721380a-f8e6-47ab-864f-a53d3e340142",
+    "summary": "发布规则：补氮达标转环流",
+    "details": {
+      "revision": 3,
+      "version": 1
+    },
+    "occurredAt": "2026-10-02T01:26:20.653Z"
+  },
+  {
+    "id": "4c0589b6-cade-4077-aa76-bd590a974fac",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "c721380a-f8e6-47ab-864f-a53d3e340142",
+    "summary": "保存规则：补氮达标转环流",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-10-02T01:25:38.568Z"
+  },
+  {
+    "id": "6367569a-29e6-4cbf-a7dd-2b0d4d6ad34c",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "rule",
+    "resourceId": "c721380a-f8e6-47ab-864f-a53d3e340142",
+    "summary": "创建规则：补氮达标转环流",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-02T01:25:38.551Z"
+  },
+  {
+    "id": "e52855f7-c401-4663-9d10-8aed24c0f22f",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "9068b9c9-af0e-48fe-adf5-d3274eade6cd",
+    "summary": "保存规则：补氮未达标保持",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-10-02T01:25:38.537Z"
+  },
+  {
+    "id": "03b74cc7-9a50-44c1-aa93-a04dd4728968",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "rule",
+    "resourceId": "9068b9c9-af0e-48fe-adf5-d3274eade6cd",
+    "summary": "创建规则：补氮未达标保持",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-02T01:25:38.524Z"
+  },
+  {
+    "id": "82f1d3d7-d2bc-4008-990b-9386d5ef0ba4",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "4e706d78-9918-45cd-bcfe-a3cf6df8f8cf",
+    "summary": "保存规则：保氮过低转补氮",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-10-02T01:25:38.510Z"
+  },
+  {
+    "id": "2714ba7a-6fff-4389-9160-fa4c34f5c598",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "rule",
+    "resourceId": "4e706d78-9918-45cd-bcfe-a3cf6df8f8cf",
+    "summary": "创建规则：保氮过低转补氮",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-02T01:25:38.495Z"
+  },
+  {
+    "id": "b3afe9b5-ad2a-4016-bab8-62b4b37d72b1",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "384fc19c-cc64-41a2-9fdf-ac5f83ba7437",
+    "summary": "保存规则：保氮正常保持",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-10-02T01:25:38.482Z"
+  },
+  {
+    "id": "cba37b0e-84d6-481a-a1a1-961e6ccd8a26",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "rule",
+    "resourceId": "384fc19c-cc64-41a2-9fdf-ac5f83ba7437",
+    "summary": "创建规则：保氮正常保持",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-02T01:25:38.468Z"
+  },
+  {
+    "id": "198c76cf-0afd-4277-a27b-2ee36901adb1",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "50748dea-b2a3-4e0a-a784-94948e225022",
+    "summary": "保存规则：环流期满转保氮",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-10-02T01:25:38.454Z"
+  },
+  {
+    "id": "9ac0884c-f2d7-43fd-872e-d8dad9d11ec4",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "rule",
+    "resourceId": "50748dea-b2a3-4e0a-a784-94948e225022",
+    "summary": "创建规则：环流期满转保氮",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-02T01:25:38.442Z"
+  },
+  {
+    "id": "5bb1c00e-0642-48a2-97f8-951edfd96eec",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "2d824f54-08b1-412b-8011-27ae1463b021",
+    "summary": "保存规则：环流未满保持",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-10-02T01:25:38.428Z"
+  },
+  {
+    "id": "184b140e-b324-4544-9658-2ac126b58d72",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "rule",
+    "resourceId": "2d824f54-08b1-412b-8011-27ae1463b021",
+    "summary": "创建规则：环流未满保持",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-02T01:25:38.414Z"
+  },
+  {
+    "id": "2f6994b1-b562-47e1-99d5-0073eecfe5e9",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "93679885-07a3-476e-a12c-54eeb5175677",
+    "summary": "保存规则：充氮达标转环流",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-10-02T01:25:38.400Z"
+  },
+  {
+    "id": "522d170c-e4a3-4adc-8eb7-73d930a1a673",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "rule",
+    "resourceId": "93679885-07a3-476e-a12c-54eeb5175677",
+    "summary": "创建规则：充氮达标转环流",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-02T01:25:38.386Z"
+  },
+  {
+    "id": "aff0eca7-ca66-4815-9adf-622c096645ae",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "e349d1da-e1c0-493f-ba91-15fe638b3635",
+    "summary": "保存规则：充氮未达标保持",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-10-02T01:25:38.373Z"
+  },
+  {
+    "id": "38b60683-9ec9-4149-bf51-e89a4f1821ed",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "rule",
+    "resourceId": "e349d1da-e1c0-493f-ba91-15fe638b3635",
+    "summary": "创建规则：充氮未达标保持",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-02T01:25:38.359Z"
+  },
+  {
+    "id": "8997c454-bc0b-402b-8912-b757f7f10eab",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "eebde768-1f99-4a4e-a64b-bca2c4d65895",
+    "summary": "保存规则：启动充氮",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-10-02T01:25:38.346Z"
+  },
+  {
+    "id": "65dcb1e1-31d8-4c01-9cda-66885cd79618",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "rule",
+    "resourceId": "eebde768-1f99-4a4e-a64b-bca2c4d65895",
+    "summary": "创建规则：启动充氮",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-02T01:25:38.332Z"
+  },
+  {
+    "id": "35430e7f-17c4-4623-aebe-7897dc9145ab",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "6034e621-c7ab-42e9-a0d4-f04de29ace30",
+    "summary": "保存规则：暂停全关",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-10-02T01:25:38.317Z"
+  },
+  {
+    "id": "efa3fa61-b741-4c03-8469-16f2f46427a5",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "rule",
+    "resourceId": "6034e621-c7ab-42e9-a0d4-f04de29ace30",
+    "summary": "创建规则：暂停全关",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-02T01:25:38.303Z"
+  },
+  {
+    "id": "faa8aab6-f1ff-442e-941c-135823b8f41e",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "dd101a87-49b9-4791-ae9c-9bad80062c95",
+    "summary": "保存规则：到达结束时间完成",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-10-02T01:25:38.286Z"
+  },
+  {
+    "id": "92a2a29b-566a-4ddd-b1f8-4815ad40dec0",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "rule",
+    "resourceId": "dd101a87-49b9-4791-ae9c-9bad80062c95",
+    "summary": "创建规则：到达结束时间完成",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-02T01:25:38.270Z"
+  },
+  {
+    "id": "07ed7ac0-07b2-451f-8031-5c92cf693d59",
+    "projectId": "project-7c12c971",
+    "actor": "local-user",
+    "action": "bom.updated",
+    "resourceType": "bom",
+    "resourceId": "project-7c12c971",
+    "summary": "更新字段模型到 v3",
+    "details": {
+      "version": 3,
+      "warnings": [
+        "字段 \"氮气浓度\" 业务类型由 Double 变更为 Decimal，引用它的规则值可能需要调整",
+        "字段 \"氧气浓度\" 业务类型由 Double 变更为 Decimal，引用它的规则值可能需要调整",
+        "字段 \"仓内温度\" 业务类型由 Double 变更为 Decimal，引用它的规则值可能需要调整"
+      ]
+    },
+    "occurredAt": "2026-10-02T01:06:06.375Z"
+  },
+  {
+    "id": "0c1ff20b-e47c-4dfc-9030-9f55917c5ef7",
+    "projectId": "project-7c12c971",
+    "actor": "local-user",
+    "action": "release.deployed",
+    "resourceType": "release",
+    "resourceId": "1f232f3e-9cae-46ce-8636-8d77d9f98052",
+    "summary": "部署 Release：充氮安全告警 v1",
+    "details": {
+      "environment": "local",
+      "deploymentId": "local:1f232f3e-9cae-46ce-8636-8d77d9f98052"
+    },
+    "occurredAt": "2026-10-02T01:05:53.644Z"
+  },
+  {
+    "id": "c4ed2508-9f03-4aa2-a53b-4b7dcadc6de1",
+    "projectId": "project-7c12c971",
+    "actor": "local-user",
+    "action": "release.created",
+    "resourceType": "release",
+    "resourceId": "1f232f3e-9cae-46ce-8636-8d77d9f98052",
+    "summary": "创建 Release：充氮安全告警 v1",
+    "details": {
+      "decisionService": "project-7c12c971/n2-safety-alarm",
+      "version": 1,
+      "checksum": "sha256:c3fada36cf46b787d453c67fdd90a04a5053baa6755b243c92488d9a0b9126c5"
+    },
+    "occurredAt": "2026-10-02T01:05:51.199Z"
+  },
+  {
+    "id": "624243c0-3f10-4995-a875-b1ec0ab36973",
+    "projectId": "project-7c12c971",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "event-stream",
+    "resourceId": "45ce6021-0cbe-4944-8465-7e73f313c5d1",
+    "summary": "发布事件流：充氮安全告警（联锁 + 断流）",
+    "details": {
+      "revision": 4,
+      "version": 1
+    },
+    "occurredAt": "2026-10-02T01:05:48.879Z"
+  },
+  {
+    "id": "ca91eb14-389b-43f0-b718-46a38ade2c24",
+    "projectId": "project-7c12c971",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "45ce6021-0cbe-4944-8465-7e73f313c5d1",
+    "summary": "保存事件流：充氮安全告警（联锁 + 断流）",
+    "details": {
+      "revision": 3
+    },
+    "occurredAt": "2026-10-02T01:05:48.761Z"
+  },
+  {
+    "id": "25129fd0-0118-4ac4-af50-8cf92f76fb30",
+    "projectId": "project-7c12c971",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "45ce6021-0cbe-4944-8465-7e73f313c5d1",
+    "summary": "保存事件流：充氮安全告警（联锁 + 断流）",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-10-02T01:05:45.772Z"
+  },
+  {
+    "id": "fe9d87a0-7637-4d24-9bfc-799ff477e9ff",
+    "projectId": "project-7c12c971",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "event-stream",
+    "resourceId": "45ce6021-0cbe-4944-8465-7e73f313c5d1",
+    "summary": "创建事件流：充氮安全告警（联锁 + 断流）",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-02T01:05:38.779Z"
+  },
+  {
+    "id": "0dc5a287-d317-48e7-9f50-3597b21588d3",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "release.deployed",
+    "resourceType": "release",
+    "resourceId": "f105f634-ea24-4262-a0d1-52604821ac68",
+    "summary": "部署 Release：自动充氮控制 v1",
+    "details": {
+      "environment": "local",
+      "deploymentId": "local:f105f634-ea24-4262-a0d1-52604821ac68"
+    },
+    "occurredAt": "2026-10-02T01:00:31.064Z"
+  },
+  {
+    "id": "93a77463-e12a-4184-8d5b-666ef2b5c943",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "test-suite.run",
+    "resourceType": "test-suite",
+    "resourceId": "0411ccc6-d142-4b93-bc05-8c38d1ef1147",
+    "summary": "运行测试套件：自动充氮状态机回归（发布门禁）",
+    "details": {
+      "revision": 3,
+      "passed": true,
+      "runId": "c46be523-ecc9-4b2a-bde0-94d3d4629ca3"
+    },
+    "occurredAt": "2026-10-02T01:00:27.126Z"
+  },
+  {
+    "id": "97932408-8f90-438a-aee6-0ffa84d583e4",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "release.created",
+    "resourceType": "release",
+    "resourceId": "f105f634-ea24-4262-a0d1-52604821ac68",
+    "summary": "创建 Release：自动充氮控制 v1",
+    "details": {
+      "decisionService": "project-63dbe140/nitrogen-control",
+      "version": 1,
+      "checksum": "sha256:445172d560e93e6dadb80726c27e45ad185d083fa50cf04fc292a178c0eb3ab7"
+    },
+    "occurredAt": "2026-10-02T01:00:21.756Z"
+  },
+  {
+    "id": "ee91c9fe-6ab1-49af-b08d-c861538d577f",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "flow",
+    "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
+    "summary": "发布规则流：自动充氮控制规则流",
+    "details": {
+      "revision": 6,
+      "version": 1
+    },
+    "occurredAt": "2026-10-02T01:00:17.144Z"
+  },
+  {
+    "id": "712d7c3d-f180-4e38-9859-853cc7fc701d",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "test-suite.created",
+    "resourceType": "test-suite",
+    "resourceId": "0411ccc6-d142-4b93-bc05-8c38d1ef1147",
+    "summary": "创建测试套件：自动充氮状态机回归（发布门禁）",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-02T00:54:57.842Z"
+  },
+  {
+    "id": "cd469f2d-24c1-4375-8eb3-3a850034ed10",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "flow",
+    "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
+    "summary": "保存规则流：自动充氮控制规则流",
+    "details": {
+      "revision": 5
+    },
+    "occurredAt": "2026-10-02T00:53:55.909Z"
+  },
+  {
+    "id": "e4eabccd-a685-4418-9b46-64a0dc531d48",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "table",
+    "resourceId": "94a34ecf-8f4c-4f2b-9909-39476b21c4fb",
+    "summary": "发布决策表：充氮结束处理表",
+    "details": {
+      "revision": 7,
+      "version": 3
+    },
+    "occurredAt": "2026-10-02T00:53:54.213Z"
+  },
+  {
+    "id": "4bf4c51f-7d3e-48c4-811f-b85adeec3d6f",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.created",
+    "resourceType": "change-set",
+    "resourceId": "26d8d290-4925-47b7-89c9-9754a82d7400",
+    "summary": "创建变更集：修订号复位：充氮结束处理表",
+    "details": {
+      "revision": 1,
+      "itemCount": 1
+    },
+    "occurredAt": "2026-10-02T00:53:54.186Z"
+  },
+  {
+    "id": "3e09b1d1-d3ca-480f-a383-6af99caa5244",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.created",
+    "resourceType": "change-set",
+    "resourceId": "d03d8640-b0c4-487d-a157-dc07fa11c0ac",
+    "summary": "创建变更集：修订号复位：充氮结束处理表",
+    "details": {
+      "revision": 1,
+      "itemCount": 1
+    },
+    "occurredAt": "2026-10-02T00:53:46.363Z"
+  },
+  {
+    "id": "e5813684-a73e-412b-b75b-0fe414242e5e",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.created",
+    "resourceType": "change-set",
+    "resourceId": "481619af-eaf8-4f68-810b-879bc20162c3",
+    "summary": "创建变更集：修订号复位：充氮结束处理表",
+    "details": {
+      "revision": 1,
+      "itemCount": 1
+    },
+    "occurredAt": "2026-10-02T00:53:23.343Z"
+  },
+  {
+    "id": "5603c8aa-dd77-42fa-be7a-0df0c42bf037",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.created",
+    "resourceType": "change-set",
+    "resourceId": "090ec255-e00c-4497-8063-eba7c94de9af",
+    "summary": "创建变更集：修订号复位：充氮结束处理表",
+    "details": {
+      "revision": 1,
+      "itemCount": 1
+    },
+    "occurredAt": "2026-10-02T00:53:18.227Z"
+  },
+  {
+    "id": "f7a2aff4-ffc8-4733-a6d8-bc6eb937e39e",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.created",
+    "resourceType": "change-set",
+    "resourceId": "efe76191-9b32-4bba-88dc-610d31d2635c",
+    "summary": "创建变更集：修订号复位：充氮结束处理表",
+    "details": {
+      "revision": 1,
+      "itemCount": 1
+    },
+    "occurredAt": "2026-10-02T00:53:16.313Z"
+  },
+  {
+    "id": "92a34452-a9bf-4c83-9e1d-2a628e26f27c",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "flow",
+    "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
+    "summary": "保存规则流：自动充氮控制规则流",
+    "details": {
+      "revision": 4
+    },
+    "occurredAt": "2026-10-02T00:52:50.020Z"
+  },
+  {
+    "id": "7e87679a-f1fd-4d20-9c37-1d303e0f62de",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "flow",
+    "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
+    "summary": "保存规则流：自动充氮控制规则流",
+    "details": {
+      "revision": 3
+    },
+    "occurredAt": "2026-10-02T00:52:33.083Z"
+  },
+  {
+    "id": "87206b23-2315-4177-94e6-03533a14f9f5",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "table",
+    "resourceId": "e65de44d-c757-4bfb-9dd2-2862a2b43635",
+    "summary": "发布决策表：充氮状态迁移表",
+    "details": {
+      "revision": 8,
+      "version": 3
+    },
+    "occurredAt": "2026-10-02T00:52:16.242Z"
+  },
+  {
+    "id": "f3785283-75d1-4a00-917f-55d869a2b194",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.created",
+    "resourceType": "change-set",
+    "resourceId": "e343de41-a2d3-4701-b63a-47d5fc18f428",
+    "summary": "创建变更集：发布：充氮状态迁移表",
+    "details": {
+      "revision": 1,
+      "itemCount": 1
+    },
+    "occurredAt": "2026-10-02T00:51:59.213Z"
+  },
+  {
+    "id": "c0f78857-59d1-4144-9d52-b5aae59cf681",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.created",
+    "resourceType": "change-set",
+    "resourceId": "5517adbf-5af1-441a-8767-a6f8fb5c8006",
+    "summary": "创建变更集：发布：充氮状态迁移表",
+    "details": {
+      "revision": 1,
+      "itemCount": 1
+    },
+    "occurredAt": "2026-10-02T00:51:54.308Z"
+  },
+  {
+    "id": "40960aa9-e67f-46dc-b9ff-f961afd128db",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.created",
+    "resourceType": "change-set",
+    "resourceId": "34bdb8c3-e32d-4aab-a05f-32547f64b7bb",
+    "summary": "创建变更集：发布：充氮状态迁移表",
+    "details": {
+      "revision": 1,
+      "itemCount": 1
+    },
+    "occurredAt": "2026-10-02T00:51:44.199Z"
+  },
+  {
+    "id": "994e4063-8a15-488c-9384-cc80e6429e92",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "bom.updated",
+    "resourceType": "bom",
+    "resourceId": "project-63dbe140",
+    "summary": "更新字段模型到 v6",
+    "details": {
+      "version": 6,
+      "warnings": []
+    },
+    "occurredAt": "2026-10-02T00:51:44.158Z"
+  },
+  {
+    "id": "0b34d896-8e26-4179-9a2d-df3cbfa19a41",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.created",
+    "resourceType": "change-set",
+    "resourceId": "16ffbb13-4e1e-459e-98b9-a9bccd84f725",
+    "summary": "创建变更集：修订号复位：充氮状态迁移表",
+    "details": {
+      "revision": 1,
+      "itemCount": 1
+    },
+    "occurredAt": "2026-10-02T00:51:30.645Z"
+  },
+  {
+    "id": "6b2e2a6c-8033-4b82-856b-60f171a68c91",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "table",
+    "resourceId": "e65de44d-c757-4bfb-9dd2-2862a2b43635",
+    "summary": "保存决策表：充氮状态迁移表",
+    "details": {
+      "revision": 7
+    },
+    "occurredAt": "2026-10-02T00:51:30.634Z"
+  },
+  {
+    "id": "006c8331-1967-4a30-911c-10439f37c5e6",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "bom.updated",
+    "resourceType": "bom",
+    "resourceId": "project-63dbe140",
+    "summary": "更新字段模型到 v5",
+    "details": {
+      "version": 5,
+      "warnings": []
+    },
+    "occurredAt": "2026-10-02T00:51:30.618Z"
+  },
+  {
+    "id": "d4e32c14-5731-4ba7-a3e3-2b11df59d2a8",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.approve",
+    "resourceType": "change-set",
+    "resourceId": "19a0247f-eb8d-40bd-abe8-250fc9374cdd",
+    "summary": "批准：发布：充氮结束处理表",
+    "details": {
+      "revision": 3,
+      "comment": ""
+    },
+    "occurredAt": "2026-10-02T00:51:19.901Z"
+  },
+  {
+    "id": "1948522d-4b0d-486f-93bb-feb4dc0818d1",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.submit",
+    "resourceType": "change-set",
+    "resourceId": "19a0247f-eb8d-40bd-abe8-250fc9374cdd",
+    "summary": "提交评审：发布：充氮结束处理表",
+    "details": {
+      "revision": 2,
+      "comment": ""
+    },
+    "occurredAt": "2026-10-02T00:51:19.781Z"
+  },
+  {
+    "id": "01103f06-ea66-4eed-988b-c0cc6a3da067",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.created",
+    "resourceType": "change-set",
+    "resourceId": "19a0247f-eb8d-40bd-abe8-250fc9374cdd",
+    "summary": "创建变更集：发布：充氮结束处理表",
+    "details": {
+      "revision": 1,
+      "itemCount": 1
+    },
+    "occurredAt": "2026-10-02T00:51:19.758Z"
+  },
+  {
+    "id": "0027c090-4aed-4962-9157-0180df5be3b9",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.approve",
+    "resourceType": "change-set",
+    "resourceId": "90a1334a-d057-4953-965e-a11f43c846a1",
+    "summary": "批准：发布：充氮状态迁移表",
+    "details": {
+      "revision": 3,
+      "comment": ""
+    },
+    "occurredAt": "2026-10-02T00:51:19.731Z"
+  },
+  {
+    "id": "59241f44-1d08-48e4-b0ae-fd020868f460",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.submit",
+    "resourceType": "change-set",
+    "resourceId": "90a1334a-d057-4953-965e-a11f43c846a1",
+    "summary": "提交评审：发布：充氮状态迁移表",
+    "details": {
+      "revision": 2,
+      "comment": ""
+    },
+    "occurredAt": "2026-10-02T00:51:19.608Z"
+  },
+  {
+    "id": "e18a2fc2-6a4a-4bc6-8d45-03e054516ad5",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.created",
+    "resourceType": "change-set",
+    "resourceId": "90a1334a-d057-4953-965e-a11f43c846a1",
+    "summary": "创建变更集：发布：充氮状态迁移表",
+    "details": {
+      "revision": 1,
+      "itemCount": 1
+    },
+    "occurredAt": "2026-10-02T00:51:19.544Z"
+  },
+  {
+    "id": "587db422-475c-40c2-b6cb-f5484230603b",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.reject",
+    "resourceType": "change-set",
+    "resourceId": "9514bb38-bdef-469a-bc6c-907eede4a3d2",
+    "summary": "驳回：修订号复位：充氮结束处理表",
+    "details": {
+      "revision": 3,
+      "comment": "种子脚本：修订号复位（不发布，仅推进修订号）"
+    },
+    "occurredAt": "2026-10-02T00:51:19.532Z"
+  },
+  {
+    "id": "e962f565-0277-40a6-b2d5-268917334297",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.submit",
+    "resourceType": "change-set",
+    "resourceId": "9514bb38-bdef-469a-bc6c-907eede4a3d2",
+    "summary": "提交评审：修订号复位：充氮结束处理表",
+    "details": {
+      "revision": 2,
+      "comment": ""
+    },
+    "occurredAt": "2026-10-02T00:51:19.528Z"
+  },
+  {
+    "id": "3ed1024e-b1cc-4fa6-a7b8-bd796b750140",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.created",
+    "resourceType": "change-set",
+    "resourceId": "9514bb38-bdef-469a-bc6c-907eede4a3d2",
+    "summary": "创建变更集：修订号复位：充氮结束处理表",
+    "details": {
+      "revision": 1,
+      "itemCount": 1
+    },
+    "occurredAt": "2026-10-02T00:51:19.511Z"
+  },
+  {
+    "id": "59c47bd6-8804-4f6a-a697-e19a9621245b",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "table",
+    "resourceId": "94a34ecf-8f4c-4f2b-9909-39476b21c4fb",
+    "summary": "保存决策表：充氮结束处理表",
+    "details": {
+      "revision": 5
+    },
+    "occurredAt": "2026-10-02T00:51:19.499Z"
+  },
+  {
+    "id": "ad1bf557-6cf4-45eb-a609-c021d2e7e878",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.reject",
+    "resourceType": "change-set",
+    "resourceId": "91c37a8a-9d7e-415c-9775-9bf86d3a154d",
+    "summary": "驳回：修订号复位：充氮状态迁移表",
+    "details": {
+      "revision": 3,
+      "comment": "种子脚本：修订号复位（不发布，仅推进修订号）"
+    },
+    "occurredAt": "2026-10-02T00:51:19.479Z"
+  },
+  {
+    "id": "9ba98a7a-d0a9-4cd7-8965-01bac048efae",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.submit",
+    "resourceType": "change-set",
+    "resourceId": "91c37a8a-9d7e-415c-9775-9bf86d3a154d",
+    "summary": "提交评审：修订号复位：充氮状态迁移表",
+    "details": {
+      "revision": 2,
+      "comment": ""
+    },
+    "occurredAt": "2026-10-02T00:51:19.475Z"
+  },
+  {
+    "id": "1a33a3ae-c929-420f-a5b3-4e8c3458b262",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.created",
+    "resourceType": "change-set",
+    "resourceId": "91c37a8a-9d7e-415c-9775-9bf86d3a154d",
+    "summary": "创建变更集：修订号复位：充氮状态迁移表",
+    "details": {
+      "revision": 1,
+      "itemCount": 1
+    },
+    "occurredAt": "2026-10-02T00:51:19.424Z"
+  },
+  {
+    "id": "38b1de3a-e0f2-4c62-8eba-3bffb7b0aecc",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "table",
+    "resourceId": "e65de44d-c757-4bfb-9dd2-2862a2b43635",
+    "summary": "保存决策表：充氮状态迁移表",
+    "details": {
+      "revision": 5
+    },
+    "occurredAt": "2026-10-02T00:51:19.412Z"
+  },
+  {
+    "id": "38e95cfc-716c-4d9d-b5f0-00ad66e90f95",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "bom.updated",
+    "resourceType": "bom",
+    "resourceId": "project-63dbe140",
+    "summary": "更新字段模型到 v4",
+    "details": {
+      "version": 4,
+      "warnings": []
+    },
+    "occurredAt": "2026-10-02T00:51:19.397Z"
+  },
+  {
+    "id": "c12e422b-382e-4b19-86ef-eb5a8f396d7f",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "flow",
+    "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
+    "summary": "保存规则流：自动充氮控制规则流",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-10-02T00:50:20.099Z"
+  },
+  {
+    "id": "4378bff4-c6b4-44aa-bce5-9d01e48f19e3",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "flow",
+    "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
+    "summary": "创建规则流：未命名规则流",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-02T00:50:20.086Z"
+  },
+  {
+    "id": "176d32aa-2b12-4223-907c-d23518c190cb",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.approve",
+    "resourceType": "change-set",
+    "resourceId": "02f9f8b3-2b0c-4a24-a6a5-6df1ad3ea870",
+    "summary": "批准：发布：充氮设备态表",
+    "details": {
+      "revision": 3,
+      "comment": ""
+    },
+    "occurredAt": "2026-10-02T00:50:09.790Z"
+  },
+  {
+    "id": "403022d9-a5af-4f27-8cce-bd23ca9c9d3d",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.submit",
+    "resourceType": "change-set",
+    "resourceId": "02f9f8b3-2b0c-4a24-a6a5-6df1ad3ea870",
+    "summary": "提交评审：发布：充氮设备态表",
+    "details": {
+      "revision": 2,
+      "comment": ""
+    },
+    "occurredAt": "2026-10-02T00:50:09.656Z"
+  },
+  {
+    "id": "0bb6980a-6833-4246-9407-bdec2679b8b3",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.created",
+    "resourceType": "change-set",
+    "resourceId": "02f9f8b3-2b0c-4a24-a6a5-6df1ad3ea870",
+    "summary": "创建变更集：发布：充氮设备态表",
+    "details": {
+      "revision": 1,
+      "itemCount": 1
+    },
+    "occurredAt": "2026-10-02T00:50:09.583Z"
+  },
+  {
+    "id": "025d3bd6-9a4e-4f07-9a73-a01cc505eddd",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.approve",
+    "resourceType": "change-set",
+    "resourceId": "339ea0c3-267e-4f16-9387-d92273128b1f",
+    "summary": "批准：发布：充氮结束处理表",
+    "details": {
+      "revision": 3,
+      "comment": ""
+    },
+    "occurredAt": "2026-10-02T00:50:09.559Z"
+  },
+  {
+    "id": "75d2a139-0e1f-46d9-a6a3-a090911c5df9",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.submit",
+    "resourceType": "change-set",
+    "resourceId": "339ea0c3-267e-4f16-9387-d92273128b1f",
+    "summary": "提交评审：发布：充氮结束处理表",
+    "details": {
+      "revision": 2,
+      "comment": ""
+    },
+    "occurredAt": "2026-10-02T00:50:09.444Z"
+  },
+  {
+    "id": "493924a1-ae83-4e7e-9ca6-ddf604a11ef9",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.created",
+    "resourceType": "change-set",
+    "resourceId": "339ea0c3-267e-4f16-9387-d92273128b1f",
+    "summary": "创建变更集：发布：充氮结束处理表",
+    "details": {
+      "revision": 1,
+      "itemCount": 1
+    },
+    "occurredAt": "2026-10-02T00:50:09.386Z"
+  },
+  {
+    "id": "471d3458-7cb4-4538-8afe-561db807d716",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.approve",
+    "resourceType": "change-set",
+    "resourceId": "b290b742-c591-4d2f-86dc-915e4a64eed2",
+    "summary": "批准：发布：充氮状态迁移表",
+    "details": {
+      "revision": 3,
+      "comment": ""
+    },
+    "occurredAt": "2026-10-02T00:50:09.368Z"
+  },
+  {
+    "id": "e0d513f0-79e0-412d-877c-bb151fd3867a",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.submit",
+    "resourceType": "change-set",
+    "resourceId": "b290b742-c591-4d2f-86dc-915e4a64eed2",
+    "summary": "提交评审：发布：充氮状态迁移表",
+    "details": {
+      "revision": 2,
+      "comment": ""
+    },
+    "occurredAt": "2026-10-02T00:50:09.237Z"
+  },
+  {
+    "id": "8ecdb0db-44f7-4352-9a80-1d32f587f4ac",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "change-set.created",
+    "resourceType": "change-set",
+    "resourceId": "b290b742-c591-4d2f-86dc-915e4a64eed2",
+    "summary": "创建变更集：发布：充氮状态迁移表",
+    "details": {
+      "revision": 1,
+      "itemCount": 1
+    },
+    "occurredAt": "2026-10-02T00:50:09.203Z"
+  },
+  {
+    "id": "afb0b42c-f153-49eb-ac63-9b4f3bf45b0c",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "table",
+    "resourceId": "ee93be19-43ea-4570-a116-5413c360c419",
+    "summary": "保存决策表：充氮设备态表",
+    "details": {
+      "revision": 3
+    },
+    "occurredAt": "2026-10-02T00:50:09.191Z"
+  },
+  {
+    "id": "9ca4807e-6d62-47da-a4d7-2c067c4d811e",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "table",
+    "resourceId": "94a34ecf-8f4c-4f2b-9909-39476b21c4fb",
+    "summary": "保存决策表：充氮结束处理表",
+    "details": {
+      "revision": 3
+    },
+    "occurredAt": "2026-10-02T00:50:09.172Z"
+  },
+  {
+    "id": "7f302a9f-02c3-4315-bfef-92fa9f677517",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "table",
+    "resourceId": "e65de44d-c757-4bfb-9dd2-2862a2b43635",
+    "summary": "保存决策表：充氮状态迁移表",
+    "details": {
+      "revision": 3
+    },
+    "occurredAt": "2026-10-02T00:50:09.155Z"
+  },
+  {
+    "id": "7591921d-e864-449e-8ee2-867c74a408ee",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "bom.updated",
+    "resourceType": "bom",
+    "resourceId": "project-63dbe140",
+    "summary": "更新字段模型到 v3",
+    "details": {
+      "version": 3,
+      "warnings": []
+    },
+    "occurredAt": "2026-10-02T00:50:09.139Z"
+  },
+  {
+    "id": "9382c34c-6171-4267-8da2-9aea08caeebd",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "table",
+    "resourceId": "ee93be19-43ea-4570-a116-5413c360c419",
+    "summary": "保存决策表：充氮设备态表",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-10-02T00:47:38.125Z"
+  },
+  {
+    "id": "139b0a14-58a4-4cb2-8492-cde05924dbc4",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "table",
+    "resourceId": "ee93be19-43ea-4570-a116-5413c360c419",
+    "summary": "创建决策表：充氮设备态表",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-02T00:47:38.116Z"
+  },
+  {
+    "id": "716a1dfd-57e6-402a-85b2-03e002acae0b",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "table",
+    "resourceId": "94a34ecf-8f4c-4f2b-9909-39476b21c4fb",
+    "summary": "保存决策表：充氮结束处理表",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-10-02T00:47:38.103Z"
+  },
+  {
+    "id": "01268ab5-9350-4eb2-8e70-52c56f35762a",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "table",
+    "resourceId": "94a34ecf-8f4c-4f2b-9909-39476b21c4fb",
+    "summary": "创建决策表：充氮结束处理表",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-02T00:47:38.094Z"
+  },
+  {
+    "id": "a0bb5d33-d4b2-470b-8aa8-cc6a497d2f3f",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "table",
+    "resourceId": "e65de44d-c757-4bfb-9dd2-2862a2b43635",
+    "summary": "保存决策表：充氮状态迁移表",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-10-02T00:47:38.079Z"
+  },
+  {
+    "id": "a6982376-29a8-4d13-b26e-818b3697f042",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "table",
+    "resourceId": "e65de44d-c757-4bfb-9dd2-2862a2b43635",
+    "summary": "创建决策表：充氮状态迁移表",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-02T00:47:38.069Z"
+  },
+  {
+    "id": "9a0ab09d-213b-4cbc-87dc-5d31895ef00d",
+    "projectId": "project-63dbe140",
+    "actor": "local-user",
+    "action": "bom.updated",
+    "resourceType": "bom",
+    "resourceId": "project-63dbe140",
+    "summary": "更新字段模型到 v2",
+    "details": {
+      "version": 2,
+      "warnings": []
+    },
+    "occurredAt": "2026-10-02T00:47:38.058Z"
+  },
+  {
+    "id": "3f288f35-32ea-41a5-8072-ebc71302ba35",
+    "projectId": "default",
+    "actor": "local-user",
+    "action": "project.created",
+    "resourceType": "project",
+    "resourceId": "project-63dbe140",
+    "summary": "创建项目：粮库自动充氮控制（决策表状态机）",
+    "details": {},
+    "occurredAt": "2026-10-02T00:47:34.339Z"
+  },
+  {
+    "id": "c8b906f5-34e8-4c8b-9ab2-c76ac6169ce2",
+    "projectId": "default",
+    "actor": "wallace",
+    "action": "asset.publish",
+    "resourceType": "flow",
+    "resourceId": "899825a4-4526-4972-9e7d-c9261fdd6a8d",
+    "summary": "发布规则流：信用风控规则流（演示）",
+    "details": {
+      "revision": 2,
+      "version": 2
+    },
+    "occurredAt": "2026-10-02T00:21:47.270Z"
+  },
+  {
+    "id": "31ceb8f8-5cfa-4e5e-b8d8-9ca324bd262a",
+    "projectId": "default",
+    "actor": "wallace",
+    "action": "asset.publish",
+    "resourceType": "table",
+    "resourceId": "750c97fe-2240-4168-b9e9-bcb0d662bd27",
+    "summary": "发布决策表：信用评级决策表（演示）",
+    "details": {
+      "revision": 4,
+      "version": 2
+    },
+    "occurredAt": "2026-10-02T00:21:31.802Z"
+  },
+  {
+    "id": "5c734348-4e05-4221-9d21-12e12e5fa09a",
+    "projectId": "default",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "table",
+    "resourceId": "750c97fe-2240-4168-b9e9-bcb0d662bd27",
+    "summary": "保存决策表：信用评级决策表（演示）",
+    "details": {
+      "revision": 3
+    },
+    "occurredAt": "2026-10-02T00:21:23.996Z"
+  },
+  {
+    "id": "a0594510-3955-4605-a06b-25081c7484c5",
+    "projectId": "default",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "table",
+    "resourceId": "750c97fe-2240-4168-b9e9-bcb0d662bd27",
+    "summary": "保存决策表：信用评级决策表（演示）",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-10-02T00:21:14.264Z"
+  },
+  {
+    "id": "1881a4fd-9024-4e00-bf90-09bd1b8bf55d",
+    "projectId": "default",
+    "actor": "wallace",
+    "action": "asset.created",
+    "resourceType": "rule",
+    "resourceId": "8d37dc62-f80d-4a3e-a40b-b5f203781216",
+    "summary": "创建规则：e2e验证条件",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-01T23:43:10.220Z"
+  },
+  {
+    "id": "4a6f3535-a11f-473a-9e50-009a411d0411",
+    "projectId": "project-93d1309c",
+    "actor": "wallace",
+    "action": "asset.publish",
+    "resourceType": "flow",
+    "resourceId": "f6068fd9-9304-4afc-b0fa-76a495f0b4da",
+    "summary": "发布规则流：自动充氮控制规则流（Drools）",
+    "details": {
+      "revision": 6,
+      "version": 4
+    },
+    "occurredAt": "2026-10-01T12:41:52.867Z"
+  },
+  {
+    "id": "7e8be300-91ec-4044-aba4-45c54b5d7289",
+    "projectId": "project-93d1309c",
+    "actor": "wallace",
+    "action": "asset.publish",
+    "resourceType": "flow",
+    "resourceId": "f6068fd9-9304-4afc-b0fa-76a495f0b4da",
+    "summary": "发布规则流：自动充氮控制规则流（Drools）",
+    "details": {
+      "revision": 5,
+      "version": 3
+    },
+    "occurredAt": "2026-10-01T12:41:32.662Z"
+  },
+  {
+    "id": "119b3f40-cc7f-40ad-9596-4bccc53f9e8d",
+    "projectId": "project-93d1309c",
+    "actor": "wallace",
+    "action": "asset.publish",
+    "resourceType": "flow",
+    "resourceId": "f6068fd9-9304-4afc-b0fa-76a495f0b4da",
+    "summary": "发布规则流：自动充氮控制规则流（Drools）",
+    "details": {
+      "revision": 4,
+      "version": 2
+    },
+    "occurredAt": "2026-10-01T12:41:29.970Z"
+  },
+  {
+    "id": "e000b573-1111-4d21-aaa5-0fcc66242560",
+    "projectId": "project-93d1309c",
+    "actor": "wallace",
+    "action": "change-set.approve",
+    "resourceType": "change-set",
+    "resourceId": "2cb47568-829a-40d2-917a-228ff3ec0bb6",
+    "summary": "批准：审核：到达结束时间完成",
+    "details": {
+      "revision": 2,
+      "comment": ""
+    },
+    "occurredAt": "2026-10-01T12:41:15.982Z"
+  },
+  {
+    "id": "27480038-5919-4106-aea8-8102297aff57",
+    "projectId": "project-93d1309c",
+    "actor": "wallace",
+    "action": "change-set.submit",
+    "resourceType": "change-set",
+    "resourceId": "2cb47568-829a-40d2-917a-228ff3ec0bb6",
+    "summary": "提交审核：审核：到达结束时间完成",
+    "details": {
+      "revision": 1,
+      "itemCount": 1,
+      "assetId": "bcf91853-7b30-4b1c-9d7f-56b7a7f88198"
+    },
+    "occurredAt": "2026-10-01T12:41:07.957Z"
+  },
+  {
+    "id": "30a1707e-7fff-4625-8121-81f359c5cd01",
+    "projectId": "project-93d1309c",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "bcf91853-7b30-4b1c-9d7f-56b7a7f88198",
+    "summary": "保存规则：到达结束时间完成",
+    "details": {
+      "revision": 4
+    },
+    "occurredAt": "2026-10-01T12:39:07.903Z"
+  },
+  {
+    "id": "94c914c5-b90b-4511-abc1-a274186a4c7b",
+    "projectId": "project-93d1309c",
+    "actor": "local-user",
+    "action": "release.deployed",
+    "resourceType": "release",
+    "resourceId": "5d104ce6-c32f-44e1-8553-79ea255af43b",
+    "summary": "部署 Release：自动充氮控制 Drools v1",
+    "details": {
+      "environment": "local",
+      "deploymentId": "local:5d104ce6-c32f-44e1-8553-79ea255af43b"
+    },
+    "occurredAt": "2026-10-01T12:30:26.664Z"
+  },
+  {
+    "id": "d104fcf9-49da-4a08-b3ae-38e76aa41bc2",
+    "projectId": "project-93d1309c",
+    "actor": "local-user",
+    "action": "release.created",
+    "resourceType": "release",
+    "resourceId": "5d104ce6-c32f-44e1-8553-79ea255af43b",
+    "summary": "创建 Release：自动充氮控制 Drools v1",
+    "details": {
+      "decisionService": "project-93d1309c/nitrogen-control",
+      "version": 1,
+      "checksum": "sha256:b5adee108660bc81dc2f17fdcc7703d32a5f14ca9f6888f02cfd5b488b1191db"
+    },
+    "occurredAt": "2026-10-01T12:30:25.960Z"
+  },
+  {
+    "id": "d3333a8a-9664-4609-994a-b459ac6ab8a3",
+    "projectId": "project-93d1309c",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "flow",
+    "resourceId": "f6068fd9-9304-4afc-b0fa-76a495f0b4da",
+    "summary": "发布规则流：自动充氮控制规则流（Drools）",
+    "details": {
+      "revision": 3,
+      "version": 1
+    },
+    "occurredAt": "2026-10-01T12:30:14.235Z"
+  },
+  {
+    "id": "aedc29c1-b0ef-4132-b830-ee476f2a4a09",
+    "projectId": "project-93d1309c",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "flow",
+    "resourceId": "f6068fd9-9304-4afc-b0fa-76a495f0b4da",
+    "summary": "保存规则流：自动充氮控制规则流（Drools）",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-10-01T12:30:14.053Z"
+  },
+  {
+    "id": "39420e66-c3bd-44e7-94f3-64d486c8ba96",
+    "projectId": "project-93d1309c",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "bcf91853-7b30-4b1c-9d7f-56b7a7f88198",
+    "summary": "发布规则：到达结束时间完成",
+    "details": {
+      "revision": 3,
+      "version": 1
+    },
+    "occurredAt": "2026-10-01T12:30:03.899Z"
+  },
+  {
+    "id": "659014d8-a83c-497e-aa44-07860638c493",
+    "projectId": "project-93d1309c",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "dac9914f-c568-4188-b7f3-2735d95418c8",
+    "summary": "发布规则：补氮达标转环流",
+    "details": {
+      "revision": 3,
+      "version": 1
+    },
+    "occurredAt": "2026-10-01T12:30:03.832Z"
+  },
+  {
+    "id": "2a8cbe52-6038-4fff-a983-d9b19f808ec3",
+    "projectId": "project-93d1309c",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "ad4177f7-027d-4349-b244-839d92323ed1",
+    "summary": "发布规则：保氮浓度过低转补氮",
+    "details": {
+      "revision": 3,
+      "version": 1
+    },
+    "occurredAt": "2026-10-01T12:30:03.769Z"
+  },
+  {
+    "id": "3faf9c7f-a41d-4608-8413-2829c6853f41",
+    "projectId": "project-93d1309c",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "c1beb4bb-54a2-4b8c-bc4a-3211fef679dc",
+    "summary": "发布规则：环流期满转保氮",
+    "details": {
+      "revision": 3,
+      "version": 1
+    },
+    "occurredAt": "2026-10-01T12:30:03.705Z"
+  },
+  {
+    "id": "585e9e5a-b131-4d07-8be6-c605eff187f6",
+    "projectId": "project-93d1309c",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "6488f565-5399-4aee-82f3-1a6941de7a3b",
+    "summary": "发布规则：充氮浓度达标转环流",
+    "details": {
+      "revision": 3,
+      "version": 1
+    },
+    "occurredAt": "2026-10-01T12:30:03.643Z"
+  },
+  {
+    "id": "b81ccb8d-660f-40a7-8b20-2f19c96b2383",
+    "projectId": "project-93d1309c",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "rule",
+    "resourceId": "08fcf2e6-1eb6-4542-925e-53a5620c9667",
+    "summary": "发布规则：启动充氮",
+    "details": {
+      "revision": 3,
+      "version": 1
+    },
+    "occurredAt": "2026-10-01T12:30:03.574Z"
+  },
+  {
+    "id": "2c4ebf5f-041c-47a1-ab77-2836824586f0",
+    "projectId": "project-93d1309c",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "flow",
+    "resourceId": "f6068fd9-9304-4afc-b0fa-76a495f0b4da",
+    "summary": "创建规则流：未命名规则流",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-01T12:29:20.685Z"
+  },
+  {
+    "id": "913a62cb-774e-4b8e-a354-0a6e82c011c1",
+    "projectId": "project-93d1309c",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "bcf91853-7b30-4b1c-9d7f-56b7a7f88198",
+    "summary": "保存规则：到达结束时间完成",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-10-01T12:28:49.447Z"
+  },
+  {
+    "id": "c6048507-6ddf-42f6-a018-8f29acce2715",
+    "projectId": "project-93d1309c",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "rule",
+    "resourceId": "bcf91853-7b30-4b1c-9d7f-56b7a7f88198",
+    "summary": "创建规则：到达结束时间完成",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-01T12:28:49.442Z"
+  },
+  {
+    "id": "ed1e7c0e-2df5-40bd-935a-53b8ad061fcc",
+    "projectId": "project-93d1309c",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "dac9914f-c568-4188-b7f3-2735d95418c8",
+    "summary": "保存规则：补氮达标转环流",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-10-01T12:28:49.437Z"
+  },
+  {
+    "id": "ff40e279-8cc7-4096-b096-4d4be77a50b6",
+    "projectId": "project-93d1309c",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "rule",
+    "resourceId": "dac9914f-c568-4188-b7f3-2735d95418c8",
+    "summary": "创建规则：补氮达标转环流",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-01T12:28:49.431Z"
+  },
+  {
+    "id": "329865e3-3086-4f9c-8dcd-ed166973e361",
+    "projectId": "project-93d1309c",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "ad4177f7-027d-4349-b244-839d92323ed1",
+    "summary": "保存规则：保氮浓度过低转补氮",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-10-01T12:28:49.426Z"
+  },
+  {
+    "id": "388dc7f1-fe0d-4f36-8487-c922fca71104",
+    "projectId": "project-93d1309c",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "rule",
+    "resourceId": "ad4177f7-027d-4349-b244-839d92323ed1",
+    "summary": "创建规则：保氮浓度过低转补氮",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-01T12:28:49.420Z"
+  },
+  {
+    "id": "87ba7144-702a-4074-b9a0-a377881cd37d",
+    "projectId": "project-93d1309c",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "c1beb4bb-54a2-4b8c-bc4a-3211fef679dc",
+    "summary": "保存规则：环流期满转保氮",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-10-01T12:28:49.413Z"
+  },
+  {
+    "id": "5f968327-3e58-45e3-b630-2507b22aaa85",
+    "projectId": "project-93d1309c",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "rule",
+    "resourceId": "c1beb4bb-54a2-4b8c-bc4a-3211fef679dc",
+    "summary": "创建规则：环流期满转保氮",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-01T12:28:49.405Z"
+  },
+  {
+    "id": "3a3bcf0e-2d4f-45c0-bbd5-2dac66b41905",
+    "projectId": "project-93d1309c",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "6488f565-5399-4aee-82f3-1a6941de7a3b",
+    "summary": "保存规则：充氮浓度达标转环流",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-10-01T12:28:49.399Z"
+  },
+  {
+    "id": "48d9aa70-0ea8-4fd4-ad94-916cad8ebd14",
+    "projectId": "project-93d1309c",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "rule",
+    "resourceId": "6488f565-5399-4aee-82f3-1a6941de7a3b",
+    "summary": "创建规则：充氮浓度达标转环流",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-01T12:28:49.391Z"
+  },
+  {
+    "id": "27b4738b-82fc-48ee-b9c9-2dd29cf267d1",
+    "projectId": "project-93d1309c",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "08fcf2e6-1eb6-4542-925e-53a5620c9667",
+    "summary": "保存规则：启动充氮",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-10-01T12:28:49.384Z"
+  },
+  {
+    "id": "ad16fa54-f620-436a-a2f9-18096b632107",
+    "projectId": "project-93d1309c",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "rule",
+    "resourceId": "08fcf2e6-1eb6-4542-925e-53a5620c9667",
+    "summary": "创建规则：启动充氮",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-01T12:28:49.373Z"
+  },
+  {
+    "id": "f33368ea-e652-4fe5-9d14-fae2b0bfe77e",
+    "projectId": "project-93d1309c",
+    "actor": "local-user",
+    "action": "bom.updated",
+    "resourceType": "bom",
+    "resourceId": "project-93d1309c",
+    "summary": "更新字段模型到 v2",
+    "details": {
+      "version": 2,
+      "warnings": []
+    },
+    "occurredAt": "2026-10-01T12:27:13.489Z"
+  },
+  {
+    "id": "5cd3be1b-cc8b-4d49-b0ed-2e31d6bd033c",
+    "projectId": "default",
+    "actor": "local-user",
+    "action": "project.created",
+    "resourceType": "project",
+    "resourceId": "project-93d1309c",
+    "summary": "创建项目：粮库自动充氮控制（Drools）",
+    "details": {},
+    "occurredAt": "2026-10-01T12:25:38.703Z"
+  },
+  {
+    "id": "4eafa6f3-5d12-46f4-962b-0d501703d27d",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "test-suite.run",
+    "resourceType": "test-suite",
+    "resourceId": "4455b36e-f5d9-4d2f-a5a8-aa296b4f3fcf",
+    "summary": "运行测试套件：氨气浓度告警测试套件",
+    "details": {
+      "revision": 14,
+      "passed": true,
+      "runId": "60e9636d-e6bf-475a-ba6d-1a9be32d75ea"
+    },
+    "occurredAt": "2026-10-01T07:02:39.237Z"
+  },
+  {
+    "id": "abd9d34f-ec6f-41e7-b418-6c022a76bae6",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "test-suite.archive",
+    "resourceType": "test-suite",
+    "resourceId": "83eb35e7-4863-4803-b4dd-b181904dd11d",
+    "summary": "归档测试套件：1212121 自动骨架",
+    "details": {
+      "revision": 3
+    },
+    "occurredAt": "2026-10-01T07:02:25.340Z"
+  },
+  {
+    "id": "979b4d2f-eb6a-4ec6-ad62-e11ca639d1ca",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "test-suite.run-all",
+    "resourceType": "project",
+    "resourceId": "project-6f50ddcf",
+    "summary": "运行全量回归测试",
+    "details": {
+      "total": 7,
+      "passed": 2
+    },
+    "occurredAt": "2026-10-01T07:02:04.685Z"
+  },
+  {
+    "id": "96712940-f6df-43a3-bd2b-9d0e15d3a2c5",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.publish",
+    "resourceType": "event-stream",
+    "resourceId": "73fd77d1-d5d6-44ca-a65a-c4e715023b1c",
+    "summary": "发布事件流：氨气浓度复杂事件检测",
+    "details": {
+      "revision": 12,
+      "version": 5
+    },
+    "occurredAt": "2026-10-01T03:14:50.980Z"
+  },
+  {
+    "id": "43ed46ad-21a5-4021-9505-3e5fdece254d",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "73fd77d1-d5d6-44ca-a65a-c4e715023b1c",
+    "summary": "保存事件流：氨气浓度复杂事件检测",
+    "details": {
+      "revision": 11
+    },
+    "occurredAt": "2026-10-01T03:14:50.934Z"
+  },
+  {
+    "id": "e14d0ab9-8121-44a3-ba9f-4db9c1a643ad",
+    "projectId": "project-7c12c971",
+    "actor": "local-user",
+    "action": "release.deployed",
+    "resourceType": "release",
+    "resourceId": "ff06f66f-0819-4852-bbe6-0fc620912a23",
+    "summary": "部署 Release：自动充氮状态迁移 v4（阶段目录+向导式）",
+    "details": {
+      "environment": "local",
+      "deploymentId": "local:ff06f66f-0819-4852-bbe6-0fc620912a23"
+    },
+    "occurredAt": "2026-10-01T02:54:44.535Z"
+  },
+  {
+    "id": "a3dac47e-0d11-4ded-9b5a-f1f8f217e532",
+    "projectId": "project-7c12c971",
+    "actor": "local-user",
+    "action": "release.created",
+    "resourceType": "release",
+    "resourceId": "ff06f66f-0819-4852-bbe6-0fc620912a23",
+    "summary": "创建 Release：自动充氮状态迁移 v4（阶段目录+向导式）",
+    "details": {
+      "decisionService": "project-7c12c971/nitrogen-phase",
+      "version": 1,
+      "checksum": "sha256:c3825d231974ef3ce281cc89fd03882de5cb6b607f6db8ab89885ec3ee932b35"
+    },
+    "occurredAt": "2026-10-01T02:54:37.605Z"
+  },
+  {
+    "id": "192dc1b4-8e30-4a88-88d1-87ef9dc72818",
+    "projectId": "project-7c12c971",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "event-stream",
+    "resourceId": "63461191-b9c2-4c8c-a5af-6477a94f59ff",
+    "summary": "发布事件流：自动充氮状态迁移规则",
+    "details": {
+      "revision": 8,
+      "version": 4
+    },
+    "occurredAt": "2026-10-01T02:53:56.468Z"
+  },
+  {
+    "id": "b7bd4726-639b-4b40-9635-46991fde1760",
+    "projectId": "project-7c12c971",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "63461191-b9c2-4c8c-a5af-6477a94f59ff",
+    "summary": "保存事件流：自动充氮状态迁移规则",
+    "details": {
+      "revision": 7
+    },
+    "occurredAt": "2026-10-01T02:53:43.071Z"
+  },
+  {
+    "id": "bed4257d-161f-4cd0-ae86-f9792e53671d",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.publish",
+    "resourceType": "event-stream",
+    "resourceId": "c1e62a95-d9ad-4b97-a336-3c1884e274ed",
+    "summary": "发布事件流：传感器异常检测",
+    "details": {
+      "revision": 26,
+      "version": 6
+    },
+    "occurredAt": "2026-10-01T02:40:42.009Z"
+  },
+  {
+    "id": "70bd93d4-5148-41ff-813a-0ad9d1502ff8",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "c1e62a95-d9ad-4b97-a336-3c1884e274ed",
+    "summary": "保存事件流：传感器异常检测",
+    "details": {
+      "revision": 25
+    },
+    "occurredAt": "2026-10-01T02:40:41.966Z"
+  },
+  {
+    "id": "db2ed36b-0f59-44e5-828b-3c6f9913180f",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "test-suite.created",
+    "resourceType": "test-suite",
+    "resourceId": "d72384f2-d006-40db-9e39-ce242b3f6091",
+    "summary": "创建测试套件：事件计数 自动骨架",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-01T02:40:39.685Z"
+  },
+  {
+    "id": "cc28a53e-010c-4456-8660-4f21536607c1",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "c1e62a95-d9ad-4b97-a336-3c1884e274ed",
+    "summary": "保存事件流：传感器异常检测",
+    "details": {
+      "revision": 24
+    },
+    "occurredAt": "2026-10-01T02:40:39.662Z"
+  },
+  {
+    "id": "d31a02ac-d195-486f-bc50-9ddba36777b9",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "c1e62a95-d9ad-4b97-a336-3c1884e274ed",
+    "summary": "保存事件流：传感器异常检测",
+    "details": {
+      "revision": 23
+    },
+    "occurredAt": "2026-10-01T02:40:37.119Z"
+  },
+  {
+    "id": "b115a920-f9d1-4d8f-988d-e7b79e43ff24",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "c1e62a95-d9ad-4b97-a336-3c1884e274ed",
+    "summary": "保存事件流：传感器异常检测",
+    "details": {
+      "revision": 22
+    },
+    "occurredAt": "2026-10-01T02:40:35.699Z"
+  },
+  {
+    "id": "5cfc1a7f-d848-424a-81b2-d47ac471bad7",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "c1e62a95-d9ad-4b97-a336-3c1884e274ed",
+    "summary": "保存事件流：传感器异常检测",
+    "details": {
+      "revision": 21
+    },
+    "occurredAt": "2026-10-01T02:40:22.088Z"
+  },
+  {
+    "id": "5d976af6-d47d-4ceb-a762-ba143a26c2ce",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "c1e62a95-d9ad-4b97-a336-3c1884e274ed",
+    "summary": "保存事件流：传感器异常检测",
+    "details": {
+      "revision": 20
+    },
+    "occurredAt": "2026-10-01T02:40:21.914Z"
+  },
+  {
+    "id": "c9d3807d-0f2b-42ca-a4da-902d6711d7b1",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.archive",
+    "resourceType": "event-stream",
+    "resourceId": "fe50e00b-7067-427f-81d0-69150bd19474",
+    "summary": "删除事件流：传感器异常检测",
+    "details": {
+      "revision": 11,
+      "publishedVersion": 3
+    },
+    "occurredAt": "2026-10-01T02:28:58.304Z"
+  },
+  {
+    "id": "8b82cb27-702d-4ace-ba0d-b92117b4d56f",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "fe50e00b-7067-427f-81d0-69150bd19474",
+    "summary": "保存事件流：传感器异常检测",
+    "details": {
+      "revision": 10
+    },
+    "occurredAt": "2026-10-01T02:28:56.213Z"
+  },
+  {
+    "id": "6a880013-13db-495e-aaaa-41fbd8da3fd4",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "test-suite.created",
+    "resourceType": "test-suite",
+    "resourceId": "83eb35e7-4863-4803-b4dd-b181904dd11d",
+    "summary": "创建测试套件：1212121 自动骨架",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-01T02:28:54.919Z"
+  },
+  {
+    "id": "e8d8d92e-db63-4989-9a4a-6f26d46c5340",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "fe50e00b-7067-427f-81d0-69150bd19474",
+    "summary": "保存事件流：传感器异常检测",
+    "details": {
+      "revision": 9
+    },
+    "occurredAt": "2026-10-01T02:28:54.899Z"
+  },
+  {
+    "id": "7668080d-42b1-4222-9588-dbdcf7d991f5",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.publish",
+    "resourceType": "event-stream",
+    "resourceId": "fe50e00b-7067-427f-81d0-69150bd19474",
+    "summary": "发布事件流：传感器异常检测",
+    "details": {
+      "revision": 8,
+      "version": 3
+    },
+    "occurredAt": "2026-10-01T02:28:54.612Z"
+  },
+  {
+    "id": "3dc3b997-77df-423e-a0e7-8840c9fe121e",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "fe50e00b-7067-427f-81d0-69150bd19474",
+    "summary": "保存事件流：传感器异常检测",
+    "details": {
+      "revision": 7
+    },
+    "occurredAt": "2026-10-01T02:28:54.546Z"
+  },
+  {
+    "id": "22683c34-4c3c-42fc-b003-2cbc93e74e7e",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.publish",
+    "resourceType": "event-stream",
+    "resourceId": "fe50e00b-7067-427f-81d0-69150bd19474",
+    "summary": "发布事件流：传感器异常检测",
+    "details": {
+      "revision": 6,
+      "version": 2
+    },
+    "occurredAt": "2026-10-01T02:28:54.486Z"
+  },
+  {
+    "id": "52bd3cac-e7a4-4a00-b726-c0f0a01057ba",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "fe50e00b-7067-427f-81d0-69150bd19474",
+    "summary": "保存事件流：传感器异常检测",
+    "details": {
+      "revision": 5
+    },
+    "occurredAt": "2026-10-01T02:28:54.409Z"
+  },
+  {
+    "id": "13c43369-6cc1-4cb8-baa9-8bd781146bf0",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.publish",
+    "resourceType": "event-stream",
+    "resourceId": "fe50e00b-7067-427f-81d0-69150bd19474",
+    "summary": "发布事件流：传感器异常检测",
+    "details": {
+      "revision": 4,
+      "version": 1
+    },
+    "occurredAt": "2026-10-01T02:28:54.076Z"
+  },
+  {
+    "id": "15406e26-09d2-4e22-be19-0762de6c0b4d",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "fe50e00b-7067-427f-81d0-69150bd19474",
+    "summary": "保存事件流：传感器异常检测",
+    "details": {
+      "revision": 3
+    },
+    "occurredAt": "2026-10-01T02:28:53.996Z"
+  },
+  {
+    "id": "8a4997bd-a95e-4602-8a36-bded2a1f77f5",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "fe50e00b-7067-427f-81d0-69150bd19474",
+    "summary": "保存事件流：传感器异常检测",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-10-01T02:28:53.638Z"
+  },
+  {
+    "id": "97017d32-859b-44a3-b98b-75ed2fb09328",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.created",
+    "resourceType": "event-stream",
+    "resourceId": "fe50e00b-7067-427f-81d0-69150bd19474",
+    "summary": "创建事件流：传感器异常检测",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-01T02:28:37.420Z"
+  },
+  {
+    "id": "5c268908-5802-4289-a791-97407ba5acb1",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.publish",
+    "resourceType": "event-stream",
+    "resourceId": "c1e62a95-d9ad-4b97-a336-3c1884e274ed",
+    "summary": "发布事件流：传感器异常检测",
+    "details": {
+      "revision": 19,
+      "version": 5
+    },
+    "occurredAt": "2026-10-01T02:28:20.727Z"
+  },
+  {
+    "id": "9fe24713-7395-4fca-b9eb-ad8ec771fa4c",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "c1e62a95-d9ad-4b97-a336-3c1884e274ed",
+    "summary": "保存事件流：传感器异常检测",
+    "details": {
+      "revision": 18
+    },
+    "occurredAt": "2026-10-01T02:28:20.641Z"
+  },
+  {
+    "id": "720c89c0-eead-45a4-a6bd-e0d766aba3ed",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "test-suite.created",
+    "resourceType": "test-suite",
+    "resourceId": "607102c6-e0bc-4f4b-9a9c-e8f9cd64ac7d",
+    "summary": "创建测试套件：窗口均值手动阀辅导费 自动骨架",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-01T02:28:20.208Z"
+  },
+  {
+    "id": "544e9491-76e4-4887-8914-63a730c40259",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "c1e62a95-d9ad-4b97-a336-3c1884e274ed",
+    "summary": "保存事件流：传感器异常检测",
+    "details": {
+      "revision": 17
+    },
+    "occurredAt": "2026-10-01T02:28:20.189Z"
+  },
+  {
+    "id": "ee6712be-0ef8-4e8b-b046-d57a6aa4c8df",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "c1e62a95-d9ad-4b97-a336-3c1884e274ed",
+    "summary": "保存事件流：传感器异常检测",
+    "details": {
+      "revision": 16
+    },
+    "occurredAt": "2026-10-01T02:28:19.350Z"
+  },
+  {
+    "id": "58bc3c31-8411-47c1-8441-036970c2ae73",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "c1e62a95-d9ad-4b97-a336-3c1884e274ed",
+    "summary": "保存事件流：传感器异常检测",
+    "details": {
+      "revision": 15
+    },
+    "occurredAt": "2026-10-01T02:28:19.189Z"
+  },
+  {
+    "id": "98a49de2-3c6b-4024-af41-379889a73ea6",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "test-suite.created",
+    "resourceType": "test-suite",
+    "resourceId": "8303c559-3b47-423c-b747-0aa0355c9e60",
+    "summary": "创建测试套件：窗口均值 自动骨架",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-01T02:27:59.838Z"
+  },
+  {
+    "id": "0e8cbc28-a146-4ad9-8e26-7ed29618df28",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "c1e62a95-d9ad-4b97-a336-3c1884e274ed",
+    "summary": "保存事件流：传感器异常检测",
+    "details": {
+      "revision": 14
+    },
+    "occurredAt": "2026-10-01T02:27:59.817Z"
+  },
+  {
+    "id": "7ba8264a-54a8-4bd0-adf1-59c9c0c1fe4d",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.publish",
+    "resourceType": "event-stream",
+    "resourceId": "c1e62a95-d9ad-4b97-a336-3c1884e274ed",
+    "summary": "发布事件流：传感器异常检测",
+    "details": {
+      "revision": 13,
+      "version": 4
+    },
+    "occurredAt": "2026-10-01T02:27:59.087Z"
+  },
+  {
+    "id": "009dcbf8-2065-4125-8c27-599a7cdada7d",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "c1e62a95-d9ad-4b97-a336-3c1884e274ed",
+    "summary": "保存事件流：传感器异常检测",
+    "details": {
+      "revision": 12
+    },
+    "occurredAt": "2026-10-01T02:27:59.003Z"
+  },
+  {
+    "id": "824e7982-51d5-440e-8dfc-01307dae60e2",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.publish",
+    "resourceType": "event-stream",
+    "resourceId": "c1e62a95-d9ad-4b97-a336-3c1884e274ed",
+    "summary": "发布事件流：传感器异常检测",
+    "details": {
+      "revision": 11,
+      "version": 3
+    },
+    "occurredAt": "2026-10-01T02:27:58.909Z"
+  },
+  {
+    "id": "f401a2c7-eb5f-41ca-93c0-96db9fc7bf02",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "c1e62a95-d9ad-4b97-a336-3c1884e274ed",
+    "summary": "保存事件流：传感器异常检测",
+    "details": {
+      "revision": 10
+    },
+    "occurredAt": "2026-10-01T02:27:58.826Z"
+  },
+  {
+    "id": "47777703-bd06-464c-a48c-99325c8640e6",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.publish",
+    "resourceType": "event-stream",
+    "resourceId": "c1e62a95-d9ad-4b97-a336-3c1884e274ed",
+    "summary": "发布事件流：传感器异常检测",
+    "details": {
+      "revision": 9,
+      "version": 2
+    },
+    "occurredAt": "2026-10-01T02:27:58.209Z"
+  },
+  {
+    "id": "f815ccb0-c2bc-4d21-bf53-c5a5cec61e5a",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "c1e62a95-d9ad-4b97-a336-3c1884e274ed",
+    "summary": "保存事件流：传感器异常检测",
+    "details": {
+      "revision": 8
+    },
+    "occurredAt": "2026-10-01T02:27:58.126Z"
+  },
+  {
+    "id": "8b90b7eb-a343-49e8-873e-7d6f39ee0a8e",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "c1e62a95-d9ad-4b97-a336-3c1884e274ed",
+    "summary": "保存事件流：传感器异常检测",
+    "details": {
+      "revision": 7
+    },
+    "occurredAt": "2026-10-01T02:27:54.462Z"
+  },
+  {
+    "id": "6bc94c0b-1546-4bf1-8928-7d48e86412f5",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "c1e62a95-d9ad-4b97-a336-3c1884e274ed",
+    "summary": "保存事件流：传感器异常检测",
+    "details": {
+      "revision": 6
+    },
+    "occurredAt": "2026-10-01T02:27:53.093Z"
+  },
+  {
+    "id": "8437282b-a07a-4e38-a73f-990d3f997c8e",
+    "projectId": "project-7c12c971",
+    "actor": "local-user",
+    "action": "release.deployed",
+    "resourceType": "release",
+    "resourceId": "51e8c568-42ee-468c-8079-099f00f20c6e",
+    "summary": "部署 Release：v1.2.0 自动充氮状态迁移（演示节奏 20s）",
+    "details": {
+      "environment": "local",
+      "deploymentId": "local:51e8c568-42ee-468c-8079-099f00f20c6e"
+    },
+    "occurredAt": "2026-10-01T02:26:02.209Z"
+  },
+  {
+    "id": "75f852c6-7a9d-4d45-a577-834f2395599e",
+    "projectId": "project-7c12c971",
+    "actor": "local-user",
+    "action": "release.deployed",
+    "resourceType": "release",
+    "resourceId": "51e8c568-42ee-468c-8079-099f00f20c6e",
+    "summary": "部署 Release：v1.2.0 自动充氮状态迁移（演示节奏 20s）",
+    "details": {
+      "environment": "local",
+      "deploymentId": "local:51e8c568-42ee-468c-8079-099f00f20c6e"
+    },
+    "occurredAt": "2026-10-01T02:18:03.505Z"
+  },
+  {
+    "id": "8f09b008-1a92-4a51-b5d6-21d6bd2de424",
+    "projectId": "project-7c12c971",
+    "actor": "local-user",
+    "action": "release.created",
+    "resourceType": "release",
+    "resourceId": "51e8c568-42ee-468c-8079-099f00f20c6e",
+    "summary": "创建 Release：v1.2.0 自动充氮状态迁移（演示节奏 20s）",
+    "details": {
+      "decisionService": "project-7c12c971/63461191-b9c2-4c8c-a5af-6477a94f59ff",
+      "version": 3,
+      "checksum": "sha256:15f3c18f879208bdb74e93b6eb95a224109bd4bed00eae33d452494a574da2f1"
+    },
+    "occurredAt": "2026-10-01T02:18:03.404Z"
+  },
+  {
+    "id": "4e0269de-4b01-491b-9b3a-efb6d1998813",
+    "projectId": "project-7c12c971",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "event-stream",
+    "resourceId": "63461191-b9c2-4c8c-a5af-6477a94f59ff",
+    "summary": "发布事件流：自动充氮状态迁移规则",
+    "details": {
+      "revision": 6,
+      "version": 3
+    },
+    "occurredAt": "2026-10-01T02:18:03.306Z"
+  },
+  {
+    "id": "ea71b274-cc8f-4d90-8531-cc1c5cf98b83",
+    "projectId": "project-7c12c971",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "63461191-b9c2-4c8c-a5af-6477a94f59ff",
+    "summary": "保存事件流：自动充氮状态迁移规则",
+    "details": {
+      "revision": 5
+    },
+    "occurredAt": "2026-10-01T02:18:03.205Z"
+  },
+  {
+    "id": "b7986dfa-4388-4e86-9fd8-ebaaa56584ee",
+    "projectId": "project-7c12c971",
+    "actor": "local-user",
+    "action": "release.deployed",
+    "resourceType": "release",
+    "resourceId": "2e38f001-b7c9-4924-91ef-475c099edd64",
+    "summary": "部署 Release：v1.1.0 自动充氮状态迁移（含环流定时）",
+    "details": {
+      "environment": "local",
+      "deploymentId": "local:2e38f001-b7c9-4924-91ef-475c099edd64"
+    },
+    "occurredAt": "2026-10-01T02:13:38.369Z"
+  },
+  {
+    "id": "35fa3a15-38ba-4c20-ba8b-77407c05dde5",
+    "projectId": "project-7c12c971",
+    "actor": "local-user",
+    "action": "release.created",
+    "resourceType": "release",
+    "resourceId": "2e38f001-b7c9-4924-91ef-475c099edd64",
+    "summary": "创建 Release：v1.1.0 自动充氮状态迁移（含环流定时）",
+    "details": {
+      "decisionService": "project-7c12c971/63461191-b9c2-4c8c-a5af-6477a94f59ff",
+      "version": 2,
+      "checksum": "sha256:df15f723403812621a08ae52b2fef5b1070a2c30909268b63e030127014d2c2a"
+    },
+    "occurredAt": "2026-10-01T02:13:31.560Z"
+  },
+  {
+    "id": "26d5dbe7-c5a6-4742-b668-d17c06d5a875",
+    "projectId": "project-7c12c971",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "event-stream",
+    "resourceId": "63461191-b9c2-4c8c-a5af-6477a94f59ff",
+    "summary": "发布事件流：自动充氮状态迁移规则",
+    "details": {
+      "revision": 4,
+      "version": 2
+    },
+    "occurredAt": "2026-10-01T02:13:31.464Z"
+  },
+  {
+    "id": "c935be85-b89b-468d-9df8-b2d414d0ee9a",
+    "projectId": "project-7c12c971",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "63461191-b9c2-4c8c-a5af-6477a94f59ff",
+    "summary": "保存事件流：自动充氮状态迁移规则",
+    "details": {
+      "revision": 3
+    },
+    "occurredAt": "2026-10-01T02:13:23.958Z"
+  },
+  {
+    "id": "f900d742-c90a-4946-a432-f779244ec957",
+    "projectId": "project-7c12c971",
+    "actor": "local-user",
+    "action": "release.deployed",
+    "resourceType": "release",
+    "resourceId": "a767dd77-d3cc-4a93-a387-ff0e2fdc8e04",
+    "summary": "部署 Release：v1.0.0 自动充氮状态迁移",
+    "details": {
+      "environment": "local",
+      "deploymentId": "local:a767dd77-d3cc-4a93-a387-ff0e2fdc8e04"
+    },
+    "occurredAt": "2026-10-01T01:34:54.485Z"
+  },
+  {
+    "id": "f6cf940b-5b0c-4c6a-bcae-fb433e7d899c",
+    "projectId": "project-7c12c971",
+    "actor": "local-user",
+    "action": "release.created",
+    "resourceType": "release",
+    "resourceId": "a767dd77-d3cc-4a93-a387-ff0e2fdc8e04",
+    "summary": "创建 Release：v1.0.0 自动充氮状态迁移",
+    "details": {
+      "decisionService": "project-7c12c971/63461191-b9c2-4c8c-a5af-6477a94f59ff",
+      "version": 1,
+      "checksum": "sha256:2660321e7412c9d0a414c05a754a7c52bf03dcb130b0dc8421a5af5d8720251a"
+    },
+    "occurredAt": "2026-10-01T01:34:47.261Z"
+  },
+  {
+    "id": "901db3ea-15c0-4d5e-ad33-b7839457a554",
+    "projectId": "project-7c12c971",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "event-stream",
+    "resourceId": "63461191-b9c2-4c8c-a5af-6477a94f59ff",
+    "summary": "发布事件流：自动充氮状态迁移规则",
+    "details": {
+      "revision": 2,
+      "version": 1
+    },
+    "occurredAt": "2026-10-01T01:34:31.129Z"
+  },
+  {
+    "id": "78228075-d9e0-4c62-b181-b36a7995db4c",
+    "projectId": "project-7c12c971",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "event-stream",
+    "resourceId": "63461191-b9c2-4c8c-a5af-6477a94f59ff",
+    "summary": "创建事件流：自动充氮状态迁移规则",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-01T01:34:05.444Z"
+  },
+  {
+    "id": "fa487c33-92f9-4746-861b-5c150b718b1b",
+    "projectId": "project-7c12c971",
+    "actor": "local-user",
+    "action": "bom.updated",
+    "resourceType": "bom",
+    "resourceId": "project-7c12c971",
+    "summary": "更新字段模型到 v2",
+    "details": {
+      "version": 2,
+      "warnings": []
+    },
+    "occurredAt": "2026-10-01T01:33:16.572Z"
+  },
+  {
+    "id": "d66d5921-d33f-4da5-b78c-2eb6646df3f9",
+    "projectId": "default",
+    "actor": "local-user",
+    "action": "project.created",
+    "resourceType": "project",
+    "resourceId": "project-7c12c971",
+    "summary": "创建项目：粮库自动充氮控制",
+    "details": {},
+    "occurredAt": "2026-10-01T01:30:58.208Z"
+  },
+  {
+    "id": "269455a1-f7e4-4fbd-9d2e-73202bf56c34",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.created",
+    "resourceType": "event-stream",
+    "resourceId": "02ef63c3-ee84-4319-ae06-56f42587c01a",
+    "summary": "创建事件流：传感器异常检测",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-01T00:46:22.684Z"
+  },
+  {
+    "id": "0e799d75-4372-4d8e-8596-435c0e764c27",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "test-suite.compare",
+    "resourceType": "test-suite",
+    "resourceId": "8e854fef-8c7e-439f-b66b-8e0f7666b64b",
+    "summary": "对比测试套件版本：NH3CriticalAlarm 自动骨架",
+    "details": {
+      "revision": 2,
+      "baseVersion": 3,
+      "candidateVersion": 4,
+      "reviewRequired": 0
+    },
+    "occurredAt": "2026-10-01T00:36:45.638Z"
+  },
+  {
+    "id": "fb937de3-e7d3-4c6a-9e90-01ec4385be19",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "test-suite.created",
+    "resourceType": "test-suite",
+    "resourceId": "8e854fef-8c7e-439f-b66b-8e0f7666b64b",
+    "summary": "创建测试套件：NH3CriticalAlarm 自动骨架",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-10-01T00:36:18.394Z"
+  },
+  {
+    "id": "49ce77de-6b96-49f0-b04b-97ebc59a1415",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "73fd77d1-d5d6-44ca-a65a-c4e715023b1c",
+    "summary": "保存事件流：氨气浓度复杂事件检测",
+    "details": {
+      "revision": 10
+    },
+    "occurredAt": "2026-10-01T00:36:18.371Z"
+  },
+  {
+    "id": "285c53a2-4225-490c-be63-f69bf004f668",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "73fd77d1-d5d6-44ca-a65a-c4e715023b1c",
+    "summary": "保存事件流：氨气浓度复杂事件检测",
+    "details": {
+      "revision": 9
+    },
+    "occurredAt": "2026-09-30T23:54:11.368Z"
+  },
+  {
+    "id": "ee03fdfb-4437-41a0-b0c7-9311ffdec120",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "test-suite.run-all",
+    "resourceType": "project",
+    "resourceId": "project-6f50ddcf",
+    "summary": "运行全量回归测试",
+    "details": {
+      "total": 2,
+      "passed": 1
+    },
+    "occurredAt": "2026-09-30T23:47:24.768Z"
+  },
+  {
+    "id": "098af7b8-8021-41a5-a278-556cab8ef013",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "c1e62a95-d9ad-4b97-a336-3c1884e274ed",
+    "summary": "保存事件流：传感器异常检测",
+    "details": {
+      "revision": 5
+    },
+    "occurredAt": "2026-09-30T23:44:43.287Z"
+  },
+  {
+    "id": "293d92a8-331d-4746-b611-71e59f9b424f",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "test-suite.created",
+    "resourceType": "test-suite",
+    "resourceId": "d918c0d5-a2b5-4f65-9f31-1249eb207596",
+    "summary": "创建测试套件：DetectEvent 自动骨架",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-09-30T23:44:41.963Z"
+  },
+  {
+    "id": "8205cc5b-373c-4a65-88b0-7a7dd4a83c14",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "c1e62a95-d9ad-4b97-a336-3c1884e274ed",
+    "summary": "保存事件流：传感器异常检测",
+    "details": {
+      "revision": 4
+    },
+    "occurredAt": "2026-09-30T23:44:41.932Z"
+  },
+  {
+    "id": "e83d35e5-6fbb-49b0-b076-3d85a60287d6",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.publish",
+    "resourceType": "event-stream",
+    "resourceId": "c1e62a95-d9ad-4b97-a336-3c1884e274ed",
+    "summary": "发布事件流：传感器异常检测",
+    "details": {
+      "revision": 3,
+      "version": 1
+    },
+    "occurredAt": "2026-09-30T23:44:41.015Z"
+  },
+  {
+    "id": "778b87b6-3bd1-40e3-bd8e-1e00f83d2fc7",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "c1e62a95-d9ad-4b97-a336-3c1884e274ed",
+    "summary": "保存事件流：传感器异常检测",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-09-30T23:44:40.969Z"
+  },
+  {
+    "id": "a18d5470-56bd-4feb-96b3-ca20f93e4287",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "73fd77d1-d5d6-44ca-a65a-c4e715023b1c",
+    "summary": "保存事件流：氨气浓度复杂事件检测",
+    "details": {
+      "revision": 8
+    },
+    "occurredAt": "2026-09-30T23:17:04.818Z"
+  },
+  {
+    "id": "ebd49e61-e4e6-4142-80bc-7b6536c10047",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.created",
+    "resourceType": "event-stream",
+    "resourceId": "c1e62a95-d9ad-4b97-a336-3c1884e274ed",
+    "summary": "创建事件流：传感器异常检测",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-09-30T23:10:01.447Z"
+  },
+  {
+    "id": "96c09203-67d1-4de5-b062-b90bea9c318b",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "release.deployed",
+    "resourceType": "release",
+    "resourceId": "80261227-fb0d-4e75-bc39-bb68284e93b6",
+    "summary": "部署 Release：v1.1.1 氨气浓度复杂事件检测",
+    "details": {
+      "environment": "local",
+      "deploymentId": "local:80261227-fb0d-4e75-bc39-bb68284e93b6"
+    },
+    "occurredAt": "2026-09-30T15:55:21.803Z"
+  },
+  {
+    "id": "9f13eff2-c84c-47cb-8714-e785d626276d",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "release.created",
+    "resourceType": "release",
+    "resourceId": "80261227-fb0d-4e75-bc39-bb68284e93b6",
+    "summary": "创建 Release：v1.1.1 氨气浓度复杂事件检测",
+    "details": {
+      "decisionService": "project-6f50ddcf/73fd77d1-d5d6-44ca-a65a-c4e715023b1c",
+      "version": 1,
+      "checksum": "sha256:16e0aabde69b1ca29afa2b11f768f580512a87284b5fb582d5c1a1f144274db9"
+    },
+    "occurredAt": "2026-09-30T15:55:18.274Z"
+  },
+  {
+    "id": "9f8275f9-8648-4b12-b4fe-11e89e3b445e",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.publish",
+    "resourceType": "event-stream",
+    "resourceId": "73fd77d1-d5d6-44ca-a65a-c4e715023b1c",
+    "summary": "发布事件流：氨气浓度复杂事件检测",
+    "details": {
+      "revision": 7,
+      "version": 4
+    },
+    "occurredAt": "2026-09-30T15:36:53.633Z"
+  },
+  {
+    "id": "05a89eff-a532-4684-ab97-9d062fa36190",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "73fd77d1-d5d6-44ca-a65a-c4e715023b1c",
+    "summary": "保存事件流：氨气浓度复杂事件检测",
+    "details": {
+      "revision": 6
+    },
+    "occurredAt": "2026-09-30T15:36:52.238Z"
+  },
+  {
+    "id": "0550b281-b613-4da6-ab46-8062271d1821",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.publish",
+    "resourceType": "event-stream",
+    "resourceId": "73fd77d1-d5d6-44ca-a65a-c4e715023b1c",
+    "summary": "发布事件流：氨气浓度复杂事件检测",
+    "details": {
+      "revision": 5,
+      "version": 3
+    },
+    "occurredAt": "2026-09-30T15:36:30.621Z"
+  },
+  {
+    "id": "4ff2c3b7-d69d-4de5-85d5-c9f50b7a38d8",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "event-stream",
+    "resourceId": "73fd77d1-d5d6-44ca-a65a-c4e715023b1c",
+    "summary": "保存事件流：氨气浓度复杂事件检测",
+    "details": {
+      "revision": 4
+    },
+    "occurredAt": "2026-09-30T15:36:29.314Z"
+  },
+  {
+    "id": "ca445bbd-67cc-406c-b1a4-5c383378d8fb",
+    "projectId": "project-6f50ddcf",
+    "actor": "wallace",
+    "action": "asset.publish",
+    "resourceType": "event-stream",
+    "resourceId": "73fd77d1-d5d6-44ca-a65a-c4e715023b1c",
+    "summary": "发布事件流：氨气浓度复杂事件检测",
+    "details": {
+      "revision": 3,
+      "version": 2
+    },
+    "occurredAt": "2026-09-30T15:36:22.923Z"
+  },
+  {
+    "id": "16c74941-c791-4817-983c-739232ec4b89",
+    "projectId": "project-6f50ddcf",
+    "actor": "local-user",
+    "action": "release.deployed",
+    "resourceType": "release",
+    "resourceId": "1846c5a0-56c0-42de-90b6-50a4dda93c78",
+    "summary": "部署 Release：氨气浓度告警 v1.0",
+    "details": {
+      "environment": "local",
+      "deploymentId": "local:1846c5a0-56c0-42de-90b6-50a4dda93c78"
+    },
+    "occurredAt": "2026-09-30T15:26:44.688Z"
+  },
+  {
+    "id": "1a4bcc39-fdb1-4503-986b-fcb61fb1dd45",
+    "projectId": "project-6f50ddcf",
+    "actor": "local-user",
+    "action": "release.created",
+    "resourceType": "release",
+    "resourceId": "1846c5a0-56c0-42de-90b6-50a4dda93c78",
+    "summary": "创建 Release：氨气浓度告警 v1.0",
+    "details": {
+      "decisionService": "project-6f50ddcf/nh3-alarm",
+      "version": 1,
+      "checksum": "sha256:230d249501dbb1c3efb4614fd7641ba12a1e3688408bb7484f13beaafb92065f"
+    },
+    "occurredAt": "2026-09-30T15:26:38.283Z"
+  },
+  {
+    "id": "c86c0ce7-416b-4cec-9771-e5cd1a07de52",
+    "projectId": "project-6f50ddcf",
+    "actor": "local-user",
+    "action": "test-suite.run",
+    "resourceType": "test-suite",
+    "resourceId": "4455b36e-f5d9-4d2f-a5a8-aa296b4f3fcf",
+    "summary": "运行测试套件：氨气浓度告警测试套件",
+    "details": {
+      "revision": 9,
+      "passed": true,
+      "runId": "2d105158-b610-45b4-aa07-15848fdc33cb"
+    },
+    "occurredAt": "2026-09-30T15:26:23.005Z"
+  },
+  {
+    "id": "bd9fbfd0-ebd8-4f6e-bfe7-db2c75af6f26",
+    "projectId": "project-6f50ddcf",
+    "actor": "local-user",
+    "action": "test-suite.updated",
+    "resourceType": "test-suite",
+    "resourceId": "4455b36e-f5d9-4d2f-a5a8-aa296b4f3fcf",
+    "summary": "更新测试套件：氨气浓度告警测试套件",
+    "details": {
+      "revision": 8
+    },
+    "occurredAt": "2026-09-30T15:26:22.762Z"
+  },
+  {
+    "id": "095188e9-f560-4aac-b101-8370e2a17c92",
+    "projectId": "project-6f50ddcf",
+    "actor": "local-user",
+    "action": "test-suite.run",
+    "resourceType": "test-suite",
+    "resourceId": "4455b36e-f5d9-4d2f-a5a8-aa296b4f3fcf",
+    "summary": "运行测试套件：氨气浓度告警测试套件",
+    "details": {
+      "revision": 7,
+      "passed": false,
+      "runId": "78b49a27-0195-4238-a2ad-89dcbcff497e"
+    },
+    "occurredAt": "2026-09-30T15:26:02.000Z"
+  },
+  {
+    "id": "a0403950-d8e1-472b-8fb3-b8ab56a94e03",
+    "projectId": "project-6f50ddcf",
+    "actor": "local-user",
+    "action": "test-suite.updated",
+    "resourceType": "test-suite",
+    "resourceId": "4455b36e-f5d9-4d2f-a5a8-aa296b4f3fcf",
+    "summary": "更新测试套件：氨气浓度告警测试套件",
+    "details": {
+      "revision": 6
+    },
+    "occurredAt": "2026-09-30T15:25:53.539Z"
+  },
+  {
+    "id": "41e452de-41a7-4aec-986e-a998edb00fde",
+    "projectId": "project-6f50ddcf",
+    "actor": "local-user",
+    "action": "test-suite.run",
+    "resourceType": "test-suite",
+    "resourceId": "4455b36e-f5d9-4d2f-a5a8-aa296b4f3fcf",
+    "summary": "运行测试套件：氨气浓度告警测试套件",
+    "details": {
+      "revision": 5,
+      "passed": false,
+      "runId": "6c76d595-f5fe-448f-bbd3-2058ed0a1a3b"
+    },
+    "occurredAt": "2026-09-30T15:25:32.242Z"
+  },
+  {
+    "id": "e17aa508-19b3-40c7-a441-78f5ee0e8ea2",
+    "projectId": "project-6f50ddcf",
+    "actor": "local-user",
+    "action": "test-suite.run",
+    "resourceType": "test-suite",
+    "resourceId": "4455b36e-f5d9-4d2f-a5a8-aa296b4f3fcf",
+    "summary": "运行测试套件：氨气浓度告警测试套件",
+    "details": {
+      "revision": 4,
+      "passed": false,
+      "runId": "c07c6c95-5838-4d12-b77e-3312ddb83cf4"
+    },
+    "occurredAt": "2026-09-30T15:25:21.713Z"
+  },
+  {
+    "id": "320f2561-c4e2-4e73-9885-9409e0702943",
+    "projectId": "project-6f50ddcf",
+    "actor": "local-user",
+    "action": "test-suite.run",
+    "resourceType": "test-suite",
+    "resourceId": "4455b36e-f5d9-4d2f-a5a8-aa296b4f3fcf",
+    "summary": "运行测试套件：氨气浓度告警测试套件",
+    "details": {
+      "revision": 3,
+      "passed": false,
+      "runId": "fb212566-5301-48f3-9f35-1d949746d5a2"
+    },
+    "occurredAt": "2026-09-30T15:24:55.934Z"
+  },
+  {
+    "id": "b48f4563-e039-4498-8ef1-a4a7665962cf",
+    "projectId": "project-6f50ddcf",
+    "actor": "local-user",
+    "action": "test-suite.run",
+    "resourceType": "test-suite",
+    "resourceId": "4455b36e-f5d9-4d2f-a5a8-aa296b4f3fcf",
+    "summary": "运行测试套件：氨气浓度告警测试套件",
+    "details": {
+      "revision": 2,
+      "passed": false,
+      "runId": "42ca7a87-a993-46fd-a551-98155ab3d479"
+    },
+    "occurredAt": "2026-09-30T15:24:50.504Z"
+  },
+  {
+    "id": "7023402f-de11-4538-92f0-997f8c9887ed",
+    "projectId": "project-6f50ddcf",
+    "actor": "local-user",
+    "action": "test-suite.created",
+    "resourceType": "test-suite",
+    "resourceId": "4455b36e-f5d9-4d2f-a5a8-aa296b4f3fcf",
+    "summary": "创建测试套件：氨气浓度告警测试套件",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-09-30T15:24:43.267Z"
+  },
+  {
+    "id": "94634d07-b885-4b57-8c1e-0b0727fed930",
+    "projectId": "project-6f50ddcf",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "event-stream",
+    "resourceId": "73fd77d1-d5d6-44ca-a65a-c4e715023b1c",
+    "summary": "发布事件流：氨气浓度复杂事件检测",
+    "details": {
+      "revision": 2,
+      "version": 1
+    },
+    "occurredAt": "2026-09-30T15:24:26.528Z"
+  },
+  {
+    "id": "ee267b6f-8087-460b-b44f-1b22dab00f38",
+    "projectId": "project-6f50ddcf",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "event-stream",
+    "resourceId": "73fd77d1-d5d6-44ca-a65a-c4e715023b1c",
+    "summary": "创建事件流：氨气浓度复杂事件检测",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-09-30T15:23:20.491Z"
+  },
+  {
+    "id": "16cd0eb4-265e-4509-815b-ea0b5a9329c0",
+    "projectId": "project-6f50ddcf",
+    "actor": "local-user",
+    "action": "bom.updated",
+    "resourceType": "bom",
+    "resourceId": "project-6f50ddcf",
+    "summary": "更新字段模型到 v2",
+    "details": {
+      "version": 2,
+      "warnings": []
+    },
+    "occurredAt": "2026-09-30T15:22:39.063Z"
+  },
+  {
+    "id": "8b853fda-e919-42cc-ac9e-9f8eab9f2b51",
+    "projectId": "default",
+    "actor": "local-user",
+    "action": "project.created",
+    "resourceType": "project",
+    "resourceId": "project-6f50ddcf",
+    "summary": "创建项目：粮库氨气浓度告警",
+    "details": {},
+    "occurredAt": "2026-09-30T15:22:32.723Z"
+  },
+  {
+    "id": "b4e45c39-b998-4450-a79e-ea6ff135c9de",
+    "projectId": "default",
+    "actor": "local-user",
+    "action": "project.created",
+    "resourceType": "project",
+    "resourceId": "project-00a0856d",
+    "summary": "创建项目：粮库氨气浓度告警",
+    "details": {},
+    "occurredAt": "2026-09-30T15:19:16.589Z"
+  },
+  {
+    "id": "4db78d96-b346-4715-b520-1b253023b02b",
+    "projectId": "default",
+    "actor": "local-user",
+    "action": "project.created",
+    "resourceType": "project",
+    "resourceId": "project-1b260c8e",
+    "summary": "创建项目：真实 CEP 集成 1790781125204",
+    "details": {},
+    "occurredAt": "2026-09-30T15:12:05.229Z"
+  },
+  {
+    "id": "87a0a11d-c903-43c8-876c-8f4e8597e960",
+    "projectId": "project-c429a9a0",
+    "actor": "wallace",
+    "action": "asset.saved",
+    "resourceType": "flow",
+    "resourceId": "8cf2ac76-853e-4a48-a838-b9977e97c5ca",
+    "summary": "保存规则流：粮库温控告警规则流",
+    "details": {
+      "revision": 4
+    },
+    "occurredAt": "2026-09-30T15:03:55.293Z"
+  },
+  {
+    "id": "83aebb9b-502f-47df-a5d7-be03c3aef67e",
+    "projectId": "project-8de7b8fd",
+    "actor": "wallace",
+    "action": "asset.created",
+    "resourceType": "flow",
+    "resourceId": "ae7cc2b9-8c7a-4ede-84a6-817d97b05e0e",
+    "summary": "创建规则流：未命名规则流",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-09-30T15:02:43.448Z"
+  },
+  {
+    "id": "3e236cd0-2688-425b-a129-f2199662e7af",
+    "projectId": "default",
+    "actor": "wallace",
+    "action": "project.created",
+    "resourceType": "project",
+    "resourceId": "project-8de7b8fd",
+    "summary": "创建项目：test01",
+    "details": {},
+    "occurredAt": "2026-09-30T14:48:09.489Z"
+  },
+  {
+    "id": "28241acb-9d13-4c43-a82a-7768d471c58a",
+    "projectId": "default",
+    "actor": "wallace",
+    "action": "project.created",
+    "resourceType": "project",
+    "resourceId": "project-b43f6b53",
+    "summary": "创建项目：test",
+    "details": {},
+    "occurredAt": "2026-09-30T14:25:25.000Z"
+  },
+  {
+    "id": "4a1b6637-c371-41ee-9a0c-6062ad3a2b11",
+    "projectId": "project-c429a9a0",
+    "actor": "wallace",
+    "action": "test-suite.run-all",
+    "resourceType": "project",
+    "resourceId": "project-c429a9a0",
+    "summary": "运行全量回归测试",
+    "details": {
+      "total": 2,
+      "passed": 2
+    },
+    "occurredAt": "2026-09-30T14:06:53.251Z"
+  },
+  {
+    "id": "577e31d6-dbbf-44b2-b4d8-e7a42545df23",
+    "projectId": "project-c429a9a0",
+    "actor": "wallace",
+    "action": "asset.created",
+    "resourceType": "flow",
+    "resourceId": "0a9e9ea6-796c-4b08-bfa5-84d89f8c0267",
+    "summary": "创建规则流：未命名规则流",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-09-30T00:31:35.794Z"
+  },
+  {
+    "id": "9aad0cb3-42fa-4048-bd02-02d74c130dae",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "release.deployed",
+    "resourceType": "release",
+    "resourceId": "52cec7f8-fccb-4567-b8df-94563fbc19e5",
+    "summary": "部署 Release：粮库温控告警 v1.0（含决策表）",
+    "details": {
+      "environment": "local",
+      "deploymentId": "local:52cec7f8-fccb-4567-b8df-94563fbc19e5"
+    },
+    "occurredAt": "2026-09-29T14:52:00.230Z"
+  },
+  {
+    "id": "2516292d-9c8c-4489-aa65-cfda30c79394",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "release.created",
+    "resourceType": "release",
+    "resourceId": "52cec7f8-fccb-4567-b8df-94563fbc19e5",
+    "summary": "创建 Release：粮库温控告警 v1.0（含决策表）",
+    "details": {
+      "decisionService": "project-c429a9a0/grain-alarm",
+      "version": 1,
+      "checksum": "sha256:d88a445a03f8f69a69242d68e522531dca8bcd998adafb56e9f2085d555ed4ba"
+    },
+    "occurredAt": "2026-09-29T14:51:59.874Z"
+  },
+  {
+    "id": "00068a45-e9c8-4788-a3a9-6874b7644ac4",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "test-suite.run-all",
+    "resourceType": "project",
+    "resourceId": "project-c429a9a0",
+    "summary": "运行全量回归测试",
+    "details": {
+      "total": 2,
+      "passed": 2
+    },
+    "occurredAt": "2026-09-29T14:51:46.473Z"
+  },
+  {
+    "id": "0704303f-ae69-4008-b422-4ba8997ff6db",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "test-suite.created",
+    "resourceType": "test-suite",
+    "resourceId": "a842fb34-2fb1-4f82-a8fb-f806f92b2db9",
+    "summary": "创建测试套件：最高温分层历史NF测试",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-09-29T14:51:35.706Z"
+  },
+  {
+    "id": "c69b60f4-f1c4-4e15-9c9b-252bf64e59a2",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "test-suite.created",
+    "resourceType": "test-suite",
+    "resourceId": "8bed8b11-fb9c-439b-9028-fe975f2dcd3f",
+    "summary": "创建测试套件：均温告警场景测试",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-09-29T14:51:22.786Z"
+  },
+  {
+    "id": "d8d2f7b3-0426-470a-8a52-a5ae8673c7ca",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "asset.publish",
+    "resourceType": "flow",
+    "resourceId": "8cf2ac76-853e-4a48-a838-b9977e97c5ca",
+    "summary": "发布规则流：粮库温控告警规则流",
+    "details": {
+      "revision": 3,
+      "version": 1
+    },
+    "occurredAt": "2026-09-29T14:50:22.543Z"
+  },
+  {
+    "id": "9b3d1bb9-8bcb-4ec1-b5c9-e2e3382f533a",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "flow",
+    "resourceId": "8cf2ac76-853e-4a48-a838-b9977e97c5ca",
+    "summary": "保存规则流：粮库温控告警规则流",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-09-29T14:50:15.278Z"
+  },
+  {
+    "id": "674af039-d344-498d-9b06-d5cc3072e2b7",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "flow",
+    "resourceId": "8cf2ac76-853e-4a48-a838-b9977e97c5ca",
+    "summary": "创建规则流：未命名规则流",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-09-29T14:50:15.147Z"
+  },
+  {
+    "id": "4f69101d-85b5-4dc2-b98e-f313b2b6c912",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "change-set.approve",
+    "resourceType": "change-set",
+    "resourceId": "8d63461d-e391-4427-8657-f5b1ec6c2d36",
+    "summary": "批准：发布粮库温控告警规则集 v1",
+    "details": {
+      "revision": 3,
+      "comment": ""
+    },
+    "occurredAt": "2026-09-29T14:49:55.142Z"
+  },
+  {
+    "id": "6fbe26f8-aadc-4d98-b387-4be50940c5bd",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "change-set.submit",
+    "resourceType": "change-set",
+    "resourceId": "8d63461d-e391-4427-8657-f5b1ec6c2d36",
+    "summary": "提交评审：发布粮库温控告警规则集 v1",
+    "details": {
+      "revision": 2,
+      "comment": ""
+    },
+    "occurredAt": "2026-09-29T14:49:54.204Z"
+  },
+  {
+    "id": "95503fcf-b109-4377-8ddd-7fba45ded695",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "change-set.created",
+    "resourceType": "change-set",
+    "resourceId": "8d63461d-e391-4427-8657-f5b1ec6c2d36",
+    "summary": "创建变更集：发布粮库温控告警规则集 v1",
+    "details": {
+      "revision": 1,
+      "itemCount": 10
+    },
+    "occurredAt": "2026-09-29T14:49:53.728Z"
+  },
+  {
+    "id": "cd995415-bfae-47f3-8d1c-27fde1d91501",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "table",
+    "resourceId": "02a8d4de-b95f-41e5-837d-f8c598f98a77",
+    "summary": "保存决策表：整仓均温判定决策表",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-09-29T14:49:32.632Z"
+  },
+  {
+    "id": "8ddcdc6e-ce1c-4496-b91b-58bdb5e4e055",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "table",
+    "resourceId": "02a8d4de-b95f-41e5-837d-f8c598f98a77",
+    "summary": "创建决策表：整仓均温判定决策表",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-09-29T14:49:32.603Z"
+  },
+  {
+    "id": "e0bc9193-8d30-40d4-a0c2-659bb25fa1c4",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "ec303795-617e-447a-974a-591c7edd505b",
+    "summary": "保存规则：历史均温异常升高",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-09-29T14:49:21.290Z"
+  },
+  {
+    "id": "21be95ef-cab0-4b3d-a5f2-8d1aa40800cd",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "6695414a-fb84-4afb-b784-468ea1306f5b",
+    "summary": "保存规则：分层超限告警",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-09-29T14:49:21.273Z"
+  },
+  {
+    "id": "965cfeb9-2c53-4b70-aaff-ec2d021b0e59",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "bde1b8b1-6169-4387-8b1b-9ad2b60f4498",
+    "summary": "保存规则：最高粮温严重超限",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-09-29T14:49:21.256Z"
+  },
+  {
+    "id": "aca1a060-d1a7-47a6-8108-41eb4b325b9d",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "b0a706dc-2b69-4994-af66-b7ac471d1d07",
+    "summary": "保存规则：最高粮温告警",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-09-29T14:49:21.210Z"
+  },
+  {
+    "id": "a1de97ed-80e8-4696-a18f-631a87897349",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "rule",
+    "resourceId": "ec303795-617e-447a-974a-591c7edd505b",
+    "summary": "创建规则：历史均温异常升高",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-09-29T14:49:03.819Z"
+  },
+  {
+    "id": "f0987307-716c-4dd1-9de9-dbc5ed6e14ea",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "rule",
+    "resourceId": "6695414a-fb84-4afb-b784-468ea1306f5b",
+    "summary": "创建规则：分层超限告警",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-09-29T14:49:03.799Z"
+  },
+  {
+    "id": "56924543-9048-43a3-af6b-1b708f7001f6",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "rule",
+    "resourceId": "bde1b8b1-6169-4387-8b1b-9ad2b60f4498",
+    "summary": "创建规则：最高粮温严重超限",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-09-29T14:49:03.777Z"
+  },
+  {
+    "id": "44212ef7-ed79-4885-a815-b06dd153079e",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "rule",
+    "resourceId": "b0a706dc-2b69-4994-af66-b7ac471d1d07",
+    "summary": "创建规则：最高粮温告警",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-09-29T14:49:03.759Z"
+  },
+  {
+    "id": "e4dc7045-558e-486a-89f5-0a8b127dd4a0",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "ef84c6d9-3fba-458f-ba91-1363d87f7799",
+    "summary": "保存规则：NF稻谷封仓高温上报登记",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-09-29T13:19:38.442Z"
+  },
+  {
+    "id": "e00b97dd-2f1b-4e7a-b694-be6715012164",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "7b2b342a-1664-40df-8f50-b44e7c852bc3",
+    "summary": "保存规则：均温数据不足不可判定",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-09-29T13:19:38.425Z"
+  },
+  {
+    "id": "d80e296d-654d-4e07-af66-9763fad64d57",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "d4a52b62-eee1-4167-b048-2087d0e5a3cf",
+    "summary": "保存规则：均温恢复候选",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-09-29T13:19:29.604Z"
+  },
+  {
+    "id": "df8075c9-92e0-46f1-9e79-a126b5c524d2",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "250d77a4-ad2b-4a97-8967-0df5df9cda71",
+    "summary": "保存规则：整仓均温严重超限",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-09-29T13:19:29.584Z"
+  },
+  {
+    "id": "fa66e409-086d-481d-b5a6-1e528d153c0b",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "asset.saved",
+    "resourceType": "rule",
+    "resourceId": "6f2541d4-e7f2-42af-a4c0-f2c4c44ce585",
+    "summary": "保存规则：整仓均温告警",
+    "details": {
+      "revision": 2
+    },
+    "occurredAt": "2026-09-29T13:19:20.163Z"
+  },
+  {
+    "id": "8da9f771-f628-4722-99d9-911427f4cd65",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "rule",
+    "resourceId": "ef84c6d9-3fba-458f-ba91-1363d87f7799",
+    "summary": "创建规则：NF稻谷封仓高温上报登记",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-09-29T13:19:03.783Z"
+  },
+  {
+    "id": "2c476f29-2187-49bd-882b-7d482ab3bd09",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "rule",
+    "resourceId": "7b2b342a-1664-40df-8f50-b44e7c852bc3",
+    "summary": "创建规则：均温数据不足不可判定",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-09-29T13:19:03.767Z"
+  },
+  {
+    "id": "ffd3a658-c3b0-4762-9d61-770981cb9bdb",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "rule",
+    "resourceId": "d4a52b62-eee1-4167-b048-2087d0e5a3cf",
+    "summary": "创建规则：均温恢复候选",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-09-29T13:19:03.748Z"
+  },
+  {
+    "id": "d99598ae-2122-44ef-ac05-19a53c6d4a61",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "rule",
+    "resourceId": "250d77a4-ad2b-4a97-8967-0df5df9cda71",
+    "summary": "创建规则：整仓均温严重超限",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-09-29T13:19:03.729Z"
+  },
+  {
+    "id": "170284eb-e9b5-40e2-bdb3-d37fed009289",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "asset.created",
+    "resourceType": "rule",
+    "resourceId": "6f2541d4-e7f2-42af-a4c0-f2c4c44ce585",
+    "summary": "创建规则：整仓均温告警",
+    "details": {
+      "revision": 1
+    },
+    "occurredAt": "2026-09-29T13:19:03.697Z"
+  },
+  {
+    "id": "9478adce-64d6-4ca2-96cd-9acf7f97d0b9",
+    "projectId": "project-c429a9a0",
+    "actor": "local-user",
+    "action": "bom.updated",
+    "resourceType": "bom",
+    "resourceId": "project-c429a9a0",
+    "summary": "更新字段模型到 v2",
+    "details": {
+      "version": 2,
+      "warnings": []
+    },
+    "occurredAt": "2026-09-29T13:18:16.160Z"
+  },
+  {
+    "id": "a8d8bb2b-e4a9-405e-9ae9-c28883adf1c1",
+    "projectId": "default",
+    "actor": "local-user",
+    "action": "project.created",
+    "resourceType": "project",
+    "resourceId": "project-c429a9a0",
+    "summary": "创建项目：粮库温控告警",
+    "details": {},
+    "occurredAt": "2026-09-29T13:16:56.354Z"
+  }
+]

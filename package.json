@@ -5,13 +5,15 @@
   "type": "module",
   "scripts": {
     "dev": "npm --prefix frontend run dev",
-    "dev:legacy": "vite --host 127.0.0.1",
+    "dev:legacy": "vite --config archive/legacy-prototype/vite.config.js --host 127.0.0.1",
     "api": "node server/index.js",
     "db:migrate": "node server/migrate.js",
     "db:import-json": "node server/import-json.js",
     "build": "npm --prefix frontend run build",
     "lint": "npm --prefix frontend run lint",
-    "test": "node --test"
+    "test": "node --test",
+    "seed": "node scripts/seed-demo-data.mjs",
+    "seed:force": "node scripts/seed-demo-data.mjs --force"
   },
   "dependencies": {
     "@xyflow/react": "^12.12.0",

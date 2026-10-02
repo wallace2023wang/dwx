@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { flowSnapshot } from '../shared/assets.js';
 
-const read = file => JSON.parse(fs.readFileSync(new URL(`../data/${file}`, import.meta.url), 'utf8'));
+const read = file => JSON.parse(fs.readFileSync(new URL(`../fixtures/demo-data/${file}`, import.meta.url), 'utf8'));
 const inDefaultProject = item => (item.projectId || 'default') === 'default';
 
 test('default published rule flow remains compatible with the current BOM', () => {

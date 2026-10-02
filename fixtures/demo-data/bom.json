@@ -1,0 +1,118 @@
+{
+  "version": 1,
+  "updatedAt": "2026-09-29T01:26:05.249Z",
+  "fields": [
+    {
+      "key": "customerAge",
+      "label": "客户年龄",
+      "type": "Integer",
+      "kind": "input",
+      "group": "客户基本信息",
+      "unit": "岁",
+      "min": 0,
+      "max": 150,
+      "enum": null,
+      "control": "number",
+      "description": "申请客户周岁年龄"
+    },
+    {
+      "key": "annualIncome",
+      "label": "年收入",
+      "type": "Double",
+      "kind": "input",
+      "group": "客户基本信息",
+      "unit": "元",
+      "min": 0,
+      "max": null,
+      "enum": null,
+      "control": "number",
+      "description": "客户年度可支配收入"
+    },
+    {
+      "key": "creditScore",
+      "label": "信用评分",
+      "type": "Integer",
+      "kind": "input",
+      "group": "客户信用",
+      "unit": "分",
+      "min": 300,
+      "max": 900,
+      "enum": null,
+      "control": "number",
+      "description": "征信评分"
+    },
+    {
+      "key": "customerType",
+      "label": "客户类型",
+      "type": "String",
+      "kind": "input",
+      "group": "客户基本信息",
+      "unit": null,
+      "min": null,
+      "max": null,
+      "enum": [
+        "个人",
+        "企业",
+        "同业"
+      ],
+      "control": "select",
+      "description": ""
+    },
+    {
+      "key": "overdue",
+      "label": "是否逾期",
+      "type": "Boolean",
+      "kind": "input",
+      "group": "客户信用",
+      "unit": null,
+      "min": null,
+      "max": null,
+      "enum": null,
+      "control": "boolean",
+      "description": "当前是否有逾期记录"
+    },
+    {
+      "key": "riskLevel",
+      "label": "风险等级",
+      "type": "String",
+      "kind": "output",
+      "group": "结果输出",
+      "unit": null,
+      "min": null,
+      "max": null,
+      "enum": [
+        "低",
+        "中",
+        "高"
+      ],
+      "control": "select",
+      "description": "综合风险评级"
+    },
+    {
+      "key": "reviewRequired",
+      "label": "需要人工审核",
+      "type": "Boolean",
+      "kind": "output",
+      "group": "结果输出",
+      "unit": null,
+      "min": null,
+      "max": null,
+      "enum": null,
+      "control": "boolean",
+      "description": "是否转人工复核"
+    },
+    {
+      "key": "approvedLimit",
+      "label": "批准额度",
+      "type": "Double",
+      "kind": "output",
+      "group": "结果输出",
+      "unit": "元",
+      "min": 0,
+      "max": null,
+      "enum": null,
+      "control": "number",
+      "description": "最终批准授信额度"
+    }
+  ]
+}

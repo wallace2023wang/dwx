@@ -1,0 +1,188 @@
+{
+  "version": 2,
+  "updatedAt": "2026-10-01T12:27:13.488Z",
+  "fields": [
+    {
+      "key": "phase",
+      "label": "当前阶段",
+      "type": "String",
+      "semanticType": "Enum",
+      "kind": "input",
+      "factType": "NitrogenControl",
+      "factTypeLabel": "充氮控制",
+      "enum": [
+        "DRAFT",
+        "FILLING",
+        "CIRCULATION",
+        "HOLDING",
+        "REPLENISHING",
+        "COMPLETED"
+      ],
+      "control": "select",
+      "required": true,
+      "group": "控制状态"
+    },
+    {
+      "key": "nitrogenPct",
+      "label": "氮气浓度(%)",
+      "type": "Double",
+      "semanticType": "Decimal",
+      "kind": "input",
+      "factType": "NitrogenControl",
+      "factTypeLabel": "充氮控制",
+      "unit": "%",
+      "required": true,
+      "group": "读数"
+    },
+    {
+      "key": "maxPct",
+      "label": "最大氮气浓度(%)",
+      "type": "Double",
+      "semanticType": "Decimal",
+      "kind": "input",
+      "factType": "NitrogenControl",
+      "factTypeLabel": "充氮控制",
+      "unit": "%",
+      "required": true,
+      "group": "目标参数"
+    },
+    {
+      "key": "minPct",
+      "label": "最小氮气浓度(%)",
+      "type": "Double",
+      "semanticType": "Decimal",
+      "kind": "input",
+      "factType": "NitrogenControl",
+      "factTypeLabel": "充氮控制",
+      "unit": "%",
+      "required": true,
+      "group": "目标参数"
+    },
+    {
+      "key": "startAt",
+      "label": "开始时间",
+      "type": "String",
+      "semanticType": "Date",
+      "kind": "input",
+      "factType": "NitrogenControl",
+      "factTypeLabel": "充氮控制",
+      "required": true,
+      "group": "时间"
+    },
+    {
+      "key": "endAt",
+      "label": "结束时间",
+      "type": "String",
+      "semanticType": "Date",
+      "kind": "input",
+      "factType": "NitrogenControl",
+      "factTypeLabel": "充氮控制",
+      "required": true,
+      "group": "时间"
+    },
+    {
+      "key": "now",
+      "label": "当前时间",
+      "type": "String",
+      "semanticType": "Date",
+      "kind": "input",
+      "factType": "NitrogenControl",
+      "factTypeLabel": "充氮控制",
+      "group": "时间"
+    },
+    {
+      "key": "circulationElapsed",
+      "label": "环流期满信号",
+      "type": "Boolean",
+      "kind": "input",
+      "factType": "NitrogenControl",
+      "factTypeLabel": "充氮控制",
+      "group": "外部信号",
+      "description": "外部计时（demo）在环流满 4 小时后置 true 注入；规则只做判定"
+    },
+    {
+      "key": "nextPhase",
+      "label": "迁移目标阶段",
+      "type": "String",
+      "semanticType": "Enum",
+      "kind": "output",
+      "factType": "NitrogenCommand",
+      "factTypeLabel": "充氮指令",
+      "enum": [
+        "DRAFT",
+        "FILLING",
+        "CIRCULATION",
+        "HOLDING",
+        "REPLENISHING",
+        "COMPLETED"
+      ],
+      "control": "select"
+    },
+    {
+      "key": "genCmd",
+      "label": "制氮机指令",
+      "type": "String",
+      "semanticType": "Enum",
+      "kind": "output",
+      "factType": "NitrogenCommand",
+      "factTypeLabel": "充氮指令",
+      "enum": [
+        "ON",
+        "OFF"
+      ],
+      "control": "select"
+    },
+    {
+      "key": "n2vCmd",
+      "label": "充氮阀指令",
+      "type": "String",
+      "semanticType": "Enum",
+      "kind": "output",
+      "factType": "NitrogenCommand",
+      "factTypeLabel": "充氮指令",
+      "enum": [
+        "OPEN",
+        "CLOSED"
+      ],
+      "control": "select"
+    },
+    {
+      "key": "cvCmd",
+      "label": "环流阀指令",
+      "type": "String",
+      "semanticType": "Enum",
+      "kind": "output",
+      "factType": "NitrogenCommand",
+      "factTypeLabel": "充氮指令",
+      "enum": [
+        "OPEN",
+        "CLOSED"
+      ],
+      "control": "select"
+    },
+    {
+      "key": "fanCmd",
+      "label": "环流风机指令",
+      "type": "String",
+      "semanticType": "Enum",
+      "kind": "output",
+      "factType": "NitrogenCommand",
+      "factTypeLabel": "充氮指令",
+      "enum": [
+        "ON",
+        "OFF"
+      ],
+      "control": "select"
+    },
+    {
+      "key": "reason",
+      "label": "迁移原因",
+      "type": "String",
+      "kind": "output",
+      "factType": "NitrogenCommand",
+      "factTypeLabel": "充氮指令",
+      "maxLength": 120
+    }
+  ],
+  "eventTypes": []
+}
