@@ -182,7 +182,16 @@ input 字段可配置 `required=true`。测试和 Release 执行不会为缺失�
 | Enum | 单选下拉（==/!=）或多选（in/not in） | 选项从 BOM enum[] 拉 |
 | String | 文本输入框 | contains 时不需要完整匹配 |
 | Date | date picker | |
-| List<String> 条件值 | 文本输入（单个元素） | contains 时判断列表里是否有这个元素 |
+| List<String> 条件值 | 文本或长度输入 | 兼容期按运行时序列化文本判断包含和长度 |
+
+当前实现细则：
+
+* `between` 为闭区间，结构化保存 `value` 下界和 `valueEnd` 上界；编辑器提供两个数字框或日期选择器。
+* `Date` 使用严格的 `YYYY-MM-DD` ISO 日期，早于/晚于/介于按该格式比较。
+* `Enum` 的 `in/not in` 使用 `values[]` 保存，多选项必须来自 BOM 的 `enum[]`。
+* `matches` 保存正则表达式，前后端都会做语法检查，运行时使用 Java `String.matches` 完整匹配。
+* `List<String>` 在当前兼容模型中仍映射为序列化文本，因此“包含/不包含/长度”针对运行时文本执行；迁移为原生 Java List 后再升级为严格的元素级语义。
+* 业务字段作为右值时，只开放语义明确的单值操作。`between`、`in/not in` 和列表操作固定使用结构化固定值。
 
 ### 类型变更影响
 

@@ -72,6 +72,10 @@ export interface RuleFieldConditionDraft extends RuleConditionMetadata {
   field: string
   operator: string
   value: string
+  valueEnd?: string
+  values?: string[]
+  valueSource?: 'literal' | 'field'
+  valueField?: string
   raw?: never
   pattern?: never
   condition?: never

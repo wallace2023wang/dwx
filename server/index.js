@@ -164,12 +164,12 @@ async function collectUsedKeys(projectId = 'default') {
     for (const version of asset.versions || []) {
       const rule = version.rule || version.draft;
       if (!rule) continue;
-      for (const c of rule.conditions || []) { if (!c.pattern && !c.raw) add(c.field); }
+      for (const c of rule.conditions || []) { if (!c.pattern && !c.raw) { add(c.field); if (c.valueSource === 'field') add(c.valueField); } }
       for (const a of rule.actions || []) add(a.field);
     }
-    for (const c of (asset.draft?.conditions || [])) { if (!c.pattern && !c.raw) add(c.field); }
+    for (const c of (asset.draft?.conditions || [])) { if (!c.pattern && !c.raw) { add(c.field); if (c.valueSource === 'field') add(c.valueField); } }
     for (const a of (asset.draft?.actions || [])) add(a.field);
-    for (const c of (asset.published?.conditions || [])) { if (!c.pattern && !c.raw) add(c.field); }
+    for (const c of (asset.published?.conditions || [])) { if (!c.pattern && !c.raw) { add(c.field); if (c.valueSource === 'field') add(c.valueField); } }
     for (const a of (asset.published?.actions || [])) add(a.field);
   }
   const tables = await readAssets('tables', projectId);
@@ -1571,7 +1571,8 @@ async function bomFieldReferences(fieldKey, projectId = 'default') {
     });
   };
   for (const item of rules.filter(rule => !rule.archived)) {
-    const used = [...(item.draft?.conditions || []), ...(item.draft?.actions || [])].some(entry => entry.field === fieldKey);
+    const used = [...(item.draft?.conditions || []), ...(item.draft?.actions || [])]
+      .some(entry => entry.field === fieldKey || (entry.valueSource === 'field' && entry.valueField === fieldKey));
     add(item, 'rule', used);
   }
   for (const item of tables.filter(table => !table.archived)) {
@@ -1984,6 +1985,14 @@ function assetBomIssue(draft, type, bom) {
     return !field || field.kind !== 'input';
   });
   if (invalidCondition) return `条件字段 ${invalidCondition.field || '（空）'} 不存在或不是输入字段`;
+  const invalidValueField = draft.conditions?.find(column => {
+    if (column.raw || column.pattern || column.valueSource !== 'field') return false;
+    const field = findField(bom, column.field);
+    const valueField = findField(bom, column.valueField);
+    return !field || !valueField || valueField.kind !== 'input' || valueField.key === field.key
+      || inferSemanticType(valueField) !== inferSemanticType(field);
+  });
+  if (invalidValueField) return `比较字段 ${invalidValueField.valueField || '（空）'} 不存在、不是输入字段或类型不匹配`;
   const invalidAction = draft.actions?.find(column => {
     const field = findField(bom, column.field);
     return !field || field.kind !== 'output';
@@ -2147,7 +2156,10 @@ function projectBomModel({ rules, tables, flows }, bom = currentBom) {
   };
   const scanRule = rule => {
     for (const condition of rule?.conditions || []) {
-      if (!condition.pattern && !condition.raw) count(condition.field);
+      if (!condition.pattern && !condition.raw) {
+        count(condition.field);
+        if (condition.valueSource === 'field') count(condition.valueField);
+      }
     }
     for (const action of rule?.actions || []) count(action.field);
   };

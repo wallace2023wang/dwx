@@ -87,6 +87,105 @@ test('advanced rule conditions survive project API save and compile unchanged', 
 });
 
 
+test('structured field comparisons survive save, compile, and BOM reference tracking', async () => {
+  const env = await startTestEnv();
+  try {
+    const created = await env.request('/api/projects/default/rules', 'POST', {
+      type: 'rule', name: '业务字段比较往返测试', category: 'structured',
+    });
+    assert.equal(created.status, 201);
+    const bomBefore = await env.request('/api/projects/default/bom');
+    const referencesBefore = Object.fromEntries(bomBefore.body.vocabulary.map(term => [term.property.split('.').at(-1), term.references]));
+    const conditions = [{
+      field: 'customerAge', operator: '>=', valueSource: 'field', valueField: 'creditScore', value: '',
+    }];
+    const draft = {
+      ...created.body.draft,
+      name: '业务字段比较往返测试',
+      description: '验证结构化 BAL 的同类型字段比较',
+      conditions: structuredClone(conditions),
+      actions: [{ field: 'riskLevel', value: '低' }],
+    };
+
+    const saved = await env.request(`/api/projects/default/rules/${created.body.id}`, 'PUT', {
+      revision: created.body.revision,
+      draft,
+    });
+    assert.equal(saved.status, 200);
+    assert.deepEqual(saved.body.draft.conditions, conditions);
+    assert.equal(saved.body.bomInvalid, false);
+
+    const loaded = await env.request(`/api/projects/default/rules/${created.body.id}`);
+    assert.deepEqual(loaded.body.draft.conditions, conditions);
+    const compiled = await env.request(`/api/projects/default/rules/${created.body.id}/compile`, 'POST', {
+      revision: loaded.body.revision,
+      draft: loaded.body.draft,
+    });
+    assert.equal(compiled.status, 200);
+    assert.match(compiled.body.drl, /customerAge >= creditScore/);
+    assert.doesNotMatch(compiled.body.drl, /customerAge >= "creditScore"/);
+
+    const bomAfter = await env.request('/api/projects/default/bom');
+    const creditScore = bomAfter.body.vocabulary.find(term => term.property.endsWith('.creditScore'));
+    assert.equal(creditScore.references, referencesBefore.creditScore + 1);
+    const references = await env.request('/api/projects/default/bom/references?field=creditScore');
+    assert.ok(references.body.some(item => item.id === created.body.id && item.type === 'rule'));
+
+    const rawBom = JSON.parse(await fs.readFile(path.join(env.dir, 'bom.json'), 'utf8'));
+    const blocked = await env.request('/api/projects/default/bom', 'PUT', {
+      version: rawBom.version,
+      fields: rawBom.fields.filter(field => field.key !== 'creditScore'),
+    });
+    assert.equal(blocked.status, 400);
+    assert.match(blocked.body.error, /信用评分.*不能删除/);
+  } finally {
+    await env.stop();
+  }
+});
+
+
+test('extended BAL operator values survive project API save and compile', async () => {
+  const env = await startTestEnv();
+  try {
+    const created = await env.request('/api/projects/default/rules', 'POST', {
+      type: 'rule', name: '扩展操作符往返测试', category: 'structured',
+    });
+    assert.equal(created.status, 201);
+    const conditions = [
+      { field: 'customerAge', operator: 'between', value: '18', valueEnd: '65' },
+      { field: 'customerType', operator: 'in', value: '', values: ['个人', '企业'], connector: 'and' },
+    ];
+    const draft = {
+      ...created.body.draft,
+      name: '扩展操作符往返测试',
+      conditions: structuredClone(conditions),
+      actions: [{ field: 'riskLevel', value: '低' }],
+    };
+
+    const saved = await env.request(`/api/projects/default/rules/${created.body.id}`, 'PUT', {
+      revision: created.body.revision,
+      draft,
+    });
+    assert.equal(saved.status, 200);
+    assert.deepEqual(saved.body.draft.conditions, conditions);
+    assert.match(saved.body.content, /customerAge >= 18 && customerAge <= 65/);
+    assert.match(saved.body.content, /customerType in \("个人", "企业"\)/);
+
+    const loaded = await env.request(`/api/projects/default/rules/${created.body.id}`);
+    assert.deepEqual(loaded.body.draft.conditions, conditions);
+    const compiled = await env.request(`/api/projects/default/rules/${created.body.id}/compile`, 'POST', {
+      revision: loaded.body.revision,
+      draft: loaded.body.draft,
+    });
+    assert.equal(compiled.status, 200);
+    assert.match(compiled.body.drl, /customerAge >= 18 && customerAge <= 65/);
+    assert.match(compiled.body.drl, /customerType in \("个人", "企业"\)/);
+  } finally {
+    await env.stop();
+  }
+});
+
+
 test('project engine defaults to rules and locks after creation', async () => {
   const env = await startTestEnv();
   try {

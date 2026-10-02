@@ -1,4 +1,4 @@
-import { defaultBom, findField } from './bom.js';
+import { defaultBom, findField, inferSemanticType } from './bom.js';
 import { canonicalPackageName, DEFAULT_PACKAGE_NAME, PACKAGE_NAME_RE } from './packages.js';
 
 // 向后兼容：现有测试和代码可能 import { fields }。
@@ -14,6 +14,33 @@ export const operators = [
   { key: '<', label: '小于' },
   { key: '<=', label: '小于等于' },
 ];
+
+const BAL_OPERATORS_BY_TYPE = Object.freeze({
+  Integer: ['==', '!=', '>', '<', '>=', '<=', 'between'],
+  Decimal: ['==', '!=', '>', '<', '>=', '<=', 'between'],
+  Boolean: ['==', '!='],
+  String: ['==', '!=', 'contains', 'not contains', 'starts with', 'ends with', 'matches'],
+  Enum: ['==', '!=', 'in', 'not in'],
+  Date: ['==', '!=', 'before', 'after', 'between'],
+  'List<String>': ['contains', 'not contains', 'size >', 'size <'],
+});
+
+const FIELD_VALUE_OPERATORS_BY_TYPE = Object.freeze({
+  Integer: ['==', '!=', '>', '<', '>=', '<='],
+  Decimal: ['==', '!=', '>', '<', '>=', '<='],
+  Boolean: ['==', '!='],
+  String: ['==', '!=', 'contains', 'not contains', 'starts with', 'ends with', 'matches'],
+  Enum: ['==', '!='],
+  Date: ['==', '!=', 'before', 'after'],
+});
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function validIsoDate(value) {
+  return ISO_DATE_RE.test(value)
+    && !Number.isNaN(Date.parse(`${value}T00:00:00Z`))
+    && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+}
 
 export const newRule = () => ({
   name: '未命名规则',
@@ -32,6 +59,7 @@ export function parseValue(field, raw) {
   if (typeof raw !== 'string' || raw.length > 200) return null;
   const trimmed = raw.trim();
   if (!trimmed) return null;
+  if (inferSemanticType(field) === 'Date') return validIsoDate(trimmed) ? JSON.stringify(trimmed) : null;
   if (field.type === 'String') {
     // 枚举字段：值必须在枚举列表内
     if (field.enum && !field.enum.includes(trimmed)) return null;
@@ -58,6 +86,78 @@ export function parseValue(field, raw) {
 
 export function formatDrlValue(field, raw) { return parseValue(field, raw); }
 
+function validateLiteralCondition(item, field) {
+  const semanticType = inferSemanticType(field);
+  if (item.operator === 'between') {
+    const lower = parseValue(field, item.value);
+    const upper = parseValue(field, item.valueEnd);
+    if (lower === null || upper === null) return `${field.label}的区间上下界无效`;
+    const reversed = semanticType === 'Date'
+      ? item.value > item.valueEnd
+      : Number(item.value) > Number(item.valueEnd);
+    if (reversed) return `${field.label}的区间下界不能大于上界`;
+    return null;
+  }
+  if (item.operator === 'in' || item.operator === 'not in') {
+    if (!Array.isArray(item.values) || item.values.length < 1 || item.values.length > 50) return `${field.label}请至少选择一个枚举值`;
+    if (new Set(item.values).size !== item.values.length || item.values.some(value => parseValue(field, value) === null)) return `${field.label}的枚举条件值无效`;
+    return null;
+  }
+  if (item.operator === 'matches') {
+    if (parseValue(field, item.value) === null) return `${field.label}的正则表达式无效`;
+    try { new RegExp(item.value); } catch { return `${field.label}的正则表达式无效`; }
+    return null;
+  }
+  if (item.operator === 'size >' || item.operator === 'size <') {
+    if (!/^\d+$/.test(item.value || '') || Number(item.value) > 1000000) return `${field.label}的长度必须是 0–1000000 的整数`;
+    return null;
+  }
+  return parseValue(field, item.value) === null ? `${field.label}的条件值无效` : null;
+}
+
+function fieldConstraint(item, field) {
+  const semanticType = inferSemanticType(field);
+  if (semanticType === 'Date') {
+    if (item.operator === 'before') return `${item.field} != null && ${item.valueField} != null && ${item.field}.compareTo(${item.valueField}) < 0`;
+    if (item.operator === 'after') return `${item.field} != null && ${item.valueField} != null && ${item.field}.compareTo(${item.valueField}) > 0`;
+  }
+  if (semanticType === 'String') {
+    if (item.operator === 'contains') return `${item.field} != null && ${item.valueField} != null && ${item.field}.contains(${item.valueField})`;
+    if (item.operator === 'not contains') return `${item.field} != null && ${item.valueField} != null && !${item.field}.contains(${item.valueField})`;
+    if (item.operator === 'starts with') return `${item.field} != null && ${item.valueField} != null && ${item.field}.startsWith(${item.valueField})`;
+    if (item.operator === 'ends with') return `${item.field} != null && ${item.valueField} != null && ${item.field}.endsWith(${item.valueField})`;
+    if (item.operator === 'matches') return `${item.field} != null && ${item.valueField} != null && ${item.field}.matches(${item.valueField})`;
+  }
+  return `${item.field} ${item.operator} ${item.valueField}`;
+}
+
+function literalConstraint(item, field) {
+  const semanticType = inferSemanticType(field);
+  if (item.operator === 'between') {
+    const lower = parseValue(field, item.value);
+    const upper = parseValue(field, item.valueEnd);
+    if (semanticType === 'Date') return `${item.field} != null && ${item.field}.compareTo(${lower}) >= 0 && ${item.field}.compareTo(${upper}) <= 0`;
+    return `${item.field} >= ${lower} && ${item.field} <= ${upper}`;
+  }
+  if (item.operator === 'in' || item.operator === 'not in') {
+    return `${item.field} ${item.operator} (${item.values.map(value => parseValue(field, value)).join(', ')})`;
+  }
+  const value = parseValue(field, item.value);
+  if (semanticType === 'Date') {
+    if (item.operator === 'before') return `${item.field} != null && ${item.field}.compareTo(${value}) < 0`;
+    if (item.operator === 'after') return `${item.field} != null && ${item.field}.compareTo(${value}) > 0`;
+  }
+  if (semanticType === 'String' || semanticType === 'List<String>') {
+    if (item.operator === 'contains') return `${item.field} != null && ${item.field}.contains(${value})`;
+    if (item.operator === 'not contains') return `${item.field} != null && !${item.field}.contains(${value})`;
+    if (item.operator === 'starts with') return `${item.field} != null && ${item.field}.startsWith(${value})`;
+    if (item.operator === 'ends with') return `${item.field} != null && ${item.field}.endsWith(${value})`;
+    if (item.operator === 'matches') return `${item.field} != null && ${item.field}.matches(${value})`;
+    if (item.operator === 'size >' || item.operator === 'size <') return `${item.field} != null && ${item.field}.length() ${item.operator.slice(5)} ${Number(item.value)}`;
+  }
+  return `${item.field} ${item.operator} ${value}`;
+}
+
 /**
  * 校验规则。bom 缺省用内置默认 BOM。
  */
@@ -74,11 +174,21 @@ export function validateRule(rule, bom = DEFAULT_BOM) {
   for (const [index, item] of rule.conditions.entries()) {
     if (item.raw || item.pattern) continue; // 决策表生成的内联 DRL 片段，跳过字段校验
     const field = findField(bom, item.field);
-    if (!field || field.kind !== 'input' || !operators.some(o => o.key === item.operator)) return '条件字段或运算符无效';
+    const semanticType = field ? inferSemanticType(field) : null;
+    if (!field || field.kind !== 'input' || !BAL_OPERATORS_BY_TYPE[semanticType]?.includes(item.operator)) return '条件字段或运算符无效';
     if (item.quantifier != null && !['one', 'exists', 'all', 'none'].includes(item.quantifier)) return '条件量词无效';
     if (index > 0 && item.connector != null && !['and', 'or'].includes(item.connector)) return '条件连接词无效';
-    if (field.type === 'Boolean' && !['==', '!='].includes(item.operator)) return '布尔字段只支持等于或不等于';
-    if (parseValue(field, item.value) === null) return `${field.label}的条件值无效`;
+    if (item.valueSource != null && !['literal', 'field'].includes(item.valueSource)) return '条件值来源无效';
+    if (item.valueSource === 'field') {
+      if (!FIELD_VALUE_OPERATORS_BY_TYPE[semanticType]?.includes(item.operator)) return `${field.label}的${item.operator}操作不支持业务字段值`;
+      const valueField = findField(bom, item.valueField);
+      if (!valueField || valueField.kind !== 'input') return `${field.label}用于比较的业务字段不存在或不是输入字段`;
+      if (valueField.key === field.key) return `${field.label}不能与自身比较`;
+      if (inferSemanticType(valueField) !== inferSemanticType(field)) return `${field.label}只能与同类型业务字段比较`;
+    } else {
+      const valueIssue = validateLiteralCondition(item, field);
+      if (valueIssue) return valueIssue;
+    }
   }
   const actionKeys = new Set();
   for (const item of rule.actions) {
@@ -135,7 +245,8 @@ export function generateDrl(rules, bom = DEFAULT_BOM) {
   for (const [index, rule] of rules.entries()) {
     const ruleName = `${rule.name} [${index + 1}]`;
     // conditions 支持两种形态：
-    //   1) { field, operator, value } —— 标准字段约束，拼进 RuleInput( )
+    //   1) { field, operator, value } 或 { field, operator, valueSource: "field", valueField }
+    //      —— 标准字段约束，拼进 RuleInput( )
     //   2) { pattern: "not"|"exists", condition: "..." } —— 独立 when pattern
     const inlinePatterns = [];
     const fieldConditions = [];
@@ -143,7 +254,8 @@ export function generateDrl(rules, bom = DEFAULT_BOM) {
       if (item.pattern) { inlinePatterns.push(item); continue; }
       if (item.raw) { fieldConditions.push({ item, constraint: item.raw }); continue; }
       const field = findField(bom, item.field);
-      fieldConditions.push({ item, constraint: `${item.field} ${item.operator} ${parseValue(field, item.value)}` });
+      const constraint = item.valueSource === 'field' ? fieldConstraint(item, field) : literalConstraint(item, field);
+      fieldConditions.push({ item, constraint });
     }
     lines.push('', `rule ${JSON.stringify(ruleName)}`, `    salience ${rule.salience ?? rule.priority}`);
     if (rule.activationGroup) lines.push(`    activation-group ${JSON.stringify(rule.activationGroup)}`);

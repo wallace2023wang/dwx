@@ -54,7 +54,7 @@
 
 
 ```
-\[量词] \[事实类型] 的 \[字段] \[比较符] \[值]
+\[量词] \[事实类型] 的 \[字段] \[比较符] \[固定值 | 业务字段]
 ```
 
 
@@ -67,7 +67,11 @@
 
 * **比较符**：等于 / 不等于 / 大于 / 小于 / 大于等于 / 小于等于 / 属于 / 不属于 / 包含 / 不包含
 
-* **值**：字面量（数字 / 字符串 /true/false/ 日期 / 枚举值）
+* **固定值**：字面量（数字 / 字符串 /true/false/ 日期 / 枚举值）
+
+* **业务字段**：同一规则输入中的另一个业务字段。只能选择 input 方向、与左字段业务类型完全相同且不是左字段自身的字段。例如“氮气浓度 >= 最小氮气浓度”。
+
+值区域使用“固定值 / 业务字段”分段切换。选择业务字段后，下拉项显示“事实类型 · 字段名”，候选项由 BOM 自动过滤；没有兼容字段时禁用业务字段模式。
 
 多条件用 **并且 / 或者** 连接，支持括号分组。
 
@@ -338,9 +342,9 @@ BOM（已有 `/api/projects/:id/bom`）：
 
 &#x20;   "conditions": \[
 
-&#x20;     {"factType": "Borrower", "field": "age", "op": "<", "value": 18},
+&#x20;     {"factType": "Borrower", "field": "age", "operator": "<", "value": "18"},
 
-&#x20;     {"factType": "Loan", "field": "amount", "op": ">", "value": 500000}
+&#x20;     {"factType": "NitrogenControlInput", "field": "nitrogenPct", "operator": ">=", "valueSource": "field", "valueField": "minPct", "value": ""}
 
 &#x20;   ]
 
@@ -362,6 +366,17 @@ BOM（已有 `/api/projects/:id/bom`）：
 ```
 
 BAL 文本只是这个 JSON 的渲染形式，不是存储格式。这样 BOM 变更时能程序化分析影响。
+
+`valueSource` 缺省或为 `literal` 时读取 `value`，保持旧规则兼容；为 `field` 时读取 `valueField`。右侧字段与左侧字段都计入 BOM 引用和变更影响分析。
+
+扩展操作符继续使用结构化字段保存：
+
+```
+{"field":"customerAge","operator":"between","value":"18","valueEnd":"65"}
+{"field":"customerType","operator":"in","value":"","values":["个人","企业"]}
+```
+
+数字/日期区间由双输入控件编辑，枚举属于/不属于由多选菜单编辑；字符串、日期和列表操作根据 BOM 类型自动切换控件，不允许业务人员手写 DRL。
 
 
 
@@ -388,7 +403,7 @@ DRL 文本
 
 
 ```
-{"factType":"Borrower","field":"age","op":"<","value":18}
+{"factType":"Borrower","field":"age","operator":"<","value":"18"}
 ```
 
 →
@@ -398,6 +413,20 @@ DRL 文本
 ```
 \$borrower : Borrower(age < 18)
 ```
+
+同类型字段比较：
+
+```
+{"field":"nitrogenPct","operator":">=","valueSource":"field","valueField":"minPct","value":""}
+```
+
+→
+
+```
+$input : RuleInput( nitrogenPct >= minPct )
+```
+
+字段操作数直接生成字段标识符，不按字符串字面量加引号。后端在生成 DRL 前再次校验右侧字段存在、为 input、类型一致且不是自身。
 
 
 
@@ -466,6 +495,22 @@ then
 * [ ] 业务术语蓝色虚线下划线
 
 * [ ] 值灰底等宽
+
+* [ ] 值区域可在“固定值 / 业务字段”之间切换
+
+* [ ] 业务字段下拉只列出同类型 input 字段，且排除左字段自身
+
+* [ ] `nitrogenPct >= minPct` 以结构化 JSON 保存并生成不带引号的 DRL
+
+* [ ] 数字/日期介于、日期早于/晚于可保存并通过 Drools 编译
+
+* [ ] 字符串包含/不包含/开头/结尾/正则可保存并通过 Drools 编译
+
+* [ ] 枚举属于/不属于使用结构化多选值
+
+* [ ] 列表包含/不包含/长度比较可保存并通过 Drools 编译
+
+* [ ] 右侧业务字段被删除或改为不同类型时，规则在资产列表标红警告
 
 * [ ] 右上角 "DRL 只读" 按钮改成 "高级 ▾ → 查看 DRL"，默认折叠
 

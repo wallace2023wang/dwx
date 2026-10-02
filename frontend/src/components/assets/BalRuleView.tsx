@@ -1,6 +1,6 @@
 import { ChevronDown, ChevronUp, Code2, LockKeyhole, Plus, Trash2 } from 'lucide-react'
-import type { BomField, RuleActionDraft, RuleConditionDraft, RuleDraft, RulePatternConditionDraft, RuleRawConditionDraft } from '../../types'
-import { BOM_TYPE_CAPABILITIES, defaultOperatorForType, operatorsForType } from '../../domain/bomTypes'
+import type { BomField, RuleActionDraft, RuleConditionDraft, RuleDraft, RuleFieldConditionDraft, RulePatternConditionDraft, RuleRawConditionDraft } from '../../types'
+import { BOM_TYPE_CAPABILITIES, defaultOperatorForType, operatorsForType, supportsFieldValueForType } from '../../domain/bomTypes'
 
 interface BalRuleViewProps {
   draft: RuleDraft
@@ -83,9 +83,87 @@ function valueError(value: string, field: BomField | undefined) {
   if (!value.trim()) return '请填写值'
   if (isNumberField(field) && !Number.isFinite(Number(value))) return '请输入有效数字'
   if (isBooleanField(field) && !['true', 'false'].includes(value)) return '请选择 true 或 false'
+  if (isDateField(field)) {
+    const parsed = new Date(`${value}T00:00:00Z`)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(parsed.valueOf()) || parsed.toISOString().slice(0, 10) !== value) return '请选择有效日期'
+  }
   const values = enumValues(field)
   if (values.length && !values.includes(value)) return '该枚举值已不在 BOM 中'
   return null
+}
+
+function usesFieldValue(condition: RuleFieldConditionDraft) {
+  return condition.valueSource === 'field'
+}
+
+function compatibleValueFields(facts: FactOption[], field: BomField | undefined) {
+  if (!field) return []
+  return facts.flatMap(fact => fact.fields
+    .filter(candidate => candidate.key !== field.key && candidate.type === field.type)
+    .map(candidate => ({ fact, field: candidate })))
+}
+
+function fieldValueError(condition: RuleFieldConditionDraft, field: BomField | undefined, facts: FactOption[]) {
+  if (!field) return '引用的 BOM 字段不存在'
+  if (!supportsFieldValueForType(field.type, condition.operator)) return `“${operatorsFor(field).find(option => option.value === condition.operator)?.label || condition.operator}”只支持固定值`
+  if (!condition.valueField) return '请选择用于比较的业务字段'
+  if (condition.valueField === field.key) return '不能与同一业务字段比较'
+  const rightField = selectedField(facts, condition.valueField)
+  if (!rightField || rightField.direction !== 'input') return '用于比较的业务字段不存在或不是输入字段'
+  if (rightField.type !== field.type) return `用于比较的字段必须是 ${field.type} 类型`
+  return null
+}
+
+function literalConditionError(condition: RuleFieldConditionDraft, field: BomField | undefined) {
+  if (condition.operator === 'between') {
+    const lowerError = valueError(condition.value, field)
+    const upperError = valueError(condition.valueEnd || '', field)
+    if (lowerError || upperError) return lowerError || upperError
+    if (isDateField(field) ? condition.value > (condition.valueEnd || '') : Number(condition.value) > Number(condition.valueEnd)) return '区间下界不能大于上界'
+    return null
+  }
+  if (condition.operator === 'in' || condition.operator === 'not in') {
+    const values = condition.values || []
+    if (!values.length) return '请至少选择一个枚举值'
+    if (new Set(values).size !== values.length || values.some(value => !enumValues(field).includes(value))) return '枚举条件包含失效值'
+    return null
+  }
+  if (condition.operator === 'matches') {
+    const error = valueError(condition.value, field)
+    if (error) return error
+    try { new RegExp(condition.value) } catch { return '请输入有效正则表达式' }
+    return null
+  }
+  if (condition.operator === 'size >' || condition.operator === 'size <') {
+    if (!/^\d+$/.test(condition.value) || Number(condition.value) > 1000000) return '长度必须是 0–1000000 的整数'
+    return null
+  }
+  return valueError(condition.value, field)
+}
+
+function conditionValueError(condition: RuleFieldConditionDraft, field: BomField | undefined, facts: FactOption[]) {
+  return usesFieldValue(condition)
+    ? fieldValueError(condition, field, facts)
+    : literalConditionError(condition, field)
+}
+
+function defaultLiteralValue(field: BomField | undefined, operator = defaultOperatorForType(field?.type)) {
+  if (operator === 'size >' || operator === 'size <') return '0'
+  return isBooleanField(field) ? 'true' : enumValues(field)[0] || ''
+}
+
+function literalDefaults(field: BomField | undefined, operator: string) {
+  return {
+    value: defaultLiteralValue(field, operator),
+    valueEnd: operator === 'between' ? '' : undefined,
+    values: operator === 'in' || operator === 'not in' ? enumValues(field).slice(0, 1) : undefined,
+  }
+}
+
+function displayConditionValue(condition: RuleFieldConditionDraft, field: BomField | undefined) {
+  if (condition.operator === 'between') return `${displayValue(condition.value, field)} 至 ${displayValue(condition.valueEnd || '', field)}`
+  if (condition.operator === 'in' || condition.operator === 'not in') return `[${(condition.values || []).map(value => displayValue(value, field)).join(', ')}]`
+  return displayValue(condition.value, field)
 }
 
 function isAdvancedCondition(condition: RuleConditionDraft): condition is RuleRawConditionDraft | RulePatternConditionDraft {
@@ -108,7 +186,7 @@ export function validateBalDraft(draft: RuleDraft, fields: BomField[]) {
       if (!operator) issues.push(`第 ${index + 1} 个条件的比较符不适用于${field.label}`)
       else if (!operator.runtimeSupported) issues.push(`第 ${index + 1} 个条件的“${operator.label}”操作符尚未启用执行支持`)
     }
-    const error = valueError(condition.value, field)
+    const error = conditionValueError(condition, field, factsFor(fields, 'input'))
     if (error) issues.push(`第 ${index + 1} 个条件：${error}`)
   }
   for (const [index, action] of draft.actions.entries()) {
@@ -175,33 +253,94 @@ function TermSelect({ value, label, options, invalid, onChange }: {
   )
 }
 
-function ValueControl({ value, field, onChange }: {
+function ValueControl({ value, field, label, placeholder = '输入值', forceNumber = false, onChange }: {
   value: string
   field: BomField | undefined
+  label?: string
+  placeholder?: string
+  forceNumber?: boolean
   onChange: (value: string) => void
 }) {
   const error = valueError(value, field)
   const values = enumValues(field)
   const className = `h-8 min-w-[104px] flex-1 rounded-[2px] border px-2 font-mono text-[12px] outline-none ${error ? 'border-[#c62828] bg-[#fff1f1]' : 'border-transparent bg-[#f0f0f0] focus:border-brand-primary focus:bg-white'}`
   if (isBooleanField(field)) {
-    return <select className={className} value={value} onChange={event => onChange(event.target.value)} aria-label="布尔值"><option value="true">true</option><option value="false">false</option></select>
+    return <select className={className} value={value} onChange={event => onChange(event.target.value)} aria-label={label || '布尔值'}><option value="true">true</option><option value="false">false</option></select>
   }
   if (values.length) {
-    return <select className={className} value={value} onChange={event => onChange(event.target.value)} aria-label="枚举值">{error && <option value={value}>{value}（已失效）</option>}{values.map(option => <option key={option} value={option}>{option}</option>)}</select>
+    return <select className={className} value={value} onChange={event => onChange(event.target.value)} aria-label={label || '枚举值'}>{error && <option value={value}>{value}（已失效）</option>}{values.map(option => <option key={option} value={option}>{option}</option>)}</select>
   }
   return (
     <input
       className={className}
-      type={isNumberField(field) ? 'number' : isDateField(field) ? 'date' : 'text'}
+      type={forceNumber || isNumberField(field) ? 'number' : isDateField(field) ? 'date' : 'text'}
       min={field?.min ?? undefined}
       max={field?.max ?? undefined}
       step={field && BOM_TYPE_CAPABILITIES[field.type].step ? BOM_TYPE_CAPABILITIES[field.type].step : 'any'}
       value={value}
       onChange={event => onChange(event.target.value)}
-      placeholder="输入值"
+      placeholder={placeholder}
+      aria-label={label}
       aria-invalid={Boolean(error)}
       title={error || undefined}
     />
+  )
+}
+
+function EnumMultiControl({ condition, field, onChange }: {
+  condition: RuleFieldConditionDraft
+  field: BomField | undefined
+  onChange: (condition: RuleFieldConditionDraft) => void
+}) {
+  const selected = condition.values || []
+  const options = enumValues(field)
+  return (
+    <details className="group relative min-w-[160px] flex-1">
+      <summary className={`flex h-8 cursor-pointer list-none items-center justify-between rounded-[2px] border px-2 text-[12px] outline-none ${selected.length ? 'border-transparent bg-[#f0f0f0] text-ink-1' : 'border-[#c62828] bg-[#fff1f1] text-[#c62828]'}`} aria-label="枚举多选值">
+        <span className="truncate">{selected.length ? `已选 ${selected.length} 项：${selected.join('、')}` : '请选择枚举值'}</span><ChevronDown size={13} className="shrink-0 transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="absolute left-0 top-9 z-30 max-h-52 min-w-full overflow-auto border border-ink-border bg-white p-1 shadow-lg">
+        {options.map(option => (
+          <label key={option} className="flex h-8 cursor-pointer items-center gap-2 px-2 text-[12px] hover:bg-ink-bg">
+            <input type="checkbox" checked={selected.includes(option)} aria-label={`选择枚举值 ${option}`} onChange={event => onChange({ ...condition, values: event.target.checked ? [...selected, option] : selected.filter(value => value !== option) })} />
+            <span>{option}</span>
+          </label>
+        ))}
+      </div>
+    </details>
+  )
+}
+
+function ConditionLiteralControl({ condition, field, onChange }: {
+  condition: RuleFieldConditionDraft
+  field: BomField | undefined
+  onChange: (condition: RuleFieldConditionDraft) => void
+}) {
+  if (condition.operator === 'between') {
+    return (
+      <div className="flex min-w-[250px] flex-1 items-center gap-1.5">
+        <ValueControl value={condition.value} field={field} label="区间下界" placeholder="下界" onChange={value => onChange({ ...condition, value })} />
+        <span className="shrink-0 text-[11px] text-ink-3">至</span>
+        <ValueControl value={condition.valueEnd || ''} field={field} label="区间上界" placeholder="上界" onChange={valueEnd => onChange({ ...condition, valueEnd })} />
+      </div>
+    )
+  }
+  if (condition.operator === 'in' || condition.operator === 'not in') return <EnumMultiControl condition={condition} field={field} onChange={onChange} />
+  if (condition.operator === 'size >' || condition.operator === 'size <') return <ValueControl value={condition.value} field={field} label="列表长度" placeholder="长度" forceNumber onChange={value => onChange({ ...condition, value })} />
+  return <ValueControl value={condition.value} field={field} label="条件值" placeholder={condition.operator === 'matches' ? '输入正则表达式' : '输入值'} onChange={value => onChange({ ...condition, value })} />
+}
+
+function ValueSourceControl({ value, fieldModeAvailable, disabledReason, onChange }: {
+  value: 'literal' | 'field'
+  fieldModeAvailable: boolean
+  disabledReason?: string
+  onChange: (value: 'literal' | 'field') => void
+}) {
+  return (
+    <div className="inline-flex h-8 shrink-0 rounded-[2px] border border-ink-border bg-white p-0.5" role="group" aria-label="比较值来源">
+      <button type="button" className={`px-2 text-[11px] ${value === 'literal' ? 'bg-ink-1 font-medium text-white' : 'text-ink-2 hover:bg-ink-bg'}`} aria-pressed={value === 'literal'} onClick={() => onChange('literal')}>固定值</button>
+      <button type="button" className={`px-2 text-[11px] disabled:cursor-not-allowed disabled:opacity-40 ${value === 'field' ? 'bg-brand-primary font-medium text-white' : 'text-ink-2 hover:bg-ink-bg'}`} aria-pressed={value === 'field'} disabled={!fieldModeAvailable} title={fieldModeAvailable ? '选择同类型的输入字段' : disabledReason || '没有可比较的同类型输入字段'} onClick={() => onChange('field')}>业务字段</button>
+    </div>
   )
 }
 
@@ -261,6 +400,10 @@ function ConditionRow({ condition, index, count, facts, editable, onChange, onMo
   const invalid = !field
   const operator = operatorsFor(field).find(option => option.value === condition.operator)
   const quantifier = quantifiers.find(option => option.value === (condition.quantifier || 'one'))?.label || '一个'
+  const fieldValues = compatibleValueFields(facts, field)
+  const rightField = usesFieldValue(condition) ? selectedField(facts, condition.valueField || '') : undefined
+  const rightFact = rightField ? facts.find(candidate => candidate.fields.some(option => option.key === rightField.key)) : undefined
+  const conditionError = conditionValueError(condition, field, facts)
 
   if (!editable) {
     return (
@@ -272,8 +415,18 @@ function ConditionRow({ condition, index, count, facts, editable, onChange, onMo
           <span className="text-ink-3">的</span>
           <ReadonlyTerm fieldKey={condition.field} onOpenBom={onOpenBom}>{field?.label || condition.field}</ReadonlyTerm>
           <strong className="font-semibold text-ink-1">{operator?.label || condition.operator}</strong>
-          <code className="rounded-[2px] bg-[#f0f0f0] px-2 py-1 font-mono text-[12px] text-ink-1">{displayValue(condition.value, field)}</code>
-          {field?.unit && <span className="text-[11px] text-ink-3">{field.unit}</span>}
+          {usesFieldValue(condition) ? (
+            <>
+              <ReadonlyTerm fieldKey={condition.valueField || ''} onOpenBom={onOpenBom}>{rightFact?.label || '未知事实'}</ReadonlyTerm>
+              <span className="text-ink-3">的</span>
+              <ReadonlyTerm fieldKey={condition.valueField || ''} onOpenBom={onOpenBom}>{rightField?.label || condition.valueField || '未选择字段'}</ReadonlyTerm>
+            </>
+          ) : (
+            <>
+              <code className="rounded-[2px] bg-[#f0f0f0] px-2 py-1 font-mono text-[12px] text-ink-1">{displayConditionValue(condition, field)}</code>
+              {field?.unit && <span className="text-[11px] text-ink-3">{field.unit}</span>}
+            </>
+          )}
         </div>
       </div>
     )
@@ -282,11 +435,31 @@ function ConditionRow({ condition, index, count, facts, editable, onChange, onMo
   const selectFact = (factName: string) => {
     const nextFact = facts.find(candidate => candidate.name === factName)
     const nextField = nextFact?.fields[0]
-    onChange({ ...condition, factType: factName, field: nextField?.key || '', operator: defaultOperatorForType(nextField?.type), value: isBooleanField(nextField) ? 'true' : enumValues(nextField)[0] || '' })
+    const nextOperator = defaultOperatorForType(nextField?.type)
+    const nextValueField = compatibleValueFields(facts, nextField)[0]?.field.key
+    const keepFieldValue = usesFieldValue(condition) && supportsFieldValueForType(nextField?.type, nextOperator)
+    onChange({ ...condition, factType: factName, field: nextField?.key || '', operator: nextOperator, valueSource: keepFieldValue ? 'field' : 'literal', valueField: keepFieldValue ? nextValueField : undefined, ...(keepFieldValue ? { value: '', valueEnd: undefined, values: undefined } : literalDefaults(nextField, nextOperator)) })
   }
   const selectField = (fieldKey: string) => {
     const nextField = fact?.fields.find(candidate => candidate.key === fieldKey)
-    onChange({ ...condition, field: fieldKey, operator: defaultOperatorForType(nextField?.type), value: isBooleanField(nextField) ? 'true' : enumValues(nextField)[0] || '' })
+    const nextOperator = defaultOperatorForType(nextField?.type)
+    const nextValueField = compatibleValueFields(facts, nextField)[0]?.field.key
+    const keepFieldValue = usesFieldValue(condition) && supportsFieldValueForType(nextField?.type, nextOperator)
+    onChange({ ...condition, field: fieldKey, operator: nextOperator, valueSource: keepFieldValue ? 'field' : 'literal', valueField: keepFieldValue ? nextValueField : undefined, ...(keepFieldValue ? { value: '', valueEnd: undefined, values: undefined } : literalDefaults(nextField, nextOperator)) })
+  }
+  const selectOperator = (operator: string) => {
+    if (usesFieldValue(condition) && supportsFieldValueForType(field?.type, operator)) {
+      onChange({ ...condition, operator, value: '', valueEnd: undefined, values: undefined })
+      return
+    }
+    onChange({ ...condition, operator, valueSource: 'literal', valueField: undefined, ...literalDefaults(field, operator) })
+  }
+  const selectValueSource = (valueSource: 'literal' | 'field') => {
+    if (valueSource === 'field') {
+      onChange({ ...condition, valueSource, value: '', valueField: fieldValues[0]?.field.key })
+      return
+    }
+    onChange({ ...condition, valueSource, valueField: undefined, ...literalDefaults(field, condition.operator) })
   }
 
   return (
@@ -296,18 +469,29 @@ function ConditionRow({ condition, index, count, facts, editable, onChange, onMo
           <option value="and">并且</option><option value="or">或者</option>
         </select>
       )}
-      <div className={`flex min-h-12 flex-wrap items-center gap-2 rounded-[3px] border px-3 py-2 ${invalid || valueError(condition.value, field) ? 'border-[#c62828] bg-[#fffafa]' : 'border-ink-border bg-[#fafafa]'}`}>
+      <div className={`flex min-h-12 flex-wrap items-center gap-2 rounded-[3px] border px-3 py-2 ${invalid || conditionError ? 'border-[#c62828] bg-[#fffafa]' : 'border-ink-border bg-[#fafafa]'}`}>
         <select className="h-8 rounded-[2px] border border-ink-border bg-white px-1.5 text-[11px] text-ink-2 outline-none focus:border-brand-primary" value={condition.quantifier || 'one'} onChange={event => onChange({ ...condition, quantifier: event.target.value as RuleConditionDraft['quantifier'] })} aria-label="量词">
           {quantifiers.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
         <TermSelect value={fact?.name || condition.factType || ''} label="事实类型" options={facts.map(option => ({ value: option.name, label: option.label }))} invalid={!fact} onChange={selectFact} />
         <span className="text-ink-3">的</span>
         <TermSelect value={condition.field} label="业务字段" options={(fact?.fields || []).map(option => ({ value: option.key, label: option.label }))} invalid={invalid} onChange={selectField} />
-        <select className="h-8 rounded-[2px] border border-ink-border bg-white px-2 text-[11px] font-semibold text-ink-1 outline-none focus:border-brand-primary" value={condition.operator} onChange={event => onChange({ ...condition, operator: event.target.value })} aria-label="比较符" title="灰色操作符需要后续启用执行支持">
-          {operatorsFor(field).map(option => <option key={option.value} value={option.value} disabled={!option.runtimeSupported}>{option.label}{option.runtimeSupported ? '' : '（待支持）'}</option>)}
+        <select className="h-8 rounded-[2px] border border-ink-border bg-white px-2 text-[11px] font-semibold text-ink-1 outline-none focus:border-brand-primary" value={condition.operator} onChange={event => selectOperator(event.target.value)} aria-label="比较符">
+          {operatorsFor(field).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
-        <ValueControl value={condition.value} field={field} onChange={value => onChange({ ...condition, value })} />
-        {field?.unit && <span className="text-[11px] text-ink-3">{field.unit}</span>}
+        <ValueSourceControl value={usesFieldValue(condition) ? 'field' : 'literal'} fieldModeAvailable={fieldValues.length > 0 && supportsFieldValueForType(field?.type, condition.operator)} disabledReason={fieldValues.length ? '该操作只支持固定值' : undefined} onChange={selectValueSource} />
+        {usesFieldValue(condition) ? (
+          <select className={`h-8 min-w-[180px] flex-1 rounded-[2px] border bg-white px-2 text-[12px] font-medium outline-none ${conditionError ? 'border-[#c62828] text-[#c62828]' : 'border-brand-primary text-brand-primary'}`} value={condition.valueField || ''} onChange={event => onChange({ ...condition, valueField: event.target.value })} aria-label="用于比较的业务字段" aria-invalid={Boolean(conditionError)} title={conditionError || undefined}>
+            {!condition.valueField && <option value="">请选择业务字段</option>}
+            {condition.valueField && !fieldValues.some(option => option.field.key === condition.valueField) && <option value={condition.valueField}>字段已失效或类型不匹配</option>}
+            {fieldValues.map(option => <option key={option.field.key} value={option.field.key}>{option.fact.label} · {option.field.label}</option>)}
+          </select>
+        ) : (
+          <>
+            <ConditionLiteralControl condition={condition} field={field} onChange={onChange} />
+            {field?.unit && <span className="text-[11px] text-ink-3">{field.unit}</span>}
+          </>
+        )}
         <RowActions index={index} count={count} onMove={onMove} onDelete={onDelete} />
       </div>
     </div>
@@ -384,7 +568,13 @@ function balPreview(draft: RuleDraft, fields: BomField[]) {
     const field = selectedField(inputFacts, condition.field)
     const quantifier = quantifiers.find(option => option.value === (condition.quantifier || 'one'))?.label || '一个'
     const operator = operatorsFor(field).find(option => option.value === condition.operator)?.label || condition.operator
-    lines.push(`    ${prefix}${quantifier} ${fact?.label || '未知事实'} 的 ${field?.label || condition.field} ${operator} ${displayValue(condition.value, field)}`)
+    if (usesFieldValue(condition)) {
+      const rightField = selectedField(inputFacts, condition.valueField || '')
+      const rightFact = rightField ? inputFacts.find(candidate => candidate.fields.some(option => option.key === rightField.key)) : undefined
+      lines.push(`    ${prefix}${quantifier} ${fact?.label || '未知事实'} 的 ${field?.label || condition.field} ${operator} ${rightFact?.label || '未知事实'} 的 ${rightField?.label || condition.valueField || '未选择字段'}`)
+    } else {
+      lines.push(`    ${prefix}${quantifier} ${fact?.label || '未知事实'} 的 ${field?.label || condition.field} ${operator} ${displayConditionValue(condition, field)}`)
+    }
   })
   lines.push('', '  那么')
   draft.actions.forEach(action => {

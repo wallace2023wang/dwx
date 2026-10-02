@@ -10,14 +10,14 @@
  *   两种错法：
  *     · 阈值留在驱动代码里     → 改阈值要改代码重启（现状）
  *     · 阈值写进决策表字面量   → 阈值随 Release 冻结，改一次要重新发布+部署
- *   正确做法：阈值作为 facts 传入，由规则做跨字段比较（BAL 的 raw 条件直通 DRL）。
+ *   正确做法：阈值作为 facts 传入，由规则做结构化的同类型字段比较。
  *   已实测：同一份规则，阈值 [90,95] → [85,93] 行为立刻跟着变，规则内无任何数字。
  *
  * 另一个实测约束：未赋值的 Boolean 字段会被引擎默认成 false，
  *   因此 `pctAtLeastMax == null` 这类守卫**永远不成立**，必须用纯跨字段比较写阈值规则。
  *
  * 用法：
- *   node seed-nitrogen-bal.mjs                # 创建/更新 12 条规则并编译
+ *   node seed-nitrogen-bal.mjs                # 创建/更新 11 条规则并编译
  *   node seed-nitrogen-bal.mjs --project <id>
  */
 
@@ -59,10 +59,10 @@ const DEV = {
  * salience 从高到低：结束 > 暂停 > 阈值判定 > 状态迁移。
  * 阈值规则必须排在迁移规则之前，让 pctAtLeastMax / pctBelowMin 先算出来。
  */
-/** 条件构造：raw 直通 DRL 片段（阈值比较就在这里），field/operator/value 走平台校验 */
+/** 条件构造：固定值与同类型业务字段比较都走平台结构化校验。 */
 const F = (field, operator, value) => ({ field, operator, value });
-const RAW = expr => ({ raw: expr });
-const GUARDS = [RAW('paused == false'), RAW('endReached == false')];
+const FF = (field, operator, valueField) => ({ field, operator, valueSource: 'field', valueField, value: '' });
+const GUARDS = [F('paused', '==', 'false'), F('endReached', '==', 'false')];
 const devActions = (phase, reason, dev) => [
   { field: 'nextPhase', value: phase },
   { field: 'reason', value: reason },
@@ -70,7 +70,7 @@ const devActions = (phase, reason, dev) => [
 ];
 
 /**
- * 12 条规则，salience 从高到低：结束 > 暂停 > 状态迁移。
+ * 11 条规则，salience 从高到低：结束 > 暂停 > 状态迁移。
  *
  * 关键设计（已实测）：
  *   · 阈值比较写在条件里（`nitrogenPct >= maxPct`），阈值是 facts 而非字面量
@@ -85,14 +85,14 @@ const RULES = [
     // 平台实测：salience 高的**先**执行、低的**后**执行，而后写覆盖 → 要胜出须给更低 salience。
     // 因此"结束"用 55、低于"暂停"的 60，才能在两者同时成立时覆盖暂停。
     priority: 55,
-    conditions: [RAW('endReached == true')],
+    conditions: [F('endReached', '==', 'true')],
     actions: devActions('COMPLETED', '到达结束时间，充氮结束', DEV.holding),
   },
   {
     name: '暂停全关',
     description: 'paused=true 时设备全关并置 PAUSED。优先级仅次于结束时间（salience 高于结束，先执行、会被结束覆盖）；环流计时由中控冻结。',
     priority: 60,
-    conditions: [RAW('paused == true')],
+    conditions: [F('paused', '==', 'true')],
     actions: devActions('PAUSED', '暂停中，设备全关', DEV.holding),
   },
   {
@@ -106,56 +106,56 @@ const RULES = [
     name: '充氮未达标保持',
     description: 'FILLING 且 nitrogenPct < maxPct：保持充氮设备态。',
     priority: 9,
-    conditions: [F('phase', '==', 'FILLING'), RAW('nitrogenPct < maxPct'), ...GUARDS],
+    conditions: [F('phase', '==', 'FILLING'), FF('nitrogenPct', '<', 'maxPct'), ...GUARDS],
     actions: devActions('FILLING', '充氮未达标，保持充氮', DEV.filling),
   },
   {
     name: '充氮达标转环流',
     description: 'FILLING 且 nitrogenPct >= maxPct：关制氮机与充氮阀、开环流阀与风机。',
     priority: 8,
-    conditions: [F('phase', '==', 'FILLING'), RAW('nitrogenPct >= maxPct'), ...GUARDS],
+    conditions: [F('phase', '==', 'FILLING'), FF('nitrogenPct', '>=', 'maxPct'), ...GUARDS],
     actions: devActions('CIRCULATION', '浓度达最大，停止充氮转环流', DEV.circulation),
   },
   {
     name: '环流未满保持',
     description: 'CIRCULATION 且环流累计未满（circElapsed=false）：保持环流设备态。',
     priority: 7,
-    conditions: [F('phase', '==', 'CIRCULATION'), RAW('circElapsed == false'), ...GUARDS],
+    conditions: [F('phase', '==', 'CIRCULATION'), F('circElapsed', '==', 'false'), ...GUARDS],
     actions: devActions('CIRCULATION', '环流中，通风循环', DEV.circulation),
   },
   {
     name: '环流期满转保氮',
     description: 'CIRCULATION 且 circElapsed：停环流进入保氮。环流时长是参数，暂停期间不计时（由中控累计）。',
     priority: 6,
-    conditions: [F('phase', '==', 'CIRCULATION'), RAW('circElapsed == true'), ...GUARDS],
+    conditions: [F('phase', '==', 'CIRCULATION'), F('circElapsed', '==', 'true'), ...GUARDS],
     actions: devActions('HOLDING', '环流期满，进入保氮期', DEV.holding),
   },
   {
     name: '保氮正常保持',
     description: 'HOLDING 且 nitrogenPct >= minPct：设备全关，等待浓度下降。',
     priority: 5,
-    conditions: [F('phase', '==', 'HOLDING'), RAW('nitrogenPct >= minPct'), ...GUARDS],
+    conditions: [F('phase', '==', 'HOLDING'), FF('nitrogenPct', '>=', 'minPct'), ...GUARDS],
     actions: devActions('HOLDING', '保氮中，设备全关', DEV.holding),
   },
   {
     name: '保氮过低转补氮',
     description: 'HOLDING 且 nitrogenPct < minPct：开制氮机与充氮阀补氮。',
     priority: 4,
-    conditions: [F('phase', '==', 'HOLDING'), RAW('nitrogenPct < minPct'), ...GUARDS],
+    conditions: [F('phase', '==', 'HOLDING'), FF('nitrogenPct', '<', 'minPct'), ...GUARDS],
     actions: devActions('REPLENISHING', '浓度低于最小，开充氮补氮', DEV.replenishing),
   },
   {
     name: '补氮未达标保持',
     description: 'REPLENISHING 且 nitrogenPct < maxPct：保持补氮设备态。',
     priority: 3,
-    conditions: [F('phase', '==', 'REPLENISHING'), RAW('nitrogenPct < maxPct'), ...GUARDS],
+    conditions: [F('phase', '==', 'REPLENISHING'), FF('nitrogenPct', '<', 'maxPct'), ...GUARDS],
     actions: devActions('REPLENISHING', '补氮未达标，保持补氮', DEV.replenishing),
   },
   {
     name: '补氮达标转环流',
     description: 'REPLENISHING 且 nitrogenPct >= maxPct：停止充氮转环流，环路闭合。',
     priority: 2,
-    conditions: [F('phase', '==', 'REPLENISHING'), RAW('nitrogenPct >= maxPct'), ...GUARDS],
+    conditions: [F('phase', '==', 'REPLENISHING'), FF('nitrogenPct', '>=', 'maxPct'), ...GUARDS],
     actions: devActions('CIRCULATION', '补氮达标，停止充氮转环流', DEV.circulation),
   },
 ];

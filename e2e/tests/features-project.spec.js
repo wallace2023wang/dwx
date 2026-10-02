@@ -47,8 +47,13 @@ test('feature-assets 资产页-包树/筛选/搜索/新建规则', async ({ page
   await expect(editor).toBeVisible({ timeout: 15_000 })
   shots.push(await saveShot(page, id, '新建规则编辑器'))
 
-  // 新建规则自动带一条条件与一条动作，值均为空 → 需填写后才能保存
-  await editor.getByPlaceholder('输入值').first().fill('18')
+  // 条件右值切到业务字段，只能选择与“客户年龄”同为 Integer 的其他 input 字段。
+  await editor.getByRole('button', { name: '业务字段', exact: true }).click()
+  const valueField = editor.getByLabel('用于比较的业务字段')
+  await expect(valueField).toBeVisible()
+  await expect(valueField.locator('option')).toHaveCount(1)
+  await expect(valueField.locator('option')).toHaveText(/· 信用评分/)
+  await valueField.selectOption('creditScore')
   const enumSel = editor.getByLabel('枚举值').first()
   if (await enumSel.count()) {
     await enumSel.selectOption({ index: 1 })
@@ -60,7 +65,36 @@ test('feature-assets 资产页-包树/筛选/搜索/新建规则', async ({ page
   await expect(page.getByRole('button', { name: '保存草稿' })).toBeEnabled({ timeout: 10_000 })
   await page.getByRole('button', { name: '保存草稿' }).click()
   await expect(page.getByText(/BAL 草稿已保存/).first()).toBeVisible({ timeout: 15_000 })
-  shots.push(await saveShot(page, id, '规则草稿保存成功'))
+  await expect(editor.getByLabel('用于比较的业务字段')).toHaveValue('creditScore')
+  shots.push(await saveShot(page, id, '同类型业务字段比较已保存'))
+
+  await editor.getByRole('button', { name: '编译', exact: true }).click()
+  await expect(editor.getByText('Drools 编译通过')).toBeVisible({ timeout: 30_000 })
+
+  // 将同一条件切回固定值，验证数字“介于”双输入和真实 Drools 编译。
+  await editor.getByRole('button', { name: '固定值', exact: true }).click()
+  await editor.getByLabel('比较符').selectOption('between')
+  await editor.getByLabel('区间下界').fill('18')
+  await editor.getByLabel('区间上界').fill('65')
+  await expect(editor.getByRole('button', { name: '业务字段', exact: true })).toBeDisabled()
+  await expect(editor.getByRole('button', { name: '保存草稿' })).toBeEnabled()
+  await editor.getByRole('button', { name: '保存草稿' }).click()
+  await expect(editor.getByText('BAL 草稿已保存')).toBeVisible({ timeout: 15_000 })
+  await editor.getByRole('button', { name: '编译', exact: true }).click()
+  await expect(editor.getByText('Drools 编译通过')).toBeVisible({ timeout: 30_000 })
+  shots.push(await saveShot(page, id, '数字介于操作符已编译'))
+
+  // 枚举“属于”使用结构化多选值，不依赖逗号拼接文本。
+  await editor.getByRole('combobox', { name: '业务字段', exact: true }).selectOption('customerType')
+  await editor.getByLabel('比较符').selectOption('in')
+  await editor.getByLabel('枚举多选值').click()
+  await editor.getByLabel('选择枚举值 企业').check()
+  await expect(editor.getByLabel('枚举多选值')).toContainText('已选 2 项')
+  await editor.getByRole('button', { name: '保存草稿' }).click()
+  await expect(editor.getByText('BAL 草稿已保存')).toBeVisible({ timeout: 15_000 })
+  await editor.getByRole('button', { name: '编译', exact: true }).click()
+  await expect(editor.getByText('Drools 编译通过')).toBeVisible({ timeout: 30_000 })
+  shots.push(await saveShot(page, id, '枚举属于多选已编译'))
 
   const issues = col.stop()
   finishCase({ id, title: '资产页-包树筛选搜索新建规则', status: 'passed', issues, screenshots: shots })
