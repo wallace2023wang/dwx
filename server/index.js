@@ -22,6 +22,7 @@ import { createTestSuiteHandler } from './routes/test-suites.js';
 import { createChangeSetHandler } from './routes/change-sets.js';
 import { createProjectPackageHandler } from './routes/project-packages.js';
 import { createProjectEventStreamHandler } from './routes/project-event-streams.js';
+import { createProjectFlowHandler } from './routes/project-flows.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const storage = process.env.RULES_DATA_FILE || path.join(root, 'data', 'rules.json');
@@ -582,6 +583,20 @@ const handleProjectEventStreams = createProjectEventStreamHandler({
   compileProjectEventStream,
   publishProjectEventStream,
   actorOf,
+});
+
+const handleProjectFlows = createProjectFlowHandler({
+  canAccessAsset,
+  authorizeAsset,
+  mutateAssets,
+  initializeAssetRevision,
+  appendAuditEvent,
+  projectRuleset,
+  projectFlowDetail,
+  reviewLock,
+  advanceAssetRevision,
+  compileProjectFlow,
+  publishProjectFlow,
 });
 
 async function recentActivity(principal, limit) {
@@ -2030,72 +2045,8 @@ async function handleProjects(req, res, segments, url) {
   if (segments[3] === 'event-streams') {
     return handleProjectEventStreams(req, res, segments, projectId, data);
   }
-  if (segments.length === 4 && segments[3] === 'rulesets' && req.method === 'GET') {
-    return reply(res, 200, data.flows.filter(item => canAccessAsset(req.principal, item.id)).map(item => projectRuleset(item, data)));
-  }
-  if (segments.length === 4 && segments[3] === 'flows' && req.method === 'GET') {
-    return reply(res, 200, data.flows.filter(item => canAccessAsset(req.principal, item.id)).map(item => projectRuleset(item, data)));
-  }
-  if (segments.length === 4 && segments[3] === 'flows' && req.method === 'POST') {
-    const result = await mutateAssets('flows', flows => {
-      const now = new Date().toISOString();
-      const item = initializeAssetRevision({
-        id: crypto.randomUUID(), draft: newFlow(), published: null, versions: [], archived: false, updatedAt: now,
-      });
-      flows.unshift(item);
-      return { item };
-    }, projectId);
-    await appendAuditEvent('asset.created', 'flow', result.item.id, `创建规则流：${result.item.draft.name}`, { revision: 1 }, req);
-    return reply(res, 201, projectFlowDetail(result.item, data));
-  }
-  if (segments.length === 5 && segments[3] === 'flows' && req.method === 'GET') {
-    const item = data.flows.find(flow => flow.id === segments[4]);
-    if (item) authorizeAsset(req.principal, item.id);
-    return item ? reply(res, 200, projectFlowDetail(item, data)) : reply(res, 404, { error: '规则流不存在' });
-  }
-  if (segments.length === 5 && segments[3] === 'flows' && req.method === 'PUT') {
-    const id = segments[4];
-    authorizeAsset(req.principal, id);
-    const locked = reviewLock(data.changeSets, id);
-    if (locked) return reply(res, locked.status, { error: locked.error, changeSetId: locked.changeSetId });
-    const payload = await bodyOf(req);
-    if (!Number.isInteger(payload?.revision) || payload.revision < 1) return reply(res, 400, { error: '修订号无效' });
-    const validation = validateFlow(payload?.draft, data.rules, data.tables, data.bom, packageRecords, { allowEmptyRuleGroups: true });
-    if (validation) return reply(res, 400, { error: validation });
-    const result = await mutateAssets('flows', flows => {
-      const item = flows.find(flow => flow.id === id && !flow.archived);
-      if (!item) return { status: 404, error: '规则流不存在' };
-      const conflict = revisionConflict(item, payload.revision);
-      if (conflict) return conflict;
-      item.draft = structuredClone(payload.draft);
-      advanceAssetRevision(item, 'saved', true);
-      return { item };
-    }, projectId);
-    if (result.error) return reply(res, result.status, operationError(result));
-    await appendAuditEvent('asset.saved', 'flow', id, `保存规则流：${result.item.draft.name}`, { revision: result.item.revision }, req);
-    return reply(res, 200, projectFlowDetail(result.item, data));
-  }
-  if (segments.length === 6 && segments[3] === 'flows' && req.method === 'POST') {
-    const id = segments[4];
-    authorizeAsset(req.principal, id);
-    const item = data.flows.find(flow => flow.id === id);
-    if (!item) return reply(res, 404, { error: '规则流不存在' });
-    const payload = await bodyOf(req);
-    if (segments[5] === 'compile') {
-      const result = await compileProjectFlow(item, payload, data);
-      return result.error ? reply(res, result.status, operationError(result)) : reply(res, 200, result.result);
-    }
-    if (segments[5] === 'publish') {
-      const locked = reviewLock(data.changeSets, id);
-      if (locked) return reply(res, locked.status, { error: locked.error, changeSetId: locked.changeSetId });
-      const result = await publishProjectFlow(id, payload?.revision, data, projectId);
-      if (result.error) return reply(res, result.status, operationError(result));
-      await appendAuditEvent('asset.publish', 'flow', id, `发布规则流：${result.item.draft.name}`, {
-        revision: result.item.revision, version: result.item.versions.at(-1)?.number || null,
-      }, req);
-      return reply(res, 200, projectFlowDetail(result.item, data));
-    }
-    return reply(res, 404, { error: '未找到操作' });
+  if (segments[3] === 'rulesets' || segments[3] === 'flows') {
+    return handleProjectFlows(req, res, segments, projectId, data, packageRecords);
   }
   if (segments[3] === 'tests' || segments[3] === 'test-suites') {
     return handleTestSuites(req, res, ['api', 'test-suites', ...segments.slice(4)], projectId, data);
