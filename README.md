@@ -29,7 +29,7 @@ docs/                     # 产品、技术、设计与用户文档
 archive/legacy-prototype/ # 早期单文件原型，仅保留为参考
 ```
 
-`server/index.js` 仍是 Team Server 的组合入口；通用 HTTP 工具已拆到 `server/http-utils.js`，资产修订/包名规范化工具已拆到 `server/domain-utils.js`，项目视图组装已拆到 `server/project-presenters.js`，Drools/CEP 调用客户端已拆到 `server/engine-client.js`，项目管理、后台用户目录、项目规则资产、项目规则包、项目规则流、项目事件流、BOM、Change Set、Release 与测试套件路由已拆到 `server/routes/`。后续新增 API 时优先放入 `server/routes/`，避免继续扩大入口文件。
+`server/index.js` 仍是 Team Server 的组合入口；通用 HTTP 工具已拆到 `server/http-utils.js`，资产修订/包名规范化工具已拆到 `server/domain-utils.js`，项目视图组装已拆到 `server/project-presenters.js`，项目编译/发布编排已拆到 `server/project-build-service.js`，Drools/CEP 调用客户端已拆到 `server/engine-client.js`，项目管理、后台用户目录、项目规则资产、项目规则包、项目规则流、项目事件流、BOM、Change Set、Release 与测试套件路由已拆到 `server/routes/`。后续新增 API 时优先放入 `server/routes/`，避免继续扩大入口文件。
 
 用户操作手册位于 `docs/user-guides/DWX决策工作台-用户操作手册.docx`。
 
