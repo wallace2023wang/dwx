@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { generateDrl, newRule, validateRule } from '../shared/rules.js';
 import { applyFlowMappings, flowSnapshot, newFlow, newTable, resolveRuleGroupMembers, ruleGroupFingerprint, selectFlowBranch, tableCollectedHits, tableDrl, tableExecutionTrace, tableRules, validateFlow, validateTable } from '../shared/assets.js';
 import { defaultBom, validateBom, inputFields, outputFields, findField, inferSemanticType } from '../shared/bom.js';
-import { evaluateCepTestCase, evaluateTestCase, expandTestCases, normalizeTestSuite, validateTestSuite } from '../shared/test-suites.js';
+import { evaluateCepTestCase, evaluateTestCase, expandTestCases, validateTestSuite } from '../shared/test-suites.js';
 import { normalizeChangeSetReferences, snapshotChangeItem, validateChangeSet } from '../shared/changes.js';
 import { canonicalPackageName, packageLabel, PACKAGE_NAME_RE } from '../shared/packages.js';
 import { renderProjectReport } from '../shared/report.js';
@@ -18,6 +18,7 @@ import { createAdminHandler } from './routes/admin.js';
 import { createEngineClients } from './engine-client.js';
 import { createBomHandlers } from './routes/bom.js';
 import { createReleaseHandler } from './routes/releases.js';
+import { createTestSuiteHandler } from './routes/test-suites.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const storage = process.env.RULES_DATA_FILE || path.join(root, 'data', 'rules.json');
@@ -522,7 +523,16 @@ const handleReleases = createReleaseHandler({
   parseFacts,
 });
 
-
+const handleTestSuites = createTestSuiteHandler({
+  readAssets,
+  mutateTestSuites,
+  appendAuditEvent,
+  validateSuiteTarget,
+  runAllTestSuites,
+  runSingleTestSuite,
+  runTestSuiteComparison,
+  presentTestSuite: (suite, project) => project ? projectTestSuite(suite, project) : suite,
+});
 
 async function recentActivity(principal, limit) {
   const projects = (await readProjectRecords(false)).filter(project => canAccessProject(principal, project));
@@ -1302,90 +1312,6 @@ async function validateSuiteTarget(suite, projectId = 'default') {
     }
   }
   return target;
-}
-
-async function handleTestSuites(req, res, segments, projectId = 'default', project = null) {
-  const present = suite => project ? projectTestSuite(suite, project) : suite;
-  if (segments.length === 2) {
-    if (req.method === 'GET') return reply(res, 200, (await readAssets('testSuites', projectId)).filter(suite => !suite.archived).map(present));
-    if (req.method === 'POST') {
-      const input = await bodyOf(req);
-      const checked = await validateSuiteTarget(input, projectId);
-      if (checked.error) return reply(res, checked.status, { error: checked.error });
-      const result = await mutateTestSuites(suites => {
-        const now = new Date().toISOString();
-        const item = {
-          id: crypto.randomUUID(), ...normalizeTestSuite(input), archived: false,
-          revision: 1, createdAt: now, updatedAt: now, lastRun: null, runs: [],
-        };
-        suites.unshift(item);
-        return { item, changed: true };
-      }, projectId);
-      await appendAuditEvent('test-suite.created', 'test-suite', result.item.id, `创建测试套件：${result.item.name}`, { revision: 1 }, req);
-      return reply(res, 201, present(result.item));
-    }
-  }
-  if (segments.length === 3 && segments[2] === 'run' && req.method === 'POST') {
-    return reply(res, 200, await runAllTestSuites(req, projectId));
-  }
-  if (segments.length === 3 && req.method === 'PUT') {
-    const id = segments[2];
-    const input = await bodyOf(req);
-    const expected = expectedRevision(req, input);
-    if (Number.isNaN(expected)) return reply(res, 400, { error: '修订号无效' });
-    const checked = await validateSuiteTarget(input, projectId);
-    if (checked.error) return reply(res, checked.status, { error: checked.error });
-    const result = await mutateTestSuites(suites => {
-      const item = suites.find(suite => suite.id === id && !suite.archived);
-      if (!item) return { status: 404, error: '测试套件不存在' };
-      const conflict = revisionConflict(item, expected);
-      if (conflict) return conflict;
-      const normalized = normalizeTestSuite(input);
-      const targetChanged = item.target.type !== normalized.target.type || item.target.id !== normalized.target.id;
-      Object.assign(item, normalized, { revision: (item.revision || 1) + 1, updatedAt: new Date().toISOString() });
-      if (targetChanged) { item.lastRun = null; item.runs = []; }
-      return { item, changed: true };
-    }, projectId);
-    if (result.error) return reply(res, result.status, operationError(result));
-    await appendAuditEvent('test-suite.updated', 'test-suite', id, `更新测试套件：${result.item.name}`, { revision: result.item.revision }, req);
-    return reply(res, 200, present(result.item));
-  }
-  if (segments.length !== 4 || req.method !== 'POST') return reply(res, 404, { error: '未找到资源' });
-  const [, , id, action] = segments;
-  if (!['run', 'compare', 'archive'].includes(action)) return reply(res, 404, { error: '未找到操作' });
-  if (action === 'run') {
-    const input = await bodyOf(req);
-    const versionNumber = input?.targetVersion ?? null;
-    if (versionNumber != null && (!Number.isInteger(versionNumber) || versionNumber < 1)) {
-      return reply(res, 400, { error: 'targetVersion 必须是正整数' });
-    }
-    const result = await runSingleTestSuite(id, req, projectId, versionNumber);
-    return result.error ? reply(res, result.status, operationError(result)) : reply(res, 200, { suite: present(result.item), report: result.report });
-  }
-  if (action === 'compare') {
-    const input = await bodyOf(req);
-    const result = await runTestSuiteComparison(id, input, req, projectId);
-    return result.error ? reply(res, result.status, operationError(result)) : reply(res, 200, { suite: present(result.item), report: result.report });
-  }
-  const params = action === 'archive' ? await bodyOf(req) : {};
-  const expected = expectedRevision(req, params);
-  if (Number.isNaN(expected)) return reply(res, 400, { error: '修订号无效' });
-  const result = await mutateTestSuites(async suites => {
-    const suite = suites.find(entry => entry.id === id && !entry.archived);
-    if (!suite) return { status: 404, error: '测试套件不存在' };
-    if (action === 'archive') {
-      const conflict = revisionConflict(suite, expected);
-      if (conflict) return conflict;
-      suite.archived = true;
-      suite.revision = (suite.revision || 1) + 1;
-      suite.updatedAt = new Date().toISOString();
-      return { item: suite, changed: true };
-    }
-    return { item: suite, changed: true };
-  }, projectId);
-  if (result.error) return reply(res, result.status, operationError(result));
-  await appendAuditEvent('test-suite.archive', 'test-suite', id, `归档测试套件：${result.item.name}`, { revision: result.item.revision }, req);
-  return reply(res, 200, present(result.item));
 }
 
 
