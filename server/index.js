@@ -28,6 +28,7 @@ import { createTestExecutionService } from './test-execution-service.js';
 import { createLegacyApiHandler } from './routes/legacy-api.js';
 import { createProjectRouter } from './routes/project-router.js';
 import { createGovernanceService } from './governance-service.js';
+import { createActivityService } from './activity-service.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const storage = process.env.RULES_DATA_FILE || path.join(root, 'data', 'rules.json');
@@ -209,7 +210,14 @@ const { currentConflictResource, submittedChangeSetForAsset, reviewLock } = crea
   readChangeSets,
 });
 
-const ASSET_ACTIVITY_TYPES = new Set(['rule', 'table', 'flow', 'event-stream']);
+const { recentActivity } = createActivityService({
+  readProjectRecords,
+  canAccessProject,
+  canAccessAsset,
+  readAllAuditEvents,
+  normalizeProjectEngine,
+  getPostgresStore: () => postgresStore,
+});
 
 const createProjectRecord = createProjectRecordFactory({
   readProjectRecords,
@@ -410,39 +418,6 @@ const handleProjects = createProjectRouter({
   updateProjectBom,
   bomFieldReferences,
 });
-
-async function recentActivity(principal, limit) {
-  const projects = (await readProjectRecords(false)).filter(project => canAccessProject(principal, project));
-  const projectById = new Map(projects.map(project => [project.id, project]));
-  const projectIds = [...projectById.keys()];
-  const scanLimit = Math.min(5000, Math.max(limit * 20, 200));
-  const events = postgresStore
-    ? await postgresStore.listAuditEventsForProjects(scanLimit, projectIds)
-    : (await readAllAuditEvents()).filter(event => projectById.has(event.projectId || 'default'));
-  return events
-    .filter(event => !ASSET_ACTIVITY_TYPES.has(event.resourceType) || canAccessAsset(principal, event.resourceId))
-    .sort((left, right) => String(right.occurredAt).localeCompare(String(left.occurredAt)))
-    .slice(0, limit)
-    .map(event => {
-      const project = projectById.get(event.projectId || 'default');
-      return {
-        id: event.id,
-        project: { id: project.id, name: project.name, engine: normalizeProjectEngine(project.engine) },
-        actor: event.actor,
-        action: event.action,
-        resourceType: event.resourceType,
-        resourceId: event.resourceId,
-        summary: event.summary,
-        details: event.details || {},
-        occurredAt: event.occurredAt,
-      };
-    });
-}
-
-
-
-
-
 
 export async function handler(req, res) {
   try {
