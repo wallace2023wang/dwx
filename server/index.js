@@ -26,6 +26,7 @@ import { createMutationService } from './mutation-service.js';
 import { createProjectQueryService } from './project-query-service.js';
 import { createTestExecutionService } from './test-execution-service.js';
 import { createLegacyApiHandler } from './routes/legacy-api.js';
+import { createGovernanceService } from './governance-service.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const storage = process.env.RULES_DATA_FILE || path.join(root, 'data', 'rules.json');
@@ -198,6 +199,13 @@ const handleLegacyApi = createLegacyApiHandler({
   parseFacts,
   executeFlow,
   getCurrentBom: () => currentBom,
+});
+
+const { currentConflictResource, submittedChangeSetForAsset, reviewLock } = createGovernanceService({
+  getPostgresStore: () => postgresStore,
+  readRules,
+  readAssets,
+  readChangeSets,
 });
 
 const ASSET_ACTIVITY_TYPES = new Set(['rule', 'table', 'flow', 'event-stream']);
@@ -412,35 +420,6 @@ async function recentActivity(principal, limit) {
 
 
 
-
-
-async function currentConflictResource(resource, projectId = 'default') {
-  const separator = resource.indexOf(':');
-  const type = resource.slice(0, separator);
-  const id = resource.slice(separator + 1);
-  if (type === 'bom') return postgresStore?.getBom(projectId);
-  if (type === 'test-suite') return (await readAssets('testSuites', projectId)).find(item => item.id === id) || null;
-  if (type === 'change-set') return (await readChangeSets(projectId)).find(item => item.id === id) || null;
-  if (['rule', 'table', 'flow', 'event-stream'].includes(type)) {
-    const items = type === 'rule' ? await readRules(projectId) : await readAssets(type === 'event-stream' ? 'eventStreams' : `${type}s`, projectId);
-    return items.find(item => item.id === id) || null;
-  }
-  return null;
-}
-
-function submittedChangeSetForAsset(changeSets, assetId) {
-  return changeSets.find(changeSet => changeSet.status === 'SUBMITTED'
-    && changeSet.items?.some(entry => entry.assetId === assetId));
-}
-
-function reviewLock(changeSets, assetId) {
-  const changeSet = submittedChangeSetForAsset(changeSets, assetId);
-  return changeSet ? {
-    status: 409,
-    error: `资产正在变更集“${changeSet.name}”中审核，审核完成后才能修改`,
-    changeSetId: changeSet.id,
-  } : null;
-}
 
 
 async function handleProjects(req, res, segments, url) {
