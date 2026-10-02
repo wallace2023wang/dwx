@@ -36,7 +36,7 @@
 | 3.2 / 3.3 BOM 联动 | 已完成 | 条件/动作按方向过滤，操作符和值控件按七种业务类型联动，Enum 使用 BOM 枚举值 |
 | 4.1 草稿资产编排 | 暂不调整 | 当前仍要求引用已发布资产；不自动发布依赖，避免绕过审批与发布治理 |
 | 4.2 依赖资产升版 | 已完成 | 规则流返回 `needsRepublish/outdatedDependencies`，前端显示重新发布提示 |
-| 5.1 / 8.1 / 8.2 缺失输入 | 已完成并纠正现象 | 引擎不会自动补 `0/false`；报告展示 `inputFacts/omittedFields`，BOM input 可标记 `required`，缺失时 Team Server 与 RES 均拒绝执行 |
+| 5.1 / 8.1 / 8.2 缺失输入 | 已完成 | 报告展示 `inputFacts/omittedFields`，BOM input 可标记 `required`，缺失时 Team Server 与 RES 均拒绝执行；新发布产物用包装类型保留可选数字/Boolean 的 `null` 语义 |
 | 5.2 / 5.3 测试报告 | 已完成 | 报告按 `targetVersion` 展示并以 `assertions[]` 为准，未提供字段有明确说明 |
 | 6.1 门禁失败摘要 | 已完成 | `409` 增加最小 `failedCases` 摘要，包含版本、用例及失败断言 actual/expected |
 | 6.2 Release 最新版 | 已完成 | 创建、列表和部署响应均返回 `latestForDecisionService`，前端标记“最新” |
@@ -52,11 +52,12 @@
 | 同字段多步骤输出归并策略 | P1 | 仅完成覆盖预警；最大值/优先级/聚合归并仍未设计 | 独立领域设计，明确审批、版本与运行语义后开发 |
 | 双引擎项目路由（rules / cep） | 已完成真实 Esper 集成 | 项目 `engine`、四路端点、EventStream、CEP TestSuite、Release v2、报告与 UI 分支已落地；`cep-build:8791` 与 `cep-res:8792` 已接入 Esper 8.8.0；CEP 容器 backlog（`/events/{releaseId}`、webhook fired/cleared、`CEP_API_KEY`、`/openapi.json`、`/metrics`）已落地；pattern/timer 时间驱动语句 P0 已落地 | 保持 rules 全链路回归；未来对外分发再补商业授权或替换引擎评估 |
 | 自动充氮控制 | P1 | 属于规则侧状态机 + 定时器 + 暂停/继续，不是 CEP v1 范围 | 已落地：见 `docs/nitrogen-auto-fill-asset-design.md`（BAL 规则版，阈值判定在规则内、阈值作为参数）。落地过程暴露的平台缺口已转为独立需求 `docs/requirements-platform-gaps-nitrogen.md`（R1–R10） |
-| Rule Group 部署支持 | **P0（已修复待补测试）** | `res/ResServer.java` 原先只允许 `rule`/`table` 步骤类型，导致 `rule-group` 能编译、能过门禁但**部署被拒** | 已加入允许列表并重建 RES 镜像；**缺回归测试**，见 `requirements-platform-gaps-nitrogen.md` R1 |
-| 废弃资产语义 | **P0（待实现）** | 资产状态只有 draft/in-review/published/archived，缺"已废弃"；把废弃资产移出规则包会把状态打回草稿，归档又不解除包归属 | 见 `requirements-platform-gaps-nitrogen.md` R2 / R8 |
-| 决策表条件字段引用 | P1（待评估） | BAL 已支持 `valueSource: "field"` 声明式字段引用，决策表仍只支持字面量 → 阈值类规则无法用决策表表达 | 见 `requirements-platform-gaps-nitrogen.md` R3 |
-| 规则间中间结果传递 | P1（待评估） | 动作只能写 output 字段，同轮规则无法串接；需要调用方"执行到不动点"补偿 | 见 `requirements-platform-gaps-nitrogen.md` R4 |
-| 未赋值 Boolean 的 null 语义 | P1（待决策） | 未赋值 Boolean 被默认成 `false`，`== null` 守卫永不成立；与本文件 §8.1/§8.2 同根因 | 见 `requirements-platform-gaps-nitrogen.md` R5 |
+| Rule Group 部署支持 | **P0（已完成）** | `res/ResServer.java` 允许 `rule`/`table`/`rule-group`，OpenAPI 已同步 | JUnit 覆盖部署、执行和非法 mapping；见 `requirements-platform-gaps-nitrogen.md` R1 |
+| 废弃资产语义 | **P0（已完成）** | 生命周期独立为 active/deprecated/archived；废弃资产保留包归属与历史但不再参与执行 | 已含废弃、恢复、归档、审计、包解析和 PostgreSQL 持久化测试；见 R2 / R8 |
+| 决策表条件字段引用 | P1（已完成） | 条件单元格支持同类型 input 字段比较，覆盖 UI、DRL、静态分析、BOM 引用统计和 XLSX/CSV 往返 | 见 `requirements-platform-gaps-nitrogen.md` R3 |
+| 规则间中间结果传递 | P1（已完成） | RES 支持受限 `settle` 多轮执行和显式 `output -> input` 反馈映射，返回逐轮轨迹并有 20 轮硬上限 | 见 `requirements-platform-gaps-nitrogen.md` R4 |
+| 未赋值 Boolean 的 null 语义 | P1（已完成） | 新发布产物将 Integer/Double/Boolean 生成为 Java 包装类型，未传保持 `null`；必填字段仍在 Team Server 与 RES 拒绝 | JUnit 覆盖可选 Boolean 的 null 守卫；见 `requirements-platform-gaps-nitrogen.md` R5 |
+| 规则参数化与运行期调参 | **P0（待开发）** | 规则侧参数化已完成（`valueSource:field`，实测改参数即改行为、无需重新发布）；缺口在**运行期调参**（现状只能创建任务时传，改动需重启任务并丢失环流累计/暂停点/指令流水）与**安全联锁可达性**（maxPct=95 使 safetyMaxPct=99 不可达，安全功能失效） | 见 `docs/requirements-rule-parameters.md`（P1–P3、S1）；P2 需客户先确认阈值语义 |
 | Esper 合规评估 | 已确认当前可接受 | 已按需求引入 Esper 8.8.0；项目方确认当前不做商用应用 | 若未来涉及对外分发，再补商业授权或替换引擎评估 |
 | BOM Event Profile | 已完成 | 采用统一 BOM Core + `eventTypes[]` 事件视图；规则侧仍用 `factType/factTypes`，CEP 侧优先用 Event Profile 生成 Esper schema | 后续可补前端 Event Profile 专用编辑 UI |
 

@@ -1,10 +1,11 @@
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { defaultBom } from '../shared/bom.js';
+import { DomainError, domainErrorResult } from '../shared/errors.js';
 import { renderProjectReport } from '../shared/report.js';
 import { PostgresStore, StorageConflictError } from './postgres-store.js';
 import { AuthError, authenticateRequest, authorizeRequest, publicPrincipal, handleAuthRequest, authorizeAsset, canAccessProject, canAccessAsset } from './auth.js';
-import { reply } from './http-utils.js';
+import { operationError, reply } from './http-utils.js';
 import { advanceAssetRevision, initializeAssetRevision } from './domain-utils.js';
 import { createAdminHandler } from './routes/admin.js';
 import { createEngineClients } from './engine-client.js';
@@ -410,10 +411,15 @@ export async function handler(req, res) {
     if (segments[1] === 'bom') return handleBom(req, res, segments, url);
     if (segments[1] === 'test-suites') return handleTestSuites(req, res, segments);
     if (segments[1] === 'releases') return handleReleases(req, res, segments);
+    if (segments[1] === 'services' && segments.length === 4 && segments[3] === 'execute') return handleReleases(req, res, segments);
     const legacy = await handleLegacyApi(req, res, segments, url);
     if (legacy !== null) return legacy;
     return reply(res, 404, { error: '未找到资源' });
   } catch (error) {
+    if (error instanceof DomainError) {
+      const result = domainErrorResult(error);
+      return reply(res, result.status, operationError(result));
+    }
     if (error instanceof AuthError) {
       if (error.status === 401) res.setHeader('www-authenticate', 'Bearer');
       return reply(res, error.status, { error: error.message });

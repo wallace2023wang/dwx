@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
-import { generateDrl, operators, formatDrlValue } from './rules.js';
-import { defaultBom, findField, inputFields as bomInputs, outputFields as bomOutputs } from './bom.js';
+import { fieldConstraint, generateDrl, operators, formatDrlValue } from './rules.js';
+import { defaultBom, findField, inferSemanticType, inputFields as bomInputs, outputFields as bomOutputs } from './bom.js';
 import { canonicalPackageName, DEFAULT_PACKAGE_NAME, PACKAGE_NAME_RE } from './packages.js';
+import { DomainError } from './errors.js';
 
 const DEFAULT_BOM = defaultBom();
 
@@ -61,7 +62,30 @@ export const newFlow = () => ({ name: '未命名规则流', description: '', ste
  *   [a,b) / (a,b] 等 → 可配置开闭边界的数值区间
  *   v1,v2,v3     → 字符串枚举，== 生成 in，!= 生成 not in
  */
-export function parseConditionCell(field, operator, raw) {
+export function isFieldReferenceCell(cell) {
+  return Boolean(cell && typeof cell === 'object' && !Array.isArray(cell) && cell.valueSource === 'field');
+}
+
+export function conditionCellText(cell) {
+  return typeof cell === 'string' ? cell : '';
+}
+
+export function conditionCellExportValue(cell) {
+  return isFieldReferenceCell(cell) ? `\${${cell.valueField}}` : conditionCellText(cell);
+}
+
+export function parseConditionCell(field, operator, raw, bom = DEFAULT_BOM) {
+  if (isFieldReferenceCell(raw)) {
+    const valueField = findField(bom, raw.valueField);
+    if (!valueField || valueField.kind !== 'input') throw new Error(`${field.label}用于比较的业务字段不存在或不是输入字段`);
+    if (valueField.key === field.key) throw new Error(`${field.label}不能与自身比较`);
+    if (inferSemanticType(valueField) !== inferSemanticType(field)) throw new Error(`${field.label}只能与同类型业务字段比较`);
+    const allowed = ['==', '!=', '>', '>=', '<', '<='];
+    if (!allowed.includes(operator) || (inferSemanticType(field) === 'Boolean' && !['==', '!='].includes(operator))) {
+      throw new Error(`${field.label}的${operator}操作不支持业务字段值`);
+    }
+    return [fieldConstraint({ field: field.key, operator, valueField: valueField.key }, field)];
+  }
   if (typeof raw !== 'string') return [];
   const text = raw.trim();
   if (!text) return [];
@@ -141,13 +165,13 @@ export function parseConditionCell(field, operator, raw) {
  * 把一行的条件列解析成 DRL 条件片段数组（AND 连接）。
  * 默认行（条件全空）返回空数组。
  */
-function rowConditions(table, row, inputs) {
+function rowConditions(table, row, inputs, bom = DEFAULT_BOM) {
   const fragments = [];
   for (let i = 0; i < table.conditions.length; i++) {
     const col = table.conditions[i];
     const field = inputs.find(f => f.key === col.field);
     const cell = row.conditions[i] ?? '';
-    fragments.push(...parseConditionCell(field, col.operator, cell));
+    fragments.push(...parseConditionCell(field, col.operator, cell, bom));
   }
   return fragments;
 }
@@ -193,7 +217,8 @@ function numericConstraint(field, operator, text) {
 }
 
 function conditionConstraint(field, operator, raw) {
-  const text = raw.trim();
+  if (isFieldReferenceCell(raw)) return { kind: 'unknown' };
+  const text = conditionCellText(raw).trim();
   const comparison = text.match(/^(>=|<=|!=|==|>|<)\s*(.+)$/);
   const effectiveOperator = comparison?.[1] || operator;
   const operand = comparison?.[2]?.trim() || text;
@@ -277,7 +302,7 @@ function constraintSubset(a, b) {
 
 function rowConstraints(table, entry, inputs) {
   return table.conditions.map((column, index) => conditionConstraint(
-    inputs.find(field => field.key === column.field), column.operator, entry.row.conditions[index].trim(),
+    inputs.find(field => field.key === column.field), column.operator, entry.row.conditions[index],
   ));
 }
 
@@ -479,16 +504,16 @@ export function validateTable(table, bom = DEFAULT_BOM) {
 
   for (const [index, row] of table.rows.entries()) {
     if (typeof row?.enabled !== 'boolean' || !Array.isArray(row.conditions) || !Array.isArray(row.actions) || row.conditions.length !== table.conditions.length || row.actions.length !== table.actions.length) return { error: `第 ${index + 1} 行列数不匹配`, warnings: [] };
-    if (row.conditions.some(cell => typeof cell !== 'string')) return { error: `第 ${index + 1} 行条件值无效`, warnings: [] };
+    if (row.conditions.some(cell => typeof cell !== 'string' && !isFieldReferenceCell(cell))) return { error: `第 ${index + 1} 行条件值无效`, warnings: [] };
     if (row.priority != null && (!Number.isInteger(row.priority) || row.priority < -1000 || row.priority > 1000)) return { error: `第 ${index + 1} 行优先级需为 -1000 到 1000 的整数`, warnings: [] };
     if (!row.enabled) continue;
 
     const isDefault = row.isDefault === true || table.defaultRow === index;
     if (isDefault) {
       defaultCount++;
-      if (row.conditions.some(c => String(c).trim() !== '')) return { error: `第 ${index + 1} 行被标记为默认行，但条件列不为空`, warnings: [] };
+      if (row.conditions.some(c => isFieldReferenceCell(c) || conditionCellText(c).trim() !== '')) return { error: `第 ${index + 1} 行被标记为默认行，但条件列不为空`, warnings: [] };
     }
-    if (!isDefault && row.conditions.every(cell => String(cell).trim() === '')) {
+    if (!isDefault && row.conditions.every(cell => !isFieldReferenceCell(cell) && conditionCellText(cell).trim() === '')) {
       warnings.push(`第 ${index + 1} 行所有条件均为空，将匹配任意输入（通配）`);
     }
 
@@ -497,7 +522,7 @@ export function validateTable(table, bom = DEFAULT_BOM) {
       const col = table.conditions[c];
       const field = inputs.find(f => f.key === col.field);
       try {
-        parseConditionCell(field, col.operator, row.conditions[c]);
+        parseConditionCell(field, col.operator, row.conditions[c], bom);
       } catch (e) {
         return { error: `第 ${index + 1} 行：${e.message}`, warnings: [] };
       }
@@ -548,12 +573,12 @@ export function tableRules(table, bom = DEFAULT_BOM, executionKey) {
 
   // 生成所有显式行的规则条件片段，供默认行引用
   const allRowFragments = activeRows.map(({ row, index }) => {
-    const fragments = rowConditions(table, row, inputs);
+    const fragments = rowConditions(table, row, inputs, bom);
     return { fragments, row, index };
   });
 
   for (const [position, { row, index }] of activeRows.entries()) {
-    const conditions = rowConditions(table, row, inputs);
+    const conditions = rowConditions(table, row, inputs, bom);
     const actionEntries = [];
     for (let c = 0; c < table.actions.length; c++) {
       const cell = (row.actions[c] ?? '').trim();
@@ -727,7 +752,7 @@ export function resolveRuleGroupMembers(selector, rules, tables, packages = []) 
   const included = category => category === packageName || (selector.includeChildren && category.startsWith(`${packageName}.`));
   const collect = (assets, type) => assets.flatMap(asset => {
     const category = canonicalPackageName(asset.draft?.category);
-    if (!included(category) || asset.archived || !asset.published) return [];
+    if (!included(category) || asset.archived || asset.lifecycleStatus === 'deprecated' || !asset.published) return [];
     const version = asset.versions?.at(-1);
     if (!version) return [];
     return [{
@@ -808,7 +833,7 @@ export function validateFlow(flow, rules, tables, bom = DEFAULT_BOM, packages = 
       return null;
     }
     const collection = step?.type === 'rule' ? rules : step?.type === 'table' ? tables : null;
-    return collection?.some(asset => asset.id === step.id && !asset.archived && asset.published) ? null : `${label}引用的资产不存在或未发布`;
+    return collection?.some(asset => asset.id === step.id && !asset.archived && asset.lifecycleStatus !== 'deprecated' && asset.published) ? null : `${label}引用的资产不存在或未发布（也可能已停用）`;
   };
   for (const [index, step] of flow.steps.entries()) {
     const stepError = validateStep(step, `第 ${index + 1} 个公共步骤`);
@@ -869,7 +894,10 @@ export function flowSnapshot(flow, rules, tables, bom = DEFAULT_BOM, packages = 
       const executableRules = resolved.flatMap(member => {
         const published = member.asset.published;
         if (member.bomVersion != null && member.bomVersion !== bom.version) {
-          throw new Error(`${member.name} 使用 BOM v${member.bomVersion}，当前为 v${bom.version}，请先重新发布该资产`);
+          throw new DomainError('ASSET_BOM_OUTDATED', `${member.name} 使用 BOM v${member.bomVersion}，当前为 v${bom.version}，请先重新发布该资产`, {
+            assetId: member.id, assetName: member.name, pinnedBomVersion: member.bomVersion,
+            currentBomVersion: bom.version, suggestedAction: 'republish',
+          });
         }
         if (member.type === 'rule') return [{ ...structuredClone(published), name: `${published.name} [${member.id}]` }];
         return tableRules(published, bom, member.id).map(rule => ({ ...rule, name: `${rule.name} [${member.id}]` }));
@@ -891,7 +919,10 @@ export function flowSnapshot(flow, rules, tables, bom = DEFAULT_BOM, packages = 
     const asset = (step.type === 'rule' ? rules : tables).find(item => item.id === step.id);
     const version = asset.versions.at(-1);
     if (version.bomVersion != null && version.bomVersion !== bom.version) {
-      throw new Error(`${asset.published.name} 使用 BOM v${version.bomVersion}，当前为 v${bom.version}，请先重新发布该资产`);
+      throw new DomainError('ASSET_BOM_OUTDATED', `${asset.published.name} 使用 BOM v${version.bomVersion}，当前为 v${bom.version}，请先重新发布该资产`, {
+        assetId: asset.id, assetName: asset.published.name, pinnedBomVersion: version.bomVersion,
+        currentBomVersion: bom.version, suggestedAction: 'republish',
+      });
     }
     const frozen = { nodeId: step.nodeId, type: step.type, id: step.id, name: asset.published.name, version: asset.versions.at(-1)?.number,
       drl: version.drl || (step.type === 'rule' ? generateDrl([asset.published], bom) : tableDrl(asset.published, bom, asset.id)) };

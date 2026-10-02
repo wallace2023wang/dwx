@@ -54,7 +54,7 @@ export function validateReleaseRequest(request) {
 }
 
 function publishedAsset(collection, id, label) {
-  const asset = collection.find(item => item.id === id && !item.archived);
+  const asset = collection.find(item => item.id === id && !item.archived && item.lifecycleStatus !== 'deprecated');
   if (!asset) throw new Error(`${label}不存在`);
   if (!asset.published || !asset.versions?.length) throw new Error(`${label}尚未发布`);
   return asset;

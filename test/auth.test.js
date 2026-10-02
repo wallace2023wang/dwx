@@ -84,7 +84,11 @@ test('AUTH-01: OIDC JWT 验签并按角色执行 API 权限门禁', async () => 
     assert.equal((await env.request('/api/projects/default/releases', 'POST', {}, releaseHeaders)).status, 400);
     assert.equal((await env.request('/api/projects/default/releases/missing/deploy', 'POST', {}, releaseHeaders)).status, 404);
     assert.equal((await env.request('/api/projects/default/releases/missing/deploy', 'POST', {}, viewerHeaders)).status, 403);
+    assert.equal((await env.request('/api/projects/default/releases/missing/activate', 'POST', {}, releaseHeaders)).status, 404);
+    assert.equal((await env.request('/api/projects/default/releases/missing/rollback', 'POST', {}, viewerHeaders)).status, 403);
+    assert.equal((await env.request('/api/projects/default/releases/missing/undeploy', 'POST', {}, viewerHeaders)).status, 403);
     assert.equal((await env.request('/api/projects/default/releases/missing/execute', 'POST', {}, viewerHeaders)).status, 404);
+    assert.equal((await env.request('/api/projects/default/services/missing/execute', 'POST', {}, viewerHeaders)).status, 409);
 
     const session = await env.request('/api/session', 'GET', undefined, authorHeaders);
     assert.deepEqual({

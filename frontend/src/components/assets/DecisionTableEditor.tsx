@@ -1,6 +1,7 @@
 import { TableProperties } from 'lucide-react'
 import type { AssetDetail } from '../../types'
 import AssetProperties from './AssetProperties'
+import BomVersionNotice from './BomVersionNotice'
 
 interface DecisionTableEditorProps {
   detail: AssetDetail
@@ -11,6 +12,7 @@ const statusMeta = {
   'in-review': ['审核中', 'bg-brand-primary-l text-brand-primary'],
   rejected: ['已驳回', 'bg-[#fff1f1] text-[#c62828]'],
   published: ['已发布', 'bg-[#e8f5e9] text-env-production'],
+  deprecated: ['已废弃', 'bg-[#fff3e0] text-[#8a5a00]'],
   archived: ['已归档', 'bg-[#eeeeee] text-ink-3'],
 } as const
 
@@ -38,6 +40,7 @@ export default function DecisionTableEditor({ detail }: DecisionTableEditorProps
         <span>最后修改: {detail.updatedAt}</span>
         <span>包: <b className="font-medium text-ink-1">{detail.packageId}</b></span>
       </div>
+      <BomVersionNotice detail={detail} />
       <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
         <div className="min-w-[700px] border border-ink-border">
           <table className="w-full table-fixed border-collapse text-xs">

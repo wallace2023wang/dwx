@@ -1,8 +1,8 @@
 [
   {
     "id": "default",
-    "name": "默认风控项目",
-    "description": "Team Server 当前 default 工作空间中的真实规则资产",
+    "name": "个人贷款审批",
+    "description": "个人贷款申请、风险评估与审批决策规则",
     "icon": "shield",
     "version": "v1.0.0",
     "branch": "main",
@@ -15,8 +15,8 @@
   },
   {
     "id": "project-c429a9a0",
-    "name": "粮库温控告警",
-    "description": "粮库温湿度监测、异常告警与通风调控规则（dograin 需求落地）",
+    "name": "粮库温控决策",
+    "description": "粮库温湿度监测、异常告警与通风调控规则",
     "icon": "warehouse",
     "version": "v1.0.0",
     "branch": "main",

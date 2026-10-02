@@ -3,6 +3,7 @@ import { ChevronDown, FileCode2, FileText, Languages } from 'lucide-react'
 import type { AssetDetail, BomField, RuleDraft } from '../../types'
 import AssetProperties from './AssetProperties'
 import BalRuleView from './BalRuleView'
+import BomVersionNotice from './BomVersionNotice'
 
 const MonacoTextEditor = lazy(() => import('./MonacoTextEditor'))
 
@@ -11,6 +12,7 @@ const statusMeta = {
   'in-review': ['审核中', 'bg-brand-primary-l text-brand-primary'],
   rejected: ['已驳回', 'bg-[#fff1f1] text-[#c62828]'],
   published: ['已发布', 'bg-[#e8f5e9] text-env-production'],
+  deprecated: ['已废弃', 'bg-[#fff3e0] text-[#8a5a00]'],
   archived: ['已归档', 'bg-[#eeeeee] text-ink-3'],
 } as const
 
@@ -51,6 +53,7 @@ export default function BalEditor({ detail, fields, loading, onOpenBom }: BalEdi
         <span>最后修改: {detail.updatedAt}</span>
         <span>包: <b className="font-medium text-ink-1">{detail.packageId}</b></span>
       </div>
+      <BomVersionNotice detail={detail} />
       <div className="min-h-0 flex-1 overflow-auto">
         {view === 'bal'
           ? draft

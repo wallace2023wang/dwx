@@ -36,6 +36,8 @@ test('draft, publish, restore and export are isolated', async () => {
     res.writeHead(200, { 'content-type': 'application/json' });
     if (req.url === '/deploy') {
       res.end(JSON.stringify({ deploymentId: `local:${payload.id}`, releaseId: payload.id, deployedAt: '2026-09-29T01:00:00.000Z', checksum: payload.checksum, steps: payload.steps.length }));
+    } else if (req.url === '/undeploy') {
+      res.end(JSON.stringify({ ok: true, releaseId: payload.releaseId, removed: true, stoppedAt: '2026-09-29T02:00:00.000Z' }));
     } else {
       res.end(JSON.stringify({ ok: true, releaseId: payload.releaseId, requestId: payload.requestId || 'generated', count: 2, facts: { ...payload.facts, riskLevel: '高' }, trace: [] }));
     }

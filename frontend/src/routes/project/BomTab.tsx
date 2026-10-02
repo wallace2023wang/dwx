@@ -33,8 +33,7 @@ export default function BomTab() {
           <h1 className="flex items-center gap-2 text-base font-medium"><Braces size={17} />BOM 业务对象模型</h1>
           <p className="mt-0.5 text-[11px] text-ink-3">版本 v{bom.version} · {bom.factTypes.length} 个事实类型 · {fieldCount} 个字段 · 修改者 {bom.updatedBy}</p>
         </div>
-        {!editing && !['miniloan', 'grain-temperature'].includes(projectId || '') && <button type="button" className="shrink-0 border border-brand-primary bg-white px-3 py-1.5 text-[11px] font-medium text-brand-primary hover:bg-brand-primary-l" onClick={() => { setEditing(true); setToast(null) }}>编辑模型</button>}
-        {!editing && ['miniloan', 'grain-temperature'].includes(projectId || '') && <span className="shrink-0 border border-ink-border bg-white px-2 py-1 text-[11px] text-ink-2">演示模型</span>}
+        {!editing && <button type="button" className="shrink-0 border border-brand-primary bg-white px-3 py-1.5 text-[11px] font-medium text-brand-primary hover:bg-brand-primary-l" onClick={() => { setEditing(true); setToast(null) }}>编辑模型</button>}
       </div>
 
       {editing

@@ -72,9 +72,9 @@ export function createProjectRuleHandler({
       return reply(res, 201, projectAssetDetail(result.item, type, data.bom, data.changeSets));
     }
     if (segments.length === 5 && segments[3] === 'rules' && req.method === 'GET') {
-      const rule = data.rules.find(item => item.id === segments[4]);
+      const rule = (data.allRules || data.rules).find(item => item.id === segments[4]);
       if (rule) { authorizeAsset(req.principal, rule.id); return reply(res, 200, projectAssetDetail(rule, 'rule', data.bom, data.changeSets)); }
-      const table = data.tables.find(item => item.id === segments[4]);
+      const table = (data.allTables || data.tables).find(item => item.id === segments[4]);
       if (table) { authorizeAsset(req.principal, table.id); return reply(res, 200, projectAssetDetail(table, 'table', data.bom, data.changeSets)); }
       return reply(res, 404, { error: '资产不存在' });
     }
@@ -83,6 +83,8 @@ export function createProjectRuleHandler({
       authorizeAsset(req.principal, id);
       const type = data.rules.some(item => item.id === id) ? 'rule' : data.tables.some(item => item.id === id) ? 'table' : null;
       if (!type) return reply(res, 404, { error: '资产不存在' });
+      const current = (type === 'rule' ? data.rules : data.tables).find(item => item.id === id);
+      if (current?.lifecycleStatus === 'deprecated') return reply(res, 409, { error: '已废弃资产不可编辑，请先恢复为草稿' });
       const locked = reviewLock(data.changeSets, id);
       if (locked) return reply(res, locked.status, { error: locked.error, changeSetId: locked.changeSetId });
       const result = await saveProjectAsset(id, type, await bodyOf(req), projectId, data.bom);
@@ -101,10 +103,14 @@ export function createProjectRuleHandler({
         const item = assets.find(asset => asset.id === id);
         if (!item) return { status: 404, error: '资产不存在' };
         item.archived = true;
-        advanceAssetRevision(item, 'saved');
+        item.lifecycleStatus = 'archived';
+        advanceAssetRevision(item, 'archived', true);
         return { item };
       };
       const result = type === 'rule' ? await mutate(archive, projectId) : await mutateAssets('tables', archive, projectId);
+      await appendAuditEvent('asset.archived', type, id, `归档${type === 'rule' ? '规则' : '决策表'}：${result.item.draft.name}`, {
+        revision: result.item.revision, category: result.item.draft.category,
+      }, req);
       return reply(res, 200, projectAssetDetail(result.item, type, data.bom, data.changeSets));
     }
     if (segments.length === 6 && segments[3] === 'rules' && req.method === 'POST') {
@@ -115,6 +121,54 @@ export function createProjectRuleHandler({
       const type = data.rules.some(asset => asset.id === id) ? 'rule' : item ? 'table' : null;
       if (!item || !type) return reply(res, 404, { error: '资产不存在' });
       const payload = await bodyOf(req);
+      if (action === 'deprecate' || action === 'reactivate') {
+        const expected = payload?.revision;
+        if (!Number.isInteger(expected) || expected < 1) return reply(res, 400, { error: '修订号无效' });
+        const conflict = revisionConflict(item, expected);
+        if (conflict) return reply(res, conflict.status, operationError(conflict));
+        const locked = reviewLock(data.changeSets, id);
+        if (locked) return reply(res, locked.status, { error: locked.error, changeSetId: locked.changeSetId });
+        if (action === 'deprecate') {
+          if ((item.lifecycleStatus || 'active') !== 'active') return reply(res, 409, { error: '只有活动资产可以标记为废弃' });
+          const reason = typeof payload.reason === 'string' ? payload.reason.trim() : '';
+          if (!reason || reason.length > 500) return reply(res, 400, { error: '废弃原因需为 1-500 个字符' });
+          const replacementId = typeof payload.replacedByAssetId === 'string' && payload.replacedByAssetId ? payload.replacedByAssetId : null;
+          const replacement = replacementId ? [...data.rules, ...data.tables].find(asset => asset.id === replacementId && asset.id !== id && (asset.lifecycleStatus || 'active') === 'active') : null;
+          if (replacementId && !replacement) return reply(res, 400, { error: '替代资产不存在、已停用或与当前资产相同' });
+          const apply = assets => {
+            const target = assets.find(asset => asset.id === id);
+            target.lifecycleStatus = 'deprecated';
+            target.deprecatedAt = new Date().toISOString();
+            target.deprecatedBy = actorOf(req);
+            target.deprecationReason = reason;
+            target.replacedByAssetId = replacementId;
+            advanceAssetRevision(target, 'deprecated', true);
+            return { item: target };
+          };
+          const result = type === 'rule' ? await mutate(apply, projectId) : await mutateAssets('tables', apply, projectId);
+          await appendAuditEvent('asset.deprecated', type, id, `标记废弃：${result.item.draft.name}`, {
+            revision: result.item.revision, reason, replacedByAssetId: replacementId,
+          }, req);
+          return reply(res, 200, projectAssetDetail(result.item, type, data.bom, data.changeSets));
+        }
+        if (item.lifecycleStatus !== 'deprecated') return reply(res, 409, { error: '只有已废弃资产可以恢复' });
+        const apply = assets => {
+          const target = assets.find(asset => asset.id === id);
+          target.lifecycleStatus = 'active';
+          target.deprecatedAt = null;
+          target.deprecatedBy = null;
+          target.deprecationReason = null;
+          target.replacedByAssetId = null;
+          advanceAssetRevision(target, 'reactivated', true);
+          return { item: target };
+        };
+        const result = type === 'rule' ? await mutate(apply, projectId) : await mutateAssets('tables', apply, projectId);
+        await appendAuditEvent('asset.reactivated', type, id, `恢复废弃资产：${result.item.draft.name}`, {
+          revision: result.item.revision,
+        }, req);
+        return reply(res, 200, projectAssetDetail(result.item, type, data.bom, data.changeSets));
+      }
+      if (item.lifecycleStatus === 'deprecated' && action !== 'duplicate') return reply(res, 409, { error: '已废弃资产不可编辑、提交或发布，请先恢复为草稿' });
       if (action === 'submit') {
         const expected = payload?.revision;
         if (!Number.isInteger(expected) || expected < 1) return reply(res, 400, { error: '修订号无效' });

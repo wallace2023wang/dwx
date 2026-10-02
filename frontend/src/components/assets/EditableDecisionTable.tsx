@@ -2,6 +2,7 @@ import { AlertTriangle, CheckCircle2, Code2, Copy, Download, FileSpreadsheet, In
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { read, utils, writeFile } from 'xlsx'
 import type { AssetDetail, BomField, DecisionTableAnalysis, DecisionTableDraft } from '../../types'
+import BomVersionNotice from './BomVersionNotice'
 
 interface EditableDecisionTableProps {
   detail: AssetDetail
@@ -15,6 +16,21 @@ interface EditableDecisionTableProps {
 
 type CellKind = 'conditions' | 'actions'
 type DecisionTableRow = DecisionTableDraft['rows'][number]
+type ConditionCell = DecisionTableRow['conditions'][number]
+
+function isFieldCell(value: ConditionCell): value is { valueSource: 'field'; valueField: string } {
+  return typeof value === 'object' && value?.valueSource === 'field'
+}
+
+function exportConditionCell(value: ConditionCell) {
+  return isFieldCell(value) ? `\${${value.valueField}}` : value
+}
+
+function importConditionCell(value: unknown): ConditionCell {
+  const text = String(value ?? '').trim()
+  const field = text.match(/^\$\{([a-zA-Z][a-zA-Z0-9_]*)\}$/)
+  return field ? { valueSource: 'field', valueField: field[1] } : text
+}
 
 interface ColumnView {
   id: string
@@ -48,7 +64,7 @@ function tableAoA(draft: DecisionTableDraft) {
     row.enabled ? 'true' : 'false',
     row.isDefault ? 'true' : 'false',
     String(row.priority ?? 0),
-    ...draft.conditions.map((_, columnIndex) => row.conditions[columnIndex] || ''),
+    ...draft.conditions.map((_, columnIndex) => exportConditionCell(row.conditions[columnIndex] || '')),
     ...draft.actions.map((_, columnIndex) => row.actions[columnIndex] || ''),
   ])
   return [headers, ...rows]
@@ -82,7 +98,7 @@ function parseImportedRows(aoa: unknown[][], draft: DecisionTableDraft) {
     enabled: enabledIndex >= 0 ? boolCell(row[enabledIndex], true) : true,
     isDefault: defaultIndex >= 0 ? boolCell(row[defaultIndex], false) : false,
     priority: priorityIndex >= 0 && String(row[priorityIndex] ?? '').trim() ? Number(row[priorityIndex]) : 0,
-    conditions: conditionIndexes.map(index => String(row[index] ?? '').trim()),
+    conditions: conditionIndexes.map(index => importConditionCell(row[index])),
     actions: actionIndexes.map(index => String(row[index] ?? '').trim()),
   }))
 }
@@ -112,7 +128,15 @@ function bracketInterval(value: string) {
   return value.match(/^([[(])\s*(-?\d+(?:\.\d+)?)?\s*,\s*(-?\d+(?:\.\d+)?)?\s*([\])])$/)
 }
 
-function conditionError(value: string, field?: BomField) {
+function conditionError(value: ConditionCell, field: BomField | undefined, fields: BomField[] = []) {
+  if (isFieldCell(value)) {
+    if (!field) return 'BOM 字段不存在'
+    const operand = fields.find(candidate => candidate.key === value.valueField)
+    if (!operand || operand.direction !== 'input') return '比较字段不存在或不是输入字段'
+    if (operand.key === field.key) return '不能与自身比较'
+    if (operand.type !== field.type) return '只能与同类型业务字段比较'
+    return null
+  }
   const text = value.trim()
   if (!field) return 'BOM 字段不存在'
   if (!text) return null
@@ -155,8 +179,10 @@ function rowConditionSummary(row: DecisionTableRow, draft: DecisionTableDraft, f
   if (row.isDefault) return '默认行：其他行均未命中时执行'
   return draft.conditions.map((column, index) => {
     const field = fields.get(column.field)
-    const value = row.conditions[index]?.trim()
-    return value ? `${field?.label || column.field} ${value.match(/^(>=|<=|!=|==|>|<)/) ? '' : `${column.operator} `}${value}` : `${field?.label || column.field}：无条件（通配）`
+    const value = row.conditions[index]
+    if (value && isFieldCell(value)) return `${field?.label || column.field} ${column.operator} ${fields.get(value.valueField)?.label || value.valueField}`
+    const text = typeof value === 'string' ? value.trim() : ''
+    return text ? `${field?.label || column.field} ${text.match(/^(>=|<=|!=|==|>|<)/) ? '' : `${column.operator} `}${text}` : `${field?.label || column.field}：无条件（通配）`
   }).join(' AND ')
 }
 
@@ -172,25 +198,39 @@ function actionError(value: string, field?: BomField) {
   return null
 }
 
-function CellEditor({ value, field, kind, disabled, open, onOpen, onChange, onEnter }: {
-  value: string
+function CellEditor({ value, field, fields, kind, disabled, open, onOpen, onChange, onEnter }: {
+  value: string | ConditionCell
   field?: BomField
+  fields: BomField[]
   kind: CellKind
   disabled?: boolean
   open: boolean
   onOpen: () => void
-  onChange: (value: string) => void
+  onChange: (value: ConditionCell | string) => void
   onEnter: () => void
 }) {
-  const error = kind === 'conditions' ? conditionError(value, field) : actionError(value, field)
-  const base = `h-8 w-full border px-2 font-mono text-[11px] outline-none ${error ? 'border-[#c62828] bg-[#fff1f1]' : value ? 'border-transparent bg-white focus:border-brand-primary' : 'border-transparent bg-[#f7f7f7] text-ink-3 focus:border-brand-primary focus:bg-white'}`
+  const conditionValue = kind === 'conditions' ? value as ConditionCell : ''
+  const fieldMode = kind === 'conditions' && isFieldCell(conditionValue)
+  const literalValue = typeof value === 'string' ? value : ''
+  const error = kind === 'conditions' ? conditionError(conditionValue, field, fields) : actionError(literalValue, field)
+  const base = `h-8 w-full border px-2 font-mono text-[11px] outline-none ${error ? 'border-[#c62828] bg-[#fff1f1]' : literalValue ? 'border-transparent bg-white focus:border-brand-primary' : 'border-transparent bg-[#f7f7f7] text-ink-3 focus:border-brand-primary focus:bg-white'}`
+  if (fieldMode) {
+    const candidates = fields.filter(candidate => candidate.direction === 'input' && candidate.type === field?.type && candidate.key !== field?.key)
+    return <div className="flex min-w-48 gap-1"><select className="h-8 w-[58px] border border-ink-border bg-[#fafafa] px-1 text-[9px]" disabled={disabled} value="field" onChange={() => onChange('')} aria-label="比较值来源"><option value="literal">固定值</option><option value="field">业务字段</option></select><select className={`${base} min-w-28`} disabled={disabled} value={conditionValue.valueField} onChange={event => onChange({ valueSource: 'field', valueField: event.target.value })} title={error || '同类型输入字段'}>{candidates.length === 0 && <option value="">无同类型字段</option>}{candidates.map(candidate => <option key={candidate.key} value={candidate.key}>{candidate.factLabel} · {candidate.label}</option>)}</select></div>
+  }
+  const source = kind === 'conditions' ? <select className="h-8 w-[58px] shrink-0 border border-ink-border bg-[#fafafa] px-1 text-[9px]" disabled={disabled} value="literal" onChange={event => {
+    if (event.target.value === 'field') {
+      const first = fields.find(candidate => candidate.direction === 'input' && candidate.type === field?.type && candidate.key !== field?.key)
+      onChange({ valueSource: 'field', valueField: first?.key || '' })
+    }
+  }} aria-label="比较值来源"><option value="literal">固定值</option><option value="field">业务字段</option></select> : null
   if (field?.type === 'Enum') {
-    const selected = value.split(/[,，]/).map(item => item.trim()).filter(Boolean)
+    const selected = literalValue.split(/[,，]/).map(item => item.trim()).filter(Boolean)
     const options = field.enum || []
     const stale = selected.filter(item => !options.includes(item))
     const removeValue = (item: string) => onChange(selected.filter(existing => existing !== item).join(','))
-    return <div className="relative"><button type="button" className={`${base} truncate text-left`} disabled={disabled} onClick={onOpen} title={error || (value || '留空 = 通配')}>{value || (kind === 'conditions' ? '任意' : '请选择')}</button>{open && <div className="absolute left-0 top-full z-30 mt-1 min-w-full border border-ink-border bg-white p-1 shadow-lg">
-      {value && <button type="button" className="mb-1 flex h-7 w-full items-center px-2 text-left text-[11px] text-ink-3 hover:bg-ink-bg" onClick={() => onChange('')}>清空当前值</button>}
+    return <div className="flex gap-1">{source}<div className="relative min-w-28 flex-1"><button type="button" className={`${base} truncate text-left`} disabled={disabled} onClick={onOpen} title={error || (literalValue || '留空 = 通配')}>{literalValue || (kind === 'conditions' ? '任意' : '请选择')}</button>{open && <div className="absolute left-0 top-full z-30 mt-1 min-w-full border border-ink-border bg-white p-1 shadow-lg">
+      {literalValue && <button type="button" className="mb-1 flex h-7 w-full items-center px-2 text-left text-[11px] text-ink-3 hover:bg-ink-bg" onClick={() => onChange('')}>清空当前值</button>}
       {stale.length > 0 && <div className="mb-1 border border-[#ef9a9a] bg-[#fff5f5] p-1">
         <div className="px-1 pb-1 text-[10px] text-[#c62828]">已失效枚举值，可单独删除</div>
         {stale.map(item => <button key={item} type="button" className="flex h-7 w-full items-center justify-between gap-3 px-2 text-left font-mono text-[11px] text-[#c62828] hover:bg-[#ffecec]" onClick={() => removeValue(item)}><span className="truncate">{item}</span><span aria-hidden="true">x</span></button>)}
@@ -199,10 +239,10 @@ function CellEditor({ value, field, kind, disabled, open, onOpen, onChange, onEn
       if (kind === 'actions') { onChange(option); onOpen(); return }
       const next = selected.includes(option) ? selected.filter(item => item !== option) : [...selected, option]
       onChange(next.join(','))
-    }} />{option}</label>)}</div>}</div>
+      }} />{option}</label>)}</div>}</div></div>
   }
-  if (field?.type === 'Boolean') return <select className={base} disabled={disabled} value={value} onChange={event => onChange(event.target.value)} title={error || undefined}><option value="">{kind === 'conditions' ? '任意' : '请选择'}</option><option value="true">true</option><option value="false">false</option></select>
-  return <input className={base} disabled={disabled} type={field?.type === 'Date' ? 'date' : 'text'} value={value} onChange={event => onChange(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); onEnter() } }} placeholder={kind === 'conditions' ? '任意' : '输入结果'} title={error || (!value && kind === 'conditions' ? '留空 = 通配' : undefined)} aria-invalid={Boolean(error)} />
+  if (field?.type === 'Boolean') return <div className="flex gap-1">{source}<select className={base} disabled={disabled} value={literalValue} onChange={event => onChange(event.target.value)} title={error || undefined}><option value="">{kind === 'conditions' ? '任意' : '请选择'}</option><option value="true">true</option><option value="false">false</option></select></div>
+  return <div className="flex gap-1">{source}<input className={base} disabled={disabled} type={field?.type === 'Date' ? 'date' : 'text'} value={literalValue} onChange={event => onChange(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); onEnter() } }} placeholder={kind === 'conditions' ? '任意' : '输入结果'} title={error || (!literalValue && kind === 'conditions' ? '留空 = 通配' : undefined)} aria-invalid={Boolean(error)} /></div>
 }
 
 export default function EditableDecisionTable({ detail, fields, busy, onSave, onCompile, onSubmit, onAnalyze }: EditableDecisionTableProps) {
@@ -235,11 +275,11 @@ export default function EditableDecisionTable({ detail, fields, busy, onSave, on
   const usedFields = new Set(columns.map(column => column.fieldKey))
   const availableFields = fields.filter(field => field.direction === (addKind === 'conditions' ? 'input' : 'output') && !usedFields.has(field.key))
   const cellIssues = draft.rows.flatMap((row, rowIndex) => [
-    ...row.conditions.map((value, index) => ({ row: rowIndex, kind: 'conditions' as const, index, error: conditionError(value, fieldMap.get(draft.conditions[index]?.field)) })),
+    ...row.conditions.map((value, index) => ({ row: rowIndex, kind: 'conditions' as const, index, error: conditionError(value, fieldMap.get(draft.conditions[index]?.field), fields) })),
     ...row.actions.map((value, index) => ({ row: rowIndex, kind: 'actions' as const, index, error: actionError(value, fieldMap.get(draft.actions[index]?.field)) })),
   ]).filter(issue => issue.error)
   const invalid = cellIssues.length > 0 || Boolean(analysis.error) || columns.some(column => !column.field)
-  const wildcardRows = draft.rows.filter(row => row.enabled && !row.isDefault && row.conditions.every(value => !value.trim())).length
+  const wildcardRows = draft.rows.filter(row => row.enabled && !row.isDefault && row.conditions.every(value => typeof value === 'string' && !value.trim())).length
 
   useEffect(() => { analyzeRef.current = onAnalyze }, [onAnalyze])
   useEffect(() => {
@@ -266,7 +306,7 @@ export default function EditableDecisionTable({ detail, fields, busy, onSave, on
     if (wildcardRows > 0 && !window.confirm(`有 ${wildcardRows} 个启用行的条件全部为空，将匹配任意输入。确认仍要保存吗？`)) return
     void run(() => onSave(draft), '草稿已保存')
   }
-  const updateCell = (rowIndex: number, kind: CellKind, columnIndex: number, value: string) => setDraft(current => ({
+  const updateCell = (rowIndex: number, kind: CellKind, columnIndex: number, value: ConditionCell | string) => setDraft(current => ({
     ...current,
     rows: current.rows.map((row, position) => position !== rowIndex ? row : { ...row, [kind]: row[kind].map((cell, index) => index === columnIndex ? value : cell) }),
   }))
@@ -343,6 +383,7 @@ export default function EditableDecisionTable({ detail, fields, busy, onSave, on
         <button className="inline-flex h-7 items-center gap-1.5 rounded-[2px] border border-ink-border bg-white px-2 text-[11px] text-ink-2 hover:bg-ink-bg disabled:opacity-50" disabled={busy || invalid} onClick={() => run(() => onCompile(draft), 'Drools 校验通过')}><CheckCircle2 size={13} />编译</button>
         <button className="inline-flex h-7 items-center gap-1.5 rounded-[2px] border border-brand-primary bg-brand-primary px-2 text-[11px] text-white hover:bg-brand-primary-d disabled:opacity-50" disabled={busy || dirty || invalid} onClick={() => run(onSubmit, '已提交审核')} title={dirty ? '请先保存草稿' : invalid ? '修复问题后才能提交' : '编译并提交当前草稿审核'}><Rocket size={13} />提交审核</button>
       </div>
+      <BomVersionNotice detail={detail} />
 
       <div className="grid shrink-0 grid-cols-[minmax(220px,1fr)_140px_90px_150px] gap-3 border-b border-ink-border px-4 py-3">
         <label className="text-[10px] font-semibold text-ink-3">决策表名称<input className="control-input mt-1 h-8 text-xs" value={draft.name} onChange={event => setDraft({ ...draft, name: event.target.value })} /></label>
@@ -365,7 +406,7 @@ export default function EditableDecisionTable({ detail, fields, busy, onSave, on
                 return <tr className="border-t border-ink-border" key={rowIndex} title={rowConditionSummary(row, draft, fieldMap)}>
                   <td className="sticky left-0 z-10 border-r border-ink-border bg-[#fafafa] px-1 text-center font-mono" onContextMenu={event => { event.preventDefault(); setRowMenu({ x: event.clientX, y: event.clientY, row: rowIndex }) }}>{warningRows.has(rowIndex) && <span title={warningsForRow(rowIndex).join('\n')}><AlertTriangle size={12} className="mr-1 inline text-[#b26a00]" /></span>}{rowIndex + 1}{isDefault && <span className="ml-1 text-[9px] text-brand-primary">默认</span>}</td>
                   <td className="border-r border-ink-border px-2 text-center"><input type="checkbox" checked={row.enabled} onChange={event => setDraft(current => ({ ...current, rows: current.rows.map((item, index) => index === rowIndex ? { ...item, enabled: event.target.checked } : item) }))} /></td>
-                  {columns.map(column => <td data-cell={`${rowIndex}:${column.kind}:${column.index}`} className={`border-r border-ink-border p-1 ${!column.field ? 'bg-[#fff1f1]' : ''}`} key={`${column.id}:${rowIndex}`}><CellEditor value={row[column.kind][column.index] || ''} field={column.field} kind={column.kind} disabled={isDefault && column.kind === 'conditions'} open={enumCell === `${rowIndex}:${column.id}`} onOpen={() => setEnumCell(current => current === `${rowIndex}:${column.id}` ? null : `${rowIndex}:${column.id}`)} onChange={value => updateCell(rowIndex, column.kind, column.index, value)} onEnter={() => focusNextRow(rowIndex, column.kind, column.index)} /></td>)}
+                  {columns.map(column => <td data-cell={`${rowIndex}:${column.kind}:${column.index}`} className={`border-r border-ink-border p-1 ${!column.field ? 'bg-[#fff1f1]' : ''}`} key={`${column.id}:${rowIndex}`}><CellEditor value={row[column.kind][column.index] || ''} field={column.field} fields={fields} kind={column.kind} disabled={isDefault && column.kind === 'conditions'} open={enumCell === `${rowIndex}:${column.id}`} onOpen={() => setEnumCell(current => current === `${rowIndex}:${column.id}` ? null : `${rowIndex}:${column.id}`)} onChange={value => updateCell(rowIndex, column.kind, column.index, value)} onEnter={() => focusNextRow(rowIndex, column.kind, column.index)} /></td>)}
                   <td className="text-center"><button className="inline-flex size-7 items-center justify-center text-ink-3 hover:bg-ink-bg" onClick={event => { event.stopPropagation(); setRowMenu({ x: event.clientX, y: event.clientY, row: rowIndex }) }} title="行操作"><MoreVertical size={13} /></button></td>
                 </tr>
               })}

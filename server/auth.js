@@ -246,10 +246,12 @@ export function requiredPermission(req, url) {
   if (segments[1] === 'change-sets' && ['approve', 'reject'].includes(segments[3])) return 'review';
   if (segments[1] === 'projects' && segments[3] === 'change-sets' && ['approve', 'reject'].includes(segments[5])) return 'review';
   if (segments[1] === 'projects' && ['rules', 'flows'].includes(segments[3]) && segments[5] === 'publish') return 'review';
-  if (segments[1] === 'projects' && segments[3] === 'releases' && (segments.length === 4 || segments[5] === 'deploy')) return 'release';
+  if (segments[1] === 'projects' && segments[3] === 'releases' && (segments.length === 4 || ['deploy', 'activate', 'rollback', 'undeploy'].includes(segments[5]))) return 'release';
   if (segments[1] === 'projects' && segments[3] === 'releases' && segments[5] === 'execute') return 'view';
-  if (segments[1] === 'releases' && (segments.length === 2 || segments[3] === 'deploy')) return 'release';
+  if (segments[1] === 'projects' && segments[3] === 'services' && segments[5] === 'execute') return 'view';
+  if (segments[1] === 'releases' && (segments.length === 2 || ['deploy', 'activate', 'rollback', 'undeploy'].includes(segments[3]))) return 'release';
   if (segments[1] === 'releases' && segments[3] === 'execute') return 'view';
+  if (segments[1] === 'services' && segments[3] === 'execute') return 'view';
   return 'author';
 }
 

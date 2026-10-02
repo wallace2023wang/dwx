@@ -13,7 +13,7 @@ export default function FlowTab() {
   const { projectId } = useParams()
   const [searchParams] = useSearchParams()
   const requestedFlowId = searchParams.get('flow')
-  const editable = Boolean(projectId && !['miniloan', 'grain-temperature'].includes(projectId))
+  const editable = Boolean(projectId)
   const { data: rulesets, isPending: isRulesetsPending } = useRulesets(projectId)
   const currentRuleset = useProjectStore((state) => state.currentRuleset)
   const setCurrentRuleset = useProjectStore((state) => state.setCurrentRuleset)

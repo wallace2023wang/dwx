@@ -1,5 +1,5 @@
 import { generateDrl } from '../shared/rules.js';
-import { resolveRuleGroupMembers, ruleGroupFingerprint, tableDrl, validateTable } from '../shared/assets.js';
+import { conditionCellExportValue, resolveRuleGroupMembers, ruleGroupFingerprint, tableDrl, validateTable } from '../shared/assets.js';
 import { findField, inferSemanticType } from '../shared/bom.js';
 import { compileEventStreamDraft } from '../shared/event-streams.js';
 import { canonicalPackageName, packageLabel } from '../shared/packages.js';
@@ -19,6 +19,21 @@ function assetBomIssue(draft, type, bom) {
       || inferSemanticType(valueField) !== inferSemanticType(field);
   });
   if (invalidValueField) return `比较字段 ${invalidValueField.valueField || '（空）'} 不存在、不是输入字段或类型不匹配`;
+  if (type === 'table') {
+    for (const row of draft.rows || []) {
+      for (let index = 0; index < (row.conditions || []).length; index += 1) {
+        const cell = row.conditions[index];
+        if (!cell || typeof cell !== 'object' || cell.valueSource !== 'field') continue;
+        const column = draft.conditions?.[index];
+        const field = findField(bom, column?.field);
+        const valueField = findField(bom, cell.valueField);
+        if (!field || !valueField || valueField.kind !== 'input' || valueField.key === field.key
+          || inferSemanticType(valueField) !== inferSemanticType(field)) {
+          return `比较字段 ${cell.valueField || '（空）'} 不存在、不是输入字段或类型不匹配`;
+        }
+      }
+    }
+  }
   const invalidAction = draft.actions?.find(column => {
     const field = findField(bom, column.field);
     return !field || field.kind !== 'output';
@@ -29,6 +44,8 @@ function assetBomIssue(draft, type, bom) {
 }
 
 function assetWorkflowStatus(item, changeSets) {
+  if (item.archived || item.lifecycleStatus === 'archived') return 'archived';
+  if (item.lifecycleStatus === 'deprecated') return 'deprecated';
   for (const changeSet of changeSets) {
     const pinned = changeSet.items?.find(entry => entry.assetId === item.id);
     if (!pinned) continue;
@@ -51,6 +68,7 @@ function projectAssetSummaryWithReview(item, type, bom, changeSets = []) {
     priority: item.draft.priority ?? 0,
     bomInvalid: Boolean(bomIssue),
     bomIssue: bomIssue || undefined,
+    lifecycleStatus: item.lifecycleStatus || (item.archived ? 'archived' : 'active'),
   };
 }
 
@@ -84,6 +102,12 @@ export function projectAssetDetail(item, type, bom, changeSets = []) {
       engineVersion: version.engineVersion ?? null,
     })),
     publishedBomVersion: item.versions?.at(-1)?.bomVersion ?? null,
+    currentBomVersion: bom.version,
+    bomOutdated: item.versions?.at(-1)?.bomVersion != null && item.versions.at(-1).bomVersion !== bom.version,
+    deprecatedAt: item.deprecatedAt || null,
+    deprecatedBy: item.deprecatedBy || null,
+    deprecationReason: item.deprecationReason || null,
+    replacedByAssetId: item.replacedByAssetId || null,
     draft: structuredClone(draft),
     attributes: {
       priority: draft.priority || 0,
@@ -116,7 +140,7 @@ export function projectAssetDetail(item, type, bom, changeSets = []) {
     hitPolicy: tableHitPolicy,
     columns: [...conditionColumns, ...actionColumns],
     rows: draft.rows.map(row => Object.fromEntries([
-      ...conditionColumns.map((column, index) => [column.id, row.conditions[index] || '任意']),
+      ...conditionColumns.map((column, index) => [column.id, conditionCellExportValue(row.conditions[index]) || '任意']),
       ...actionColumns.map((column, index) => [column.id, row.actions[index] || '']),
     ])),
   };
@@ -137,6 +161,7 @@ export function projectBomModel({ rules, tables, flows }, bom) {
   };
   const scanTable = table => {
     for (const condition of table?.conditions || []) count(condition.field);
+    for (const row of table?.rows || []) for (const cell of row.conditions || []) if (cell?.valueSource === 'field') count(cell.valueField);
     for (const action of table?.actions || []) count(action.field);
   };
   const scanFlowSteps = steps => {
@@ -245,8 +270,8 @@ function projectFlowPackages(data) {
     const record = records.find(pkg => pkg.name === name);
     const directRules = data.rules.filter(item => canonicalPackageName(item.draft.category) === name);
     const directTables = data.tables.filter(item => canonicalPackageName(item.draft.category) === name);
-    const publishedRules = directRules.filter(item => item.published && !item.archived);
-    const publishedTables = directTables.filter(item => item.published && !item.archived);
+    const publishedRules = directRules.filter(item => item.published && !item.archived && item.lifecycleStatus !== 'deprecated');
+    const publishedTables = directTables.filter(item => item.published && !item.archived && item.lifecycleStatus !== 'deprecated');
     const members = [
       ...publishedRules.map(item => ({ id: item.id, name: item.published.name, type: 'rule', version: item.versions.at(-1)?.number || 0 })),
       ...publishedTables.map(item => ({ id: item.id, name: item.published.name, type: 'table', version: item.versions.at(-1)?.number || 0 })),

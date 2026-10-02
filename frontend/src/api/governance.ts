@@ -31,7 +31,7 @@ export function useChangeSets(projectId: string | undefined) {
   return useQuery({
     queryKey: ['projects', projectId, 'change-sets'],
     queryFn: () => loadChangeSets(projectId ?? ''),
-    enabled: Boolean(projectId && !['miniloan', 'grain-temperature'].includes(projectId)),
+    enabled: Boolean(projectId),
   })
 }
 

@@ -18,11 +18,9 @@ import TestSuiteDialog from '../../components/tests/TestSuiteDialog'
 import type { TestTargetOption } from '../../components/tests/TestSuiteDialog'
 import type { TestCase } from '../../types'
 
-const demoProjectIds = new Set(['miniloan', 'grain-temperature'])
-
 export default function TestsTab() {
   const { projectId } = useParams()
-  const editable = Boolean(projectId && !demoProjectIds.has(projectId))
+  const editable = Boolean(projectId)
   const { data: suites = [], isPending } = useTestSuites(projectId)
   const { data: bom } = useBom(projectId)
   const { data: packages = [] } = usePackages(projectId)

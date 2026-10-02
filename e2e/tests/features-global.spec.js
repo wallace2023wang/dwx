@@ -11,8 +11,8 @@ test('feature-library 库页-新建决策服务对话框与服务卡片', async 
   await page.goto('/library', { waitUntil: 'networkidle' })
 
   // 服务卡片可见
-  await expect(page.getByText('默认风控项目真实服务').first()).toBeVisible()
-  await expect(page.getByText('个人贷款审批演示').first()).toBeVisible()
+  await expect(page.getByText('个人贷款审批').first()).toBeVisible()
+  await expect(page.getByText('粮库温控决策').first()).toBeVisible()
 
   // 打开新建对话框
   await page.getByRole('button', { name: '新建决策服务' }).click()
@@ -24,7 +24,7 @@ test('feature-library 库页-新建决策服务对话框与服务卡片', async 
   await expect(dialog).toBeHidden()
 
   // 点击服务卡片进入默认项目
-  await page.getByText('默认风控项目真实服务').click()
+  await page.getByText('个人贷款审批').click()
   await page.waitForURL(/\/projects\/default/, { timeout: 15_000 })
   await expect(page.getByText('新建规则').first()).toBeVisible()
   shots.push(await saveShot(page, id, '进入默认项目'))

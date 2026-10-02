@@ -75,8 +75,11 @@ export function createProjectRouter({
     if (segments.length === 4 && segments[3] === 'releases') {
       return handleReleases(req, res, ['api', 'releases'], projectId);
     }
-    if (segments.length === 6 && segments[3] === 'releases' && ['deploy', 'execute', 'events', 'webhook'].includes(segments[5])) {
+    if (segments.length === 6 && segments[3] === 'releases' && ['deploy', 'activate', 'rollback', 'undeploy', 'execute', 'events', 'webhook'].includes(segments[5])) {
       return handleReleases(req, res, ['api', 'releases', segments[4], segments[5]], projectId);
+    }
+    if (segments.length === 6 && segments[3] === 'services' && segments[5] === 'execute') {
+      return handleReleases(req, res, ['api', 'services', segments[4], 'execute'], projectId);
     }
     if (segments[3] === 'rules') {
       return handleProjectRules(req, res, segments, url, projectId, data, packageRecords);

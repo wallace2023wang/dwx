@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { inferSemanticType } from './bom.js';
+import { buildCepTemplate } from './cep-templates.js';
 
 export const CEP_ENGINE_VERSION = '8.8.0';
 
@@ -252,7 +253,22 @@ export function validateEventStreamDraft(input, bom = { fields: [] }) {
     if (statement.mode != null && !['guided', 'advanced'].includes(statement.mode)) return `${label}编辑模式无效`;
     if (statement.template != null && (typeof statement.template !== 'string' || statement.template.length > 80)) return `${label}模板 ID 无效`;
     if (statement.params != null && (typeof statement.params !== 'object' || Array.isArray(statement.params))) return `${label}模板参数无效`;
+    if (statement.mode === 'guided' && (!statement.template || !statement.params)) return `${label}向导语句缺少模板或参数`;
     if (!statement.epl || statement.epl.length > 4000) return `${label}内容需为 1-4000 个字符`;
+    if (statement.template || statement.params) {
+      if (!statement.template || !statement.params) return `${label}模板与参数必须同时提供`;
+      let generatedEpl;
+      try {
+        generatedEpl = buildCepTemplate(statement.template, {
+          ...statement.params,
+          statementName: statement.name,
+          label: statement.label || statement.name,
+        });
+      } catch (error) {
+        return `${label}模板参数无效：${error instanceof Error ? error.message : '无法生成 EPL'}`;
+      }
+      if (generatedEpl.trim() !== statement.epl.trim()) return `${label}向导参数与 EPL 不一致，请重新生成或切换到高级模式`;
+    }
     if (!/\bselect\b/i.test(statement.epl) && !/\bpattern\s*\[/i.test(statement.epl)) return `${label}必须包含 select 或 pattern`;
     const refs = referencedTypes(statement.epl);
     if (!refs.length && !hasTimeDrivenPattern(statement.epl)) return `${label}必须通过 from 引用 BOM 事件类型或时间驱动 pattern`;

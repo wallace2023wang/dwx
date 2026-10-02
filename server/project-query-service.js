@@ -14,6 +14,8 @@ export function createProjectQueryService({
       readRules(projectId), readAssets('tables', projectId), readAssets('flows', projectId), readAssets('eventStreams', projectId), readReleases(projectId), readBom(projectId), readChangeSets(projectId), readAssets('testSuites', projectId),
     ]);
     return {
+      allRules: rules,
+      allTables: tables,
       rules: rules.filter(item => !item.archived),
       tables: tables.filter(item => !item.archived),
       flows: flows.filter(item => !item.archived),
@@ -26,7 +28,9 @@ export function createProjectQueryService({
     const assets = normalizeProjectEngine(project.engine) === 'cep' ? eventStreams : [...rules, ...tables];
     const categories = new Set(assets.map(item => item.draft.category || '未分类'));
     const latestRelease = releases.reduce((latest, release) => Math.max(latest, Number(release.version) || 0), 0);
-    const environments = new Set(releases.flatMap(release => (release.deployments || []).map(deployment => deployment.environment)));
+    const environments = new Set(releases.flatMap(release => (release.deployments || [])
+      .filter(deployment => deployment.status !== 'stopped')
+      .map(deployment => deployment.environment)));
     const updatedAt = [...assets, ...flows].map(item => item.updatedAt).filter(Boolean).sort().at(-1) || new Date(0).toISOString();
     return {
       ...project,

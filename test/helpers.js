@@ -104,6 +104,8 @@ export async function startTestEnv(options = {}) {
         ok: true, releaseId: payload.releaseId, requestId: payload.requestId || 'req-gen',
         count: 2, facts, trace: [],
       }));
+    } else if (req.url === '/undeploy') {
+      res.end(JSON.stringify({ ok: true, releaseId: payload.releaseId, removed: true, stoppedAt: '2026-09-29T02:00:00.000Z' }));
     } else if (req.url === '/health') {
       res.end(JSON.stringify({ service: 'RES', version: '10.2.0', deployments: resCalls.filter(c => c.path === '/deploy').length }));
     } else {
@@ -143,6 +145,9 @@ export async function startTestEnv(options = {}) {
       const release = cepDeployments.get(payload.releaseId);
       if (release) release.webhook = payload.webhook;
       res.end(JSON.stringify({ ok: true, releaseId: payload.releaseId }));
+    } else if (req.url === '/undeploy') {
+      const removed = cepDeployments.delete(payload.releaseId);
+      res.end(JSON.stringify({ ok: true, releaseId: payload.releaseId, removed, stoppedAt: '2026-09-29T02:00:00.000Z' }));
     } else if (req.url === '/health') {
       res.end(JSON.stringify({ service: 'CEP', engine: 'Esper', version: '8.8.0', deployments: cepDeployments.size }));
     } else {

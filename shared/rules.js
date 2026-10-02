@@ -115,11 +115,13 @@ function validateLiteralCondition(item, field) {
   return parseValue(field, item.value) === null ? `${field.label}的条件值无效` : null;
 }
 
-function fieldConstraint(item, field) {
+export function fieldConstraint(item, field) {
   const semanticType = inferSemanticType(field);
   if (semanticType === 'Date') {
     if (item.operator === 'before') return `${item.field} != null && ${item.valueField} != null && ${item.field}.compareTo(${item.valueField}) < 0`;
     if (item.operator === 'after') return `${item.field} != null && ${item.valueField} != null && ${item.field}.compareTo(${item.valueField}) > 0`;
+    const comparison = ({ '==': '== 0', '!=': '!= 0', '>': '> 0', '>=': '>= 0', '<': '< 0', '<=': '<= 0' })[item.operator];
+    if (comparison) return `${item.field} != null && ${item.valueField} != null && ${item.field}.compareTo(${item.valueField}) ${comparison}`;
   }
   if (semanticType === 'String') {
     if (item.operator === 'contains') return `${item.field} != null && ${item.valueField} != null && ${item.field}.contains(${item.valueField})`;
@@ -236,7 +238,7 @@ export function generateDrl(rules, bom = DEFAULT_BOM) {
     '',
     '// 与业务系统交换的事实类型；输入字段由调用方设置，动作写回输出字段。',
     'declare RuleInput',
-    ...bom.fields.map(f => `    ${f.key} : ${f.type}`),
+    ...bom.fields.map(f => `    ${f.key} : ${({ Integer: 'java.lang.Integer', Double: 'java.lang.Double', Boolean: 'java.lang.Boolean' })[f.type] || f.type}`),
     'end',
   ];
   if (hasDecisionHits) {

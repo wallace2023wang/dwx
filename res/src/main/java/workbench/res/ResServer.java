@@ -59,6 +59,15 @@ public final class ResServer {
       for (KieContainerSessionsPool pool : sessionPools) pool.shutdown();
     }
   }
+  private record RoundResult(List<Map<String, Object>> trace, int count, boolean limitReached, Map<String, Object> path) {}
+  private static final class RoundFailure extends Exception {
+    private final JsonNode step;
+    private final String nodeId;
+    private final List<Map<String, Object>> trace;
+    RoundFailure(Exception cause, JsonNode step, String nodeId, List<Map<String, Object>> trace) {
+      super(cause); this.step = step; this.nodeId = nodeId; this.trace = trace;
+    }
+  }
   private static final class CompileFailure extends Exception {
     private final List<String> errors;
     CompileFailure(List<String> errors) { super(String.join("\n", errors)); this.errors = errors; }
@@ -69,14 +78,22 @@ public final class ResServer {
     loadDeployments();
     Runtime.getRuntime().addShutdownHook(new Thread(ResServer::shutdownDeployments));
     int port = Integer.parseInt(System.getenv().getOrDefault("RES_PORT", "8790"));
+    startServer(port, true);
+    System.out.println("Rule Execution Server listening on " + port + ", loaded " + DEPLOYMENTS.size() + " release(s)");
+  }
+
+  static HttpServer startServer(int port, boolean pooledExecutor) throws IOException {
+    Files.createDirectories(DATA_DIR);
     HttpServer server = HttpServer.create(new InetSocketAddress("0.0.0.0", port), 0);
     server.createContext("/health", ResServer::health);
     server.createContext("/deployments", ResServer::listDeployments);
     server.createContext("/deploy", ResServer::deploy);
+    server.createContext("/undeploy", ResServer::undeploy);
     server.createContext("/execute", ResServer::execute);
-    server.setExecutor(Executors.newFixedThreadPool(Math.max(4, Runtime.getRuntime().availableProcessors())));
+    server.createContext("/openapi.json", ResServer::openapi);
+    if (pooledExecutor) server.setExecutor(Executors.newFixedThreadPool(Math.max(4, Runtime.getRuntime().availableProcessors())));
     server.start();
-    System.out.println("Rule Execution Server listening on " + port + ", loaded " + DEPLOYMENTS.size() + " release(s)");
+    return server;
   }
 
 
@@ -122,6 +139,34 @@ public final class ResServer {
     send(exchange, 200, result);
   }
 
+  private static void openapi(HttpExchange exchange) throws IOException {
+    if (!method(exchange, "GET")) return;
+    ObjectNode root = JSON.createObjectNode();
+    root.put("openapi", "3.0.3");
+    ObjectNode info = root.putObject("info");
+    info.put("title", "Decision Workbench Rule Execution Server");
+    info.put("version", "1.0.0");
+    ObjectNode paths = root.putObject("paths");
+    for (String path : List.of("/deploy", "/undeploy", "/execute")) {
+      ObjectNode operation = paths.putObject(path).putObject("post");
+      operation.put("summary", switch (path) { case "/deploy" -> "部署冻结 Release"; case "/undeploy" -> "卸载 Release"; default -> "执行 Release，支持可选多轮收敛"; });
+      operation.putObject("responses").putObject("200").put("description", "成功");
+    }
+    paths.putObject("/deployments").putObject("get").putObject("responses").putObject("200").put("description", "已部署 Release 列表");
+    ObjectNode schemas = root.putObject("components").putObject("schemas");
+    ObjectNode step = schemas.putObject("ReleaseStep");
+    step.put("type", "object");
+    ObjectNode properties = step.putObject("properties");
+    properties.putObject("name").put("type", "string");
+    ObjectNode type = properties.putObject("type");
+    type.put("type", "string");
+    type.putArray("enum").add("rule").add("table").add("rule-group");
+    properties.putObject("drl").put("description", "可执行的完整 DRL；rule-group 已合并全部成员，执行期不再解析规则包").put("type", "string");
+    properties.putObject("members").put("description", "仅用于审计和依赖追溯，执行期不依赖").put("type", "array");
+    properties.putObject("memberFingerprint").put("description", "规则组成员版本指纹，仅用于追溯").put("type", "string");
+    send(exchange, 200, root);
+  }
+
   private static void deploy(HttpExchange exchange) throws IOException {
     if (!method(exchange, "POST")) return;
     JsonNode release;
@@ -154,6 +199,26 @@ public final class ResServer {
     }
   }
 
+  private static void undeploy(HttpExchange exchange) throws IOException {
+    if (!method(exchange, "POST")) return;
+    JsonNode request;
+    try { request = readBody(exchange); }
+    catch (IllegalArgumentException exception) { send(exchange, 400, Map.of("error", exception.getMessage())); return; }
+    String releaseId = request.path("releaseId").asText("");
+    if (!releaseId.matches("[A-Za-z0-9._-]{1,100}")) { send(exchange, 400, Map.of("error", "Release ID 无效")); return; }
+
+    synchronized (DEPLOY_LOCK) {
+      Deployment deployment = DEPLOYMENTS.remove(releaseId);
+      Files.deleteIfExists(DATA_DIR.resolve(releaseId + ".json"));
+      if (deployment != null) deployment.shutdown();
+      send(exchange, 200, Map.of(
+          "ok", true,
+          "releaseId", releaseId,
+          "removed", deployment != null,
+          "stoppedAt", Instant.now().toString()));
+    }
+  }
+
   private static void execute(HttpExchange exchange) throws IOException {
     if (!method(exchange, "POST")) return;
     long started = System.nanoTime();
@@ -171,6 +236,76 @@ public final class ResServer {
     try { facts = parseFacts(input, deployment.factTypes()); }
     catch (IllegalArgumentException exception) { send(exchange, 400, Map.of("error", exception.getMessage())); return; }
 
+    boolean settle = request.path("settle").asBoolean(false);
+    int maxRounds = request.has("maxRounds") ? request.path("maxRounds").asInt(-1) : 8;
+    JsonNode feedbackMappings = request.path("feedbackMappings");
+    if (settle && (maxRounds < 2 || maxRounds > 20)) { send(exchange, 400, Map.of("error", "maxRounds 必须是 2-20 的整数")); return; }
+    if (settle && !validFeedbackMappings(feedbackMappings, deployment.release().path("model"))) {
+      send(exchange, 400, Map.of("error", "settle 执行需要合法的 output 到 input 反馈映射")); return;
+    }
+
+    ArrayList<Map<String, Object>> trace = new ArrayList<>();
+    ArrayList<Map<String, Object>> rounds = new ArrayList<>();
+    int total = 0;
+    boolean limitReached = false;
+    Map<String, Object> finalPath = null;
+    int roundLimit = settle ? maxRounds : 1;
+    try {
+      for (int round = 1; round <= roundLimit; round++) {
+        RoundResult result = executeRound(deployment, facts);
+        trace.addAll(result.trace());
+        total += result.count();
+        limitReached = result.limitReached();
+        finalPath = result.path();
+        Map<String, Object> beforeFeedback = new LinkedHashMap<>();
+        if (settle) for (JsonNode mapping : feedbackMappings) beforeFeedback.put(mapping.path("target").asText(), facts.get(mapping.path("target").asText()));
+        List<Map<String, Object>> feedback = settle ? applyMappings(feedbackMappings, facts) : List.of();
+        boolean changed = settle && feedback.stream().anyMatch(item -> !java.util.Objects.equals(beforeFeedback.get(String.valueOf(item.get("target"))), item.get("value")));
+        Map<String, Object> roundItem = new LinkedHashMap<>();
+        roundItem.put("round", round);
+        roundItem.put("count", result.count());
+        roundItem.put("facts", new LinkedHashMap<>(facts));
+        roundItem.put("trace", result.trace());
+        roundItem.put("feedback", feedback);
+        if (result.path() != null) roundItem.put("path", result.path());
+        rounds.add(roundItem);
+        if (limitReached || !settle || result.count() == 0 || !changed) break;
+        if (round == roundLimit) limitReached = true;
+      }
+    } catch (RoundFailure failure) {
+      failure.getCause().printStackTrace();
+      Map<String, Object> response = new LinkedHashMap<>();
+      response.put("error", "规则执行失败");
+      Map<String, Object> failedStep = new LinkedHashMap<>();
+      failedStep.put("nodeId", failure.nodeId);
+      failedStep.put("name", failure.step == null ? null : failure.step.path("name").asText());
+      failedStep.put("type", failure.step == null ? null : failure.step.path("type").asText());
+      failedStep.put("assetVersion", failure.step == null ? null : failure.step.path("assetVersion").asInt());
+      response.put("failedStep", failedStep);
+      response.put("facts", facts);
+      response.put("trace", failure.trace);
+      send(exchange, 500, response); return;
+    }
+
+    String requestId = request.path("requestId").isTextual() && request.path("requestId").asText().length() <= 100
+        ? request.path("requestId").asText() : UUID.randomUUID().toString();
+    Map<String, Object> response = new LinkedHashMap<>();
+    response.put("ok", true);
+    response.put("requestId", requestId);
+    response.put("releaseId", releaseId);
+    response.put("decisionService", deployment.release().path("decisionService").asText());
+    response.put("version", deployment.release().path("version").asInt());
+    response.put("facts", facts);
+    response.put("trace", trace);
+    if (finalPath != null) response.put("path", finalPath);
+    if (settle) response.put("rounds", rounds);
+    response.put("count", total);
+    response.put("limitReached", limitReached);
+    response.put("durationMs", (System.nanoTime() - started) / 1_000_000.0);
+    send(exchange, 200, response);
+  }
+
+  private static RoundResult executeRound(Deployment deployment, Map<String, Object> facts) throws RoundFailure {
     ArrayList<Map<String, Object>> trace = new ArrayList<>();
     int total = 0;
     boolean limitReached = false;
@@ -217,6 +352,9 @@ public final class ResServer {
           FactType type = session.getKieBase().getFactType("workbench", "RuleInput");
           if (type == null) throw new IllegalStateException("Release 缺少 workbench.RuleInput 类型");
           Object fact = type.newInstance();
+          for (Map.Entry<String, Class<?>> entry : deployment.factTypes().entrySet()) {
+            if (!entry.getValue().isPrimitive() && !facts.containsKey(entry.getKey())) type.set(fact, entry.getKey(), null);
+          }
           for (Map.Entry<String, Object> entry : facts.entrySet()) type.set(fact, entry.getKey(), entry.getValue());
           List<String> fired = new ArrayList<>();
           session.addEventListener(new DefaultAgendaEventListener() {
@@ -252,41 +390,33 @@ public final class ResServer {
         } finally { session.dispose(); }
       }
     } catch (Exception exception) {
-      exception.printStackTrace();
-      Map<String, Object> failure = new LinkedHashMap<>();
-      failure.put("error", "规则执行失败");
-      Map<String, Object> failedStep = new LinkedHashMap<>();
-      failedStep.put("nodeId", currentNodeId);
-      failedStep.put("name", currentStep == null ? null : currentStep.path("name").asText());
-      failedStep.put("type", currentStep == null ? null : currentStep.path("type").asText());
-      failedStep.put("assetVersion", currentStep == null ? null : currentStep.path("assetVersion").asInt());
-      failure.put("failedStep", failedStep);
-      failure.put("facts", facts);
-      failure.put("trace", trace);
-      send(exchange, 500, failure); return;
+      throw new RoundFailure(exception, currentStep, currentNodeId, trace);
     }
-
-    String requestId = request.path("requestId").isTextual() && request.path("requestId").asText().length() <= 100
-        ? request.path("requestId").asText() : UUID.randomUUID().toString();
-    Map<String, Object> response = new LinkedHashMap<>();
-    response.put("ok", true);
-    response.put("requestId", requestId);
-    response.put("releaseId", releaseId);
-    response.put("decisionService", deployment.release().path("decisionService").asText());
-    response.put("version", deployment.release().path("version").asInt());
-    response.put("facts", facts);
-    response.put("trace", trace);
+    Map<String, Object> path = null;
     if (routing.isObject()) {
-      Map<String, Object> path = new LinkedHashMap<>();
+      path = new LinkedHashMap<>();
       path.put("branchId", selectedBranch == null ? null : selectedBranch.path("id").asText());
       path.put("branchName", selectedBranch == null ? null : selectedBranch.path("name").asText());
       path.put("default", selectedBranch != null && selectedBranch.path("default").asBoolean(false));
-      response.put("path", path);
     }
-    response.put("count", total);
-    response.put("limitReached", limitReached);
-    response.put("durationMs", (System.nanoTime() - started) / 1_000_000.0);
-    send(exchange, 200, response);
+    return new RoundResult(trace, total, limitReached, path);
+  }
+
+  private static boolean validFeedbackMappings(JsonNode mappings, JsonNode model) {
+    if (!mappings.isArray() || mappings.isEmpty() || mappings.size() > 20 || !model.path("fields").isArray()) return false;
+    Set<String> targets = new HashSet<>();
+    for (JsonNode mapping : mappings) {
+      JsonNode source = null;
+      JsonNode target = null;
+      for (JsonNode field : model.path("fields")) {
+        if (field.path("key").asText().equals(mapping.path("source").asText())) source = field;
+        if (field.path("key").asText().equals(mapping.path("target").asText())) target = field;
+      }
+      if (source == null || target == null || !"output".equals(source.path("kind").asText())
+          || !"input".equals(target.path("kind").asText()) || !source.path("type").asText().equals(target.path("type").asText())
+          || source.path("key").asText().equals(target.path("key").asText()) || !targets.add(target.path("key").asText())) return false;
+    }
+    return true;
   }
 
   private static JsonNode selectBranch(JsonNode branches, Map<String, Object> facts) {
@@ -461,7 +591,7 @@ public final class ResServer {
     return null;
   }
 
-  private static String checksum(JsonNode release) throws Exception {
+  static String checksum(JsonNode release) throws Exception {
     ObjectNode content = JSON.createObjectNode();
     for (String key : List.of("schemaVersion", "decisionService", "version", "name", "description", "target", "engine", "steps")) {
       content.set(key, release.get(key));

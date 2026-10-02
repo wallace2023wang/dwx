@@ -129,6 +129,8 @@ Release 使用规范化 JSON 表示。创建后除部署状态外不得修改内
 
 ### 2.2 决策表命中策略
 
+- 条件单元格既可保存字面量，也可保存 `{ valueSource: "field", valueField }`。字段比较只允许同一冻结 BOM 中不同的 input 字段且语义类型一致；DRL 右值直接生成字段名，不加引号。冲突与覆盖分析无法静态确定运行时字段值时返回 `unknown`，不得误报确定重叠。
+- CSV/XLSX 以 `${fieldKey}` 表示业务字段引用，导入预览和导出必须无损往返；旧版字符串单元格继续兼容。
 - `ALL`：所有匹配行按显示顺序执行。生成的 `salience` 保证顺序稳定，后执行行可覆盖前一行写入的同一结果字段。
 - `FIRST`：显示顺序靠前的匹配行拥有更高 `salience`，并通过 Drools `activation-group` 保证只执行一行。
 - `PRIORITY`：先比较行级业务优先级，再按显示顺序打破同优先级并列；同样通过 `activation-group` 保证只执行一行。
@@ -167,7 +169,19 @@ Release 使用规范化 JSON 表示。创建后除部署状态外不得修改内
 { "environment": "local" }
 ```
 
-Team Server 把完整 Release 发送给 RES `/deploy`，成功后记录部署回执。MVP 只支持 `local` 环境。
+Team Server 把完整 Release 发送给 RES `/deploy`，成功后记录部署回执。MVP 只支持 `local` 环境。首次部署的决策服务自动成为当前生效版本；已有生效版本时，新部署只进入“已部署”状态，不自动切流。
+
+### Release 激活、回退和卸载
+
+- `POST /api/projects/{projectId}/releases/{id}/activate`：将该 Release 原子设为同一 `decisionService + environment` 的唯一生效版本，其他已部署版本保留为回退目标。
+- `POST /api/projects/{projectId}/releases/{id}/rollback`：仅允许对当前生效版本调用，激活版本号更低且最新的已部署版本。
+- `POST /api/projects/{projectId}/releases/{id}/undeploy`：卸载非生效版本，调用 Runtime `/undeploy` 释放会话池并删除持久化制品；当前生效版本必须先切换或回退。
+- 部署回执使用 `status: deployed | active | stopped`。旧回执没有 `status` 时，同一服务和环境中版本号最高的已部署 Release 被兼容推导为生效版本。
+- 激活、回退和卸载均写入审计事件，且需要 `release` 权限。
+
+### `POST /api/projects/{projectId}/services/{serviceKey}/execute`
+
+稳定业务入口按 `decisionService + local` 解析当前生效 Release，再携带其不可变 `releaseId` 调用 Runtime。激活和回退不要求调用方修改 URL；没有生效版本时返回 `409`。显式 Release 执行端点继续保留，用于历史重放和运维验证。
 
 ### `POST /api/releases/{id}/execute`
 
@@ -177,7 +191,7 @@ Team Server 把完整 Release 发送给 RES `/deploy`，成功后记录部署回
 { "facts": { "creditScore": 580, "overdue": true } }
 ```
 
-项目工作区使用等价的隔离接口：`GET/POST /api/projects/{projectId}/releases`、`POST /api/projects/{projectId}/releases/{id}/deploy` 和 `POST /api/projects/{projectId}/releases/{id}/execute`。这些接口只读取对应项目的已发布资产、BOM 和 Release；跨项目 Release ID 返回 `404`。项目删除时同步清理其 Release 和部署回执。
+项目工作区接口只读取对应项目的已发布资产、BOM 和 Release；跨项目 Release ID 返回 `404`。项目删除时同步清理其 Release 和部署回执。
 
 ### 3.1 规则流设计期调试
 
@@ -226,6 +240,8 @@ Change Set 保存时把资产类型、ID、资产修订号、最近发布版本�
 
 状态机为 `DRAFT -> SUBMITTED -> APPROVED` 或 `DRAFT -> SUBMITTED -> REJECTED -> DRAFT`。提交要求至少一个资产且至少一项实际差异，驳回必须填写意见。项目资产提交后禁止保存、重命名、移动、删除和通过包操作间接修改；驳回后恢复编辑，批准时校验固定修订、BOM 和 Drools 编译结果后生成发布版本。审核动作串行执行，避免批准与驳回并发造成状态和发布版本分离。OIDC 模式使用验签 principal 作为 actor，并禁止提交人批准自己的变更；`local` 模式的 `x-actor` 仅用于本机原型，不可信，允许管理员自审以便开发测试。
 
+资产可用性使用独立 `lifecycleStatus: active | deprecated | archived`，不复用评审/发布状态。废弃资产保留包归属、版本和既有 Release 追溯，但只读且不参与 Rule Group、直接规则流步骤或新 Release；废弃时记录操作者、原因和可选替代资产，恢复后回到活动草稿。归档资产默认不返回、不参与包成员解析和计数，通过 `includeArchived=true` 才用于历史查询。
+
 ### 3.4 项目报告
 
 `GET /api/projects/{projectId}/report` 在项目级鉴权后生成自包含 HTML，不依赖外部 CDN 或前端运行时。聚合内容固定为六个章节：项目概览、BOM 事实类型与字段类型统计、规则/决策表资产清单、规则流步骤与分支拓扑、测试矩阵及覆盖率、Release 与部署历史。规则流报告优先使用 `published` 快照，草稿仅用于尚未发布的规则流；资产、测试套件和发布列表过滤归档对象并按项目隔离。
@@ -266,6 +282,10 @@ Change Set 保存时把资产类型、ID、资产修订号、最近发布版本�
 
 相同 ID、相同校验和是幂等成功；相同 ID、不同校验和返回 `409`。
 
+### `POST /undeploy`
+
+请求 `{ "releaseId": "UUID" }`。卸载操作幂等：从内存注册表移除 Release、关闭其会话池并删除持久化 JSON；不存在时仍返回成功且 `removed=false`。流量是否允许卸载由 Team Server 的唯一激活约束控制，Runtime 本身不保存流量指针。
+
 ### `POST /execute`
 
 请求：
@@ -279,6 +299,12 @@ Change Set 保存时把资产类型、ID、资产修订号、最近发布版本�
 ```
 
 RES 使用部署时已经编译的容器和会话池依次执行步骤。每一步从对应 `KieContainerSessionsPool` 借出一个 `KieSession`，依次执行输入映射、Drools 节点、同名输出回写和输出映射；`dispose()` 将会话重置并归还池，`null` 不覆盖已有上下文值。响应包含最终事实、命中规则、逐步骤轨迹及实际应用的映射值。
+
+请求可选 `settle=true`、`maxRounds`（2-20）和 `feedbackMappings[]`。反馈映射只能把同类型 output 显式复制到 input；RES 每轮重新执行冻结 Release，在无命中或反馈值不再变化时停止，返回 `rounds[]`，达到上限时返回 `limitReached=true`。默认不传 `settle` 时仍只执行一轮。
+
+新发布 DRL 将 Integer、Double、Boolean 声明为 Java 包装类型。RES 创建事实后对调用方未提供的非 primitive 字段显式置 `null`，再写入已提供值，因此可选字段能区分未传与显式 `0`/`false`；冻结 BOM 中 `required=true` 的 input 缺失仍返回 400。既有 Release 继续使用原冻结 DRL。
+
+`GET /openapi.json` 是 RES 的机器可读契约。`steps[].type` 完整枚举 `rule | table | rule-group`；规则组步骤的 `drl` 已合并全部成员，`members` 与 `memberFingerprint` 仅用于审计追溯，执行期不参与解析。
 
 RES 会话池大小由 `res/config/res.properties` 的 `kie.session.pool.size` 配置，默认值为 `2`；也可用 `RES_CONFIG_FILE` 指向其他配置文件。
 

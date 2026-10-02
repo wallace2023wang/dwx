@@ -2,7 +2,7 @@ import { Code2, FileText, GitFork, LockKeyhole, Table2 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useBom } from '../../api/bom'
-import { useAnalyzeDecisionTable, useAssetDetail, useCompileAsset, useCreateAsset, useCreatePackage, useDeleteAsset, useDeletePackage, useDuplicateAsset, useMoveAsset, usePackages, useRenameAsset, useSaveAsset, useSubmitAsset, useUpdatePackage } from '../../api/projects'
+import { useAnalyzeDecisionTable, useAssetDetail, useCompileAsset, useCreateAsset, useCreatePackage, useDeleteAsset, useDeletePackage, useDeprecateAsset, useDuplicateAsset, useMoveAsset, usePackages, useReactivateAsset, useRenameAsset, useSaveAsset, useSubmitAsset, useUpdatePackage } from '../../api/projects'
 import Modal from '../../components/Modal'
 import AssetList from '../../components/assets/AssetList'
 import BalEditor from '../../components/assets/BalEditor'
@@ -21,8 +21,8 @@ export default function AssetsTab() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const requestedAssetId = searchParams.get('asset')
-  const editable = Boolean(projectId && !['miniloan', 'grain-temperature'].includes(projectId))
-  const { data: packages = [] } = usePackages(projectId)
+  const editable = Boolean(projectId)
+  const { data: packages = [] } = usePackages(projectId, true)
   const [selectedPackageId, setSelectedPackageId] = useState<string | null>(null)
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(requestedAssetId)
   const [packageDialog, setPackageDialog] = useState<PackageDialog | null>(null)
@@ -39,6 +39,9 @@ export default function AssetsTab() {
   const [moveTarget, setMoveTarget] = useState<Asset | null>(null)
   const [moveTo, setMoveTo] = useState('')
   const [deleteTarget, setDeleteTarget] = useState<Asset | null>(null)
+  const [deprecateTarget, setDeprecateTarget] = useState<Asset | null>(null)
+  const [deprecationReason, setDeprecationReason] = useState('')
+  const [replacementId, setReplacementId] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   const assets = useMemo(() => selectedPackageId ? packages.find(entry => entry.id === selectedPackageId)?.assets ?? [] : packages.flatMap(entry => entry.assets), [packages, selectedPackageId])
@@ -58,6 +61,8 @@ export default function AssetsTab() {
   const renameAsset = useRenameAsset(projectId)
   const moveAsset = useMoveAsset(projectId)
   const deleteAsset = useDeleteAsset(projectId)
+  const deprecateAsset = useDeprecateAsset(projectId)
+  const reactivateAsset = useReactivateAsset(projectId)
   const fields = bom?.factTypes.flatMap(fact => fact.fields.map(field => ({ ...field, factName: fact.name, factLabel: fact.label }))) ?? []
   const busy = saveAsset.isPending || compileAsset.isPending || submitReview.isPending
   const packageTitle = selectedPackageId ? packages.find(entry => entry.id === selectedPackageId)?.name ?? '全部资产' : '全部资产'
@@ -117,10 +122,10 @@ export default function AssetsTab() {
   return (
     <div className="flex h-full min-w-[960px] overflow-hidden bg-ink-bg">
       <PackageTree packages={packages} selectedId={selectedPackageId} editable={editable} onSelect={id => { setSelectedPackageId(id); setSelectedAssetId(null) }} onCreate={parentId => openPackage({ mode: 'create', parentId })} onRename={entry => openPackage({ mode: 'rename', entry, parentId: entry.parentId || null })} onDelete={entry => { setError(null); setDeletePackageTarget(entry); setPackageDeleteMode('move'); setMovePackageTarget(packages.find(pkg => pkg.id !== entry.id && !pkg.name.startsWith(`${entry.name}.`))?.id || '') }} />
-      <AssetList title={packageTitle} assets={assets} selectedId={selectedAssetId} editable={editable} onSelect={setSelectedAssetId} onCreate={openCreate} onRename={asset => { setRenameTarget(asset); setRenameName(asset.name) }} onDuplicate={asset => { setDuplicateTarget(asset); setDuplicateName(`${asset.name} 副本`) }} onMove={asset => { setMoveTarget(asset); setMoveTo(packages.find(pkg => !pkg.assets.some(item => item.id === asset.id))?.id || '') }} onDelete={setDeleteTarget} />
-      {editable && detail?.draft && detail.status !== 'in-review' && selectedAsset?.type === 'decision-table'
+      <AssetList title={packageTitle} assets={assets} selectedId={selectedAssetId} editable={editable} onSelect={setSelectedAssetId} onCreate={openCreate} onRename={asset => { setRenameTarget(asset); setRenameName(asset.name) }} onDuplicate={asset => { setDuplicateTarget(asset); setDuplicateName(`${asset.name} 副本`) }} onMove={asset => { setMoveTarget(asset); setMoveTo(packages.find(pkg => !pkg.assets.some(item => item.id === asset.id))?.id || '') }} onDelete={setDeleteTarget} onDeprecate={asset => { setDeprecateTarget(asset); setDeprecationReason(''); setReplacementId('') }} onReactivate={asset => void reactivateAsset.mutateAsync({ assetId: asset.id })} />
+      {editable && detail?.draft && !['in-review', 'deprecated', 'archived'].includes(detail.status) && selectedAsset?.type === 'decision-table'
         ? <EditableDecisionTable detail={detail} fields={fields} busy={busy} onSave={save} onCompile={compile} onSubmit={submit} onAnalyze={draft => analyzeTable.mutateAsync({ revision: revision(), draft })} />
-        : editable && detail?.draft && detail.status !== 'in-review' && selectedAsset?.type === 'rule'
+        : editable && detail?.draft && !['in-review', 'deprecated', 'archived'].includes(detail.status) && selectedAsset?.type === 'rule'
           ? <RuleFormEditor detail={detail} fields={fields} busy={busy} onSave={save} onCompile={compile} onSubmit={submit} onOpenBom={openBom} />
           : detail?.status === 'in-review'
             ? <div className="flex min-w-[500px] flex-1 flex-col overflow-hidden"><div className="flex h-9 shrink-0 items-center gap-2 border-b border-[#9bbcf7] bg-brand-primary-l px-3 text-[11px] text-brand-primary"><LockKeyhole size={13} />该资产正在审核，当前修订已锁定。<button className="ml-auto h-6 border border-brand-primary bg-white px-2" onClick={() => navigate('../reviews')}>查看审核</button></div><div className="min-h-0 flex-1">{selectedAsset?.type === 'decision-table' ? <DecisionTableEditor detail={detail} /> : <BalEditor detail={detail} fields={fields} loading={detailLoading} onOpenBom={openBom} />}</div></div>
@@ -133,6 +138,7 @@ export default function AssetsTab() {
       {renameTarget && <Modal title="重命名资产" onClose={() => setRenameTarget(null)}><div className="p-4"><label className="text-[11px] font-semibold text-ink-2">名称<input className="control-input mt-1" value={renameName} onChange={event => setRenameName(event.target.value)} autoFocus /></label>{renameAsset.error && <p className="mt-2 text-[11px] text-[#c62828]">{renameAsset.error.message}</p>}</div><footer className="flex justify-end gap-2 border-t border-ink-border bg-[#fafafa] p-3"><button className="h-8 border border-ink-border bg-white px-3 text-[11px]" onClick={() => setRenameTarget(null)}>取消</button><button className="h-8 bg-brand-primary px-3 text-[11px] text-white disabled:opacity-40" disabled={!renameName.trim() || renameAsset.isPending} onClick={() => void renameAsset.mutateAsync({ assetId: renameTarget.id, newName: renameName }).then(renamed => { setRenameTarget(null); setSelectedAssetId(renamed.id) }).catch(() => {})}>保存</button></footer></Modal>}
       {moveTarget && <Modal title="移动资产" onClose={() => setMoveTarget(null)}><div className="p-4"><label className="text-[11px] font-semibold text-ink-2">目标规则包<select className="control-input mt-1" value={moveTo} onChange={event => setMoveTo(event.target.value)}>{packages.map(pkg => <option key={pkg.id} value={pkg.id}>{pkg.name} {pkg.label}</option>)}</select></label></div><footer className="flex justify-end gap-2 border-t border-ink-border bg-[#fafafa] p-3"><button className="h-8 border border-ink-border bg-white px-3 text-[11px]" onClick={() => setMoveTarget(null)}>取消</button><button className="h-8 bg-brand-primary px-3 text-[11px] text-white" onClick={() => void moveAsset.mutateAsync({ assetId: moveTarget.id, targetPackage: moveTo }).then(() => { setMoveTarget(null); setSelectedPackageId(moveTo); setSelectedAssetId(moveTarget.id) })}>移动</button></footer></Modal>}
       {deleteTarget && <Modal title="删除资产" onClose={() => setDeleteTarget(null)}><div className="space-y-2 p-4 text-xs"><p>确定归档 <b>{deleteTarget.name}</b>？</p>{deleteTarget.status === 'published' && <p className="border border-[#f3c65f] bg-[#fff8e1] p-2 text-[#734d00]">该资产已经发布，删除后需要构建新 Release 才能从运行环境移除。</p>}</div><footer className="flex justify-end gap-2 border-t border-ink-border bg-[#fafafa] p-3"><button className="h-8 border border-ink-border bg-white px-3 text-[11px]" onClick={() => setDeleteTarget(null)}>取消</button><button className="h-8 bg-[#c62828] px-3 text-[11px] text-white" onClick={() => void deleteAsset.mutateAsync(deleteTarget.id).then(() => { setDeleteTarget(null); setSelectedAssetId(null) })}>确认删除</button></footer></Modal>}
+      {deprecateTarget && <Modal title="标记为废弃" onClose={() => setDeprecateTarget(null)}><div className="space-y-3 p-4 text-xs"><p>废弃后 <b>{deprecateTarget.name}</b> 将保留在规则包中，但不会再被 Rule Group、规则流或新 Release 引用。</p><label className="block text-[11px] font-semibold text-ink-2">废弃原因<textarea className="mt-1 min-h-20 w-full border border-ink-border p-2 font-normal outline-none focus:border-brand-primary" value={deprecationReason} onChange={event => setDeprecationReason(event.target.value)} maxLength={500} autoFocus /></label><label className="block text-[11px] font-semibold text-ink-2">替代资产（可选）<select className="control-input mt-1 font-normal" value={replacementId} onChange={event => setReplacementId(event.target.value)}><option value="">无</option>{allAssets.filter(asset => asset.id !== deprecateTarget.id && !['deprecated', 'archived'].includes(asset.status)).map(asset => <option key={asset.id} value={asset.id}>{asset.name}</option>)}</select></label>{deprecateAsset.error && <p className="text-[11px] text-[#c62828]">{deprecateAsset.error.message}</p>}</div><footer className="flex justify-end gap-2 border-t border-ink-border bg-[#fafafa] p-3"><button className="h-8 border border-ink-border bg-white px-3 text-[11px]" onClick={() => setDeprecateTarget(null)}>取消</button><button className="h-8 bg-[#8a5a00] px-3 text-[11px] text-white disabled:opacity-40" disabled={!deprecationReason.trim() || deprecateAsset.isPending} onClick={() => void deprecateAsset.mutateAsync({ assetId: deprecateTarget.id, reason: deprecationReason.trim(), replacedByAssetId: replacementId || undefined }).then(() => setDeprecateTarget(null))}>确认废弃</button></footer></Modal>}
     </div>
   )
 }

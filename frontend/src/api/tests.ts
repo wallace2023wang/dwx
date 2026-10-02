@@ -3,49 +3,6 @@ import axios from 'axios'
 import type { BomModel, TestCase, TestSuite } from '../types'
 import { http } from './client'
 
-const loanCases: TestCase[] = [
-  { id: 'loan-1', name: '未成年拒绝', inputs: { age: 17, creditScore: 720, yearlyIncome: 150000, delinquencies: 0 }, expected: '拒绝', actual: '拒绝', status: 'passed', durationMs: 18, firedRules: ['申请人年满 18 岁'] },
-  { id: 'loan-2', name: '优质客户', inputs: { age: 35, creditScore: 750, yearlyIncome: 200000, delinquencies: 0 }, expected: '批准 LOW', actual: '批准 LOW', status: 'passed', durationMs: 22, firedRules: ['信用分达到准入线', '风险等级评估', '最终审批结果'] },
-  { id: 'loan-3', name: '中等信用低收入', inputs: { age: 42, creditScore: 650, yearlyIncome: 80000, delinquencies: 0 }, expected: '批准 MEDIUM', actual: '批准 MEDIUM', status: 'passed', durationMs: 20, firedRules: ['信用分达到准入线', '风险等级评估'] },
-  { id: 'loan-4', name: '信用分不足', inputs: { age: 28, creditScore: 580, yearlyIncome: 120000, delinquencies: 1 }, expected: '拒绝 HIGH', actual: '拒绝 HIGH', status: 'passed', durationMs: 17, firedRules: ['信用分达到准入线', '风险等级评估'] },
-  { id: 'loan-5', name: '多次逾期', inputs: { age: 50, creditScore: 680, yearlyIncome: 180000, delinquencies: 3 }, expected: '拒绝 HIGH', actual: '批准 MEDIUM', status: 'failed', durationMs: 24, firedRules: ['信用分达到准入线', '风险等级评估'], diagnostic: '决策表第 5 行“逾期次数 >= 3”未命中，疑似被第 3 行优先级覆盖。' },
-  { id: 'loan-6', name: '贷款额超收入 3 倍', inputs: { age: 33, creditScore: 720, yearlyIncome: 60000, delinquencies: 0 }, expected: '拒绝', actual: '拒绝', status: 'passed', durationMs: 19, firedRules: ['贷款金额不超过年收入 3 倍'] },
-  { id: 'loan-7', name: '边界：刚好 18 岁', inputs: { age: 18, creditScore: 600, yearlyIncome: 100000, delinquencies: 0 }, expected: '批准 MEDIUM', actual: '批准 MEDIUM', status: 'passed', durationMs: 21, firedRules: ['信用分达到准入线', '风险等级评估'] },
-  { id: 'loan-8', name: '边界：信用分 600', inputs: { age: 30, creditScore: 600, yearlyIncome: 100000, delinquencies: 0 }, expected: '批准 MEDIUM', actual: '批准 MEDIUM', status: 'passed', durationMs: 20, firedRules: ['信用分达到准入线', '风险等级评估'] },
-  { id: 'loan-9', name: '高收入低信用', inputs: { age: 45, creditScore: 590, yearlyIncome: 500000, delinquencies: 0 }, expected: '拒绝 HIGH', actual: '拒绝 HIGH', status: 'passed', durationMs: 16, firedRules: ['信用分达到准入线'] },
-  { id: 'loan-10', name: '一次历史逾期', inputs: { age: 39, creditScore: 710, yearlyIncome: 160000, delinquencies: 1 }, expected: '批准 LOW', actual: '批准 LOW', status: 'passed', durationMs: 23, firedRules: ['历史逾期次数上限', '最终审批结果'] },
-  { id: 'loan-11', name: '边界：逾期 2 次', inputs: { age: 31, creditScore: 690, yearlyIncome: 140000, delinquencies: 2 }, expected: '批准 MEDIUM', actual: '批准 MEDIUM', status: 'passed', durationMs: 22, firedRules: ['历史逾期次数上限', '风险等级评估'] },
-  { id: 'loan-12', name: '零逾期标准客户', inputs: { age: 26, creditScore: 705, yearlyIncome: 130000, delinquencies: 0 }, expected: '批准 LOW', actual: '批准 LOW', status: 'passed', durationMs: 19, firedRules: ['信用分达到准入线', '最终审批结果'] },
-]
-
-const suitesByProject: Record<string, TestSuite> = {
-  miniloan: {
-    id: 'loan-baseline', name: '基准场景', target: 'miniloan-decision', targetVersion: 'v2.1.0', required: true,
-    lastRunAt: '2026-09-28 15:06',
-    columns: [
-      { key: 'age', label: '年龄' }, { key: 'creditScore', label: '信用分' },
-      { key: 'yearlyIncome', label: '年收入' }, { key: 'delinquencies', label: '逾期' },
-    ],
-    cases: loanCases,
-  },
-  'grain-temperature': {
-    id: 'grain-baseline', name: '粮温调控基准场景', target: 'grain-control', targetVersion: 'v1.4.0', required: true,
-    lastRunAt: '2026-09-27 10:35',
-    columns: [
-      { key: 'averageTemperature', label: '整仓均温' }, { key: 'insideTemperature', label: '仓内温度' },
-      { key: 'outsideTemperature', label: '仓外温度' }, { key: 'humidity', label: '湿度' },
-    ],
-    cases: [
-      { id: 'grain-1', name: '高温启动通风', inputs: { averageTemperature: 27, insideTemperature: 28, outsideTemperature: 17, humidity: 63 }, expected: 'HIGH · 启动通风', actual: 'HIGH · 启动通风', status: 'passed', durationMs: 15, firedRules: ['整仓均温超限告警', '低温通风启动条件'] },
-      { id: 'grain-2', name: '正常温度保持', inputs: { averageTemperature: 18, insideTemperature: 19, outsideTemperature: 20, humidity: 55 }, expected: 'NORMAL · 不通风', actual: 'NORMAL · 不通风', status: 'passed', durationMs: 12, firedRules: [] },
-      { id: 'grain-3', name: '低温差禁止通风', inputs: { averageTemperature: 24, insideTemperature: 24, outsideTemperature: 22, humidity: 68 }, expected: 'MEDIUM · 不通风', actual: 'MEDIUM · 不通风', status: 'passed', durationMs: 14, firedRules: ['温差梯度风险评估'] },
-      { id: 'grain-4', name: '高湿告警', inputs: { averageTemperature: 21, insideTemperature: 22, outsideTemperature: 14, humidity: 82 }, expected: 'HIGH · 启动通风', actual: 'HIGH · 启动通风', status: 'passed', durationMs: 17, firedRules: ['温差梯度风险评估', '低温通风启动条件'] },
-      { id: 'grain-5', name: '边界：均温 25 度', inputs: { averageTemperature: 25, insideTemperature: 25, outsideTemperature: 16, humidity: 60 }, expected: 'NORMAL · 不通风', actual: 'NORMAL · 不通风', status: 'passed', durationMs: 13, firedRules: [] },
-      { id: 'grain-6', name: '边界：温差 8 度', inputs: { averageTemperature: 23, insideTemperature: 24, outsideTemperature: 16, humidity: 58 }, expected: 'MEDIUM · 不通风', actual: 'MEDIUM · 不通风', status: 'passed', durationMs: 14, firedRules: ['温差梯度风险评估'] },
-    ],
-  },
-}
-
 export type TestValue = string | number | boolean
 
 interface ServerAssertion {
@@ -248,34 +205,20 @@ function requestError(error: unknown): Error {
   return error instanceof Error ? error : new Error('测试运行失败')
 }
 
-const demoProjectIds = new Set(['miniloan', 'grain-temperature'])
-
 async function loadSuites(projectId: string): Promise<ManagedTestSuite[]> {
-  if (!demoProjectIds.has(projectId)) {
-    const [{ data: suites }, { data: bom }] = await Promise.all([
-      http.get<ServerSuite[]>(`/projects/${encodeURIComponent(projectId)}/test-suites`),
-      http.get<BomModel>(`/projects/${encodeURIComponent(projectId)}/bom`),
-    ])
-    return suites.map(suite => transformSuite(suite, bom))
-  }
-  await new Promise((resolve) => window.setTimeout(resolve, 140))
-  const suite = suitesByProject[projectId]
-  return suite ? [suite] : []
+  const [{ data: suites }, { data: bom }] = await Promise.all([
+    http.get<ServerSuite[]>(`/projects/${encodeURIComponent(projectId)}/test-suites`),
+    http.get<BomModel>(`/projects/${encodeURIComponent(projectId)}/bom`),
+  ])
+  return suites.map(suite => transformSuite(suite, bom))
 }
 
 async function runSuite(projectId: string, suiteId: string): Promise<void> {
-  if (!demoProjectIds.has(projectId)) {
-    try {
-      await http.post(`/projects/${encodeURIComponent(projectId)}/test-suites/${encodeURIComponent(suiteId)}/run`)
-      return
-    } catch (error) {
-      throw requestError(error)
-    }
+  try {
+    await http.post(`/projects/${encodeURIComponent(projectId)}/test-suites/${encodeURIComponent(suiteId)}/run`)
+  } catch (error) {
+    throw requestError(error)
   }
-  await new Promise((resolve) => window.setTimeout(resolve, 850))
-  const suite = suitesByProject[projectId]
-  if (!suite) throw new Error('测试套件不存在')
-  suitesByProject[projectId] = { ...suite, lastRunAt: '2026-09-29 13:20', cases: suite.cases.map((testCase) => ({ ...testCase })) }
 }
 
 async function createSuite(projectId: string, payload: TestSuitePayload): Promise<ServerSuite> {
@@ -340,7 +283,7 @@ export function useCreateTestSuite(projectId: string | undefined) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (payload: TestSuitePayload) => {
-      if (!projectId || demoProjectIds.has(projectId)) throw new Error('演示项目不能创建测试套件')
+      if (!projectId) throw new Error('项目不存在')
       return createSuite(projectId, payload)
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'tests'] }),
@@ -351,7 +294,7 @@ export function useUpdateTestSuite(projectId: string | undefined) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ id, revision, payload }: { id: string; revision: number; payload: TestSuitePayload }) => {
-      if (!projectId || demoProjectIds.has(projectId)) throw new Error('演示项目不能修改测试套件')
+      if (!projectId) throw new Error('项目不存在')
       return updateSuite(projectId, id, revision, payload)
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'tests'] }),
@@ -362,7 +305,7 @@ export function useArchiveTestSuite(projectId: string | undefined) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ id, revision }: { id: string; revision: number }) => {
-      if (!projectId || demoProjectIds.has(projectId)) throw new Error('演示项目不能归档测试套件')
+      if (!projectId) throw new Error('项目不存在')
       return archiveSuite(projectId, id, revision)
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'tests'] }),
@@ -373,7 +316,7 @@ export function useRunAllTestSuites(projectId: string | undefined) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: () => {
-      if (!projectId || demoProjectIds.has(projectId)) throw new Error('演示项目不能运行全量回归')
+      if (!projectId) throw new Error('项目不存在')
       return runAllSuites(projectId)
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'tests'] }),
@@ -384,7 +327,7 @@ export function useCompareTestSuite(projectId: string | undefined) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ suiteId, baseVersion, candidateVersion }: { suiteId: string; baseVersion: number; candidateVersion: number }) => {
-      if (!projectId || demoProjectIds.has(projectId)) throw new Error('演示项目不能执行版本对比')
+      if (!projectId) throw new Error('项目不存在')
       return compareSuite(projectId, suiteId, baseVersion, candidateVersion)
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'tests'] }),

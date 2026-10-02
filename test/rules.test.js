@@ -31,6 +31,8 @@ test('valid rule generates a declared fact and action', () => {
   assert.equal(validateRule(rule), null);
   const drl = generateDrl([rule]);
   assert.match(drl, /declare RuleInput/);
+  assert.match(drl, /customerAge : java\.lang\.Integer/);
+  assert.match(drl, /overdue : java\.lang\.Boolean/);
   assert.match(drl, /customerAge >= 18/);
   assert.match(drl, /setRiskLevel\("低"\)/);
 });

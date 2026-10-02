@@ -28,7 +28,11 @@ export function createProjectPackageHandler({
 }) {
   return async function handleProjectPackages(req, res, segments, projectId, data, packageRecords) {
     if (segments.length === 4 && segments[3] === 'packages' && req.method === 'GET') {
-      return reply(res, 200, visibleProjectPackages(req.principal, data.rules, data.tables, packageRecords, data.bom, data.changeSets));
+      const includeArchived = new URL(req.url, 'http://localhost').searchParams.get('includeArchived') === 'true';
+      return reply(res, 200, visibleProjectPackages(req.principal,
+        includeArchived ? data.allRules : data.rules,
+        includeArchived ? data.allTables : data.tables,
+        packageRecords, data.bom, data.changeSets));
     }
     if (segments.length === 4 && segments[3] === 'packages' && req.method === 'POST') {
       const payload = await bodyOf(req);
@@ -91,11 +95,17 @@ export function createProjectPackageHandler({
         if (!records.some(pkg => pkg.name === name)) return { status: 404, error: '规则包不存在' };
         const names = new Set(records.filter(pkg => pkg.name === name || pkg.name.startsWith(`${name}.`)).map(pkg => pkg.name));
         const currentData = await projectData(projectId);
-        const assets = [...currentData.rules, ...currentData.tables].filter(asset => names.has(asset.draft.category));
+        const allAssets = [...currentData.allRules, ...currentData.allTables].filter(asset => names.has(asset.draft.category));
+        const archivedAssets = allAssets.filter(asset => asset.archived || asset.lifecycleStatus === 'archived');
+        if (archivedAssets.length) return { status: 409, error: `规则包包含 ${archivedAssets.length} 个归档资产，为保留历史归属不能删除` };
+        const assets = allAssets;
         const moveRulesTo = canonicalPackageName(payload?.moveRulesTo);
         if (assets.length && !moveRulesTo && payload?.deleteAssets !== true) return { status: 409, error: `包 ${name} 下有 ${assets.length} 条规则`, assetCount: assets.length };
         if (moveRulesTo && (!records.some(pkg => pkg.name === moveRulesTo) || names.has(moveRulesTo))) return { status: 400, error: '目标包无效' };
-        const updateAssets = collection => { for (const asset of collection) if (names.has(asset.draft.category)) { if (payload.deleteAssets) asset.archived = true; else asset.draft.category = moveRulesTo; advanceAssetRevision(asset, 'saved', true); } return { changed: true }; };
+        const updateAssets = collection => { for (const asset of collection) if (names.has(asset.draft.category)) {
+          if (payload.deleteAssets) { asset.archived = true; asset.lifecycleStatus = 'archived'; advanceAssetRevision(asset, 'archived', true); }
+          else { asset.draft.category = moveRulesTo; advanceAssetRevision(asset, 'saved', true); }
+        } return { changed: true }; };
         await mutate(updateAssets, projectId);
         await mutateAssets('tables', updateAssets, projectId);
         const retained = records.filter(pkg => !names.has(pkg.name));

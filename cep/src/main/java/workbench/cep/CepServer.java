@@ -99,6 +99,7 @@ public final class CepServer {
     server.createContext("/test", CepServer::test);
     server.createContext("/deployments", CepServer::listDeployments);
     server.createContext("/deploy", CepServer::deploy);
+    server.createContext("/undeploy", CepServer::undeploy);
     server.createContext("/execute", CepServer::execute);
     server.createContext("/events", CepServer::events);
     server.createContext("/webhook", CepServer::webhook);
@@ -196,6 +197,28 @@ public final class CepServer {
         exception.printStackTrace();
         send(exchange, 500, Map.of("error", "CEP deploy failed"));
       }
+    }
+  }
+
+  private static void undeploy(HttpExchange exchange) throws IOException {
+    if (!method(exchange, "POST")) return;
+    if (!requireAuth(exchange)) return;
+    JsonNode request;
+    try { request = readBody(exchange); }
+    catch (IllegalArgumentException exception) { send(exchange, 400, Map.of("error", exception.getMessage())); return; }
+    String releaseId = request.path("releaseId").asText("");
+    if (releaseId.isBlank()) { send(exchange, 400, Map.of("error", "releaseId 不能为空")); return; }
+
+    synchronized (DEPLOY_LOCK) {
+      Deployment deployment = DEPLOYMENTS.remove(releaseId);
+      Files.deleteIfExists(releaseFile(releaseId));
+      ALERTS.entrySet().removeIf(entry -> releaseId.equals(entry.getValue().releaseId()));
+      if (deployment != null) deployment.runtime().destroy();
+      send(exchange, 200, Map.of(
+          "ok", true,
+          "releaseId", releaseId,
+          "removed", deployment != null,
+          "stoppedAt", Instant.now().toString()));
     }
   }
 
@@ -308,6 +331,7 @@ public final class CepServer {
         "/execute", Map.of("post", Map.of("summary", "Execute deployed release with events")),
         "/events/{releaseId}", Map.of("post", Map.of("summary", "Continuously append events to deployed release")),
         "/webhook", Map.of("post", Map.of("summary", "Configure release webhook")),
+        "/undeploy", Map.of("post", Map.of("summary", "Unload a deployed release")),
         "/metrics", Map.of("get", Map.of("summary", "Prometheus metrics"))
       )
     ));
@@ -677,11 +701,15 @@ public final class CepServer {
   }
 
   private static void persist(JsonNode release) throws IOException {
-    Path file = DATA_DIR.resolve(release.path("id").asText().replaceAll("[^A-Za-z0-9._-]", "_") + ".json");
+    Path file = releaseFile(release.path("id").asText());
     Path temp = file.resolveSibling(file.getFileName() + ".tmp");
     Files.writeString(temp, JSON.writerWithDefaultPrettyPrinter().writeValueAsString(release));
     try { Files.move(temp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING); }
     catch (AtomicMoveNotSupportedException exception) { Files.move(temp, file, StandardCopyOption.REPLACE_EXISTING); }
+  }
+
+  private static Path releaseFile(String releaseId) {
+    return DATA_DIR.resolve(releaseId.replaceAll("[^A-Za-z0-9._-]", "_") + ".json");
   }
 
   private static void shutdown() {

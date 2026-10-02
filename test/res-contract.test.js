@@ -107,3 +107,20 @@ test('RES-CONTRACT-07: facts 类型错误被拒绝（Integer 字段传字符串�
     assert.equal(result.status, 400);
   } finally { await env.stop(); }
 });
+
+test('RES-CONTRACT-08: 非生效版本卸载转发 releaseId 并保留停用历史', async () => {
+  const env = await startTestEnv();
+  try {
+    const first = await publishAndRelease(env);
+    const second = (await env.request('/api/releases', 'POST', {
+      decisionService: 'default/res-contract', name: '契约测试 v2', target: { type: 'rule', id: first.target.id },
+    })).body;
+    await env.request(`/api/releases/${first.id}/deploy`, 'POST', { environment: 'local' });
+    await env.request(`/api/releases/${second.id}/deploy`, 'POST', { environment: 'local' });
+
+    const stopped = await env.request(`/api/releases/${second.id}/undeploy`, 'POST', { environment: 'local' });
+    assert.equal(stopped.status, 200);
+    assert.equal(stopped.body.deployments[0].status, 'stopped');
+    assert.deepEqual(env.resCalls.at(-1), { path: '/undeploy', body: { releaseId: second.id } });
+  } finally { await env.stop(); }
+});

@@ -2,9 +2,16 @@ import { canonicalPackageName, packageLabel } from '../shared/packages.js';
 
 export function initializeAssetRevision(item, reason = 'created') {
   const now = item.updatedAt || new Date().toISOString();
+  if (item.archived) item.lifecycleStatus = 'archived';
+  else item.lifecycleStatus ||= 'active';
+  item.archived = item.lifecycleStatus === 'archived';
   item.revision = item.revision || 1;
   item.revisions ||= [{ number: item.revision, createdAt: now, reason, draft: structuredClone(item.draft) }];
   return item;
+}
+
+export function isActiveAsset(item) {
+  return Boolean(item) && !item.archived && (item.lifecycleStatus || 'active') === 'active';
 }
 
 export function normalizePackageReferences(value) {

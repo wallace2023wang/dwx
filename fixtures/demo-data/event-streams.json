@@ -12085,16 +12085,8 @@
           "epl": "insert into NitrogenPhaseEvent select 'CIRCULATION' as phase, warehouseId from NitrogenReading#lastevent() where nitrogenPct >= 95",
           "enabled": true,
           "label": "充氮/补氮 → 环流",
-          "description": "充氮期与补氮期浓度达标（≥95%）即迁移环流；单点阈值向导生成，派生输出 phase=CIRCULATION。采样判定：生产每 1 分钟 / 演示每 2 秒。",
-          "mode": "guided",
-          "template": "single-threshold",
-          "params": {
-            "statementName": "Circ_FromFillRepl",
-            "eventType": "NitrogenReading",
-            "field": "nitrogenPct",
-            "operator": ">=",
-            "value": 95
-          }
+          "description": "充氮期与补氮期浓度达标（≥95%）即迁移环流；包含派生输出 phase=CIRCULATION 和 lastevent 视图，按高级 EPL 管理。采样判定：生产每 1 分钟 / 演示每 2 秒。",
+          "mode": "advanced"
         },
         {
           "name": "Hold_FromCirc",
@@ -12109,16 +12101,8 @@
           "epl": "insert into NitrogenPhaseEvent select 'REPLENISHING' as phase, warehouseId from NitrogenReading#lastevent() where nitrogenPct < 90",
           "enabled": true,
           "label": "保氮 → 补氮",
-          "description": "保氮期浓度跌破 90% 即迁移补氮；单点阈值向导生成，派生输出 phase=REPLENISHING。",
-          "mode": "guided",
-          "template": "single-threshold",
-          "params": {
-            "statementName": "Repl_FromHold",
-            "eventType": "NitrogenReading",
-            "field": "nitrogenPct",
-            "operator": "<",
-            "value": 90
-          }
+          "description": "保氮期浓度跌破 90% 即迁移补氮；包含派生输出 phase=REPLENISHING 和 lastevent 视图，按高级 EPL 管理。",
+          "mode": "advanced"
         }
       ]
     },

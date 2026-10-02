@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState } from 'react'
 import { CheckCircle2, ChevronDown, FileCode2, Languages, Rocket, Save } from 'lucide-react'
 import type { AssetDetail, BomField, RuleDraft } from '../../types'
 import BalRuleView, { normalizeBalDraft, validateBalDraft } from './BalRuleView'
+import BomVersionNotice from './BomVersionNotice'
 
 const MonacoTextEditor = lazy(() => import('./MonacoTextEditor'))
 
@@ -24,6 +25,7 @@ const statusMeta = {
   'in-review': ['审核中', 'bg-brand-primary-l text-brand-primary'],
   rejected: ['已驳回', 'bg-[#fff1f1] text-[#c62828]'],
   published: ['已发布', 'bg-[#e8f5e9] text-env-production'],
+  deprecated: ['已废弃', 'bg-[#fff3e0] text-[#8a5a00]'],
   archived: ['已归档', 'bg-[#eeeeee] text-ink-3'],
 } as const
 
@@ -79,6 +81,7 @@ export default function RuleFormEditor({ detail, fields, busy, onSave, onCompile
           <label className="inline-flex items-center gap-1">包:<input className="h-6 w-28 border-0 border-b border-dashed border-ink-border bg-transparent px-1 font-medium text-ink-1 outline-none focus:border-brand-primary" value={draft.category} onChange={event => setDraft({ ...draft, category: event.target.value })} aria-label="规则包" /></label>
         </div>
       </header>
+      <BomVersionNotice detail={detail} />
 
       <div className="min-h-0 flex-1 overflow-auto">
         {view === 'bal'

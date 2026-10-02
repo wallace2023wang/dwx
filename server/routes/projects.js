@@ -58,7 +58,8 @@ export function createProjectHandlers({
     if (segments.length === 3 && req.method === 'DELETE') {
       if (projectId === 'default') return reply(res, 400, { error: '默认项目不能删除' });
       const data = await projectData(projectId);
-      const production = data.releases.some(release => (release.deployments || []).some(deployment => deployment.environment === 'production'));
+      const production = data.releases.some(release => (release.deployments || [])
+        .some(deployment => deployment.environment === 'production' && deployment.status !== 'stopped'));
       if (production) return reply(res, 409, { error: '项目已发布到 production，只能归档' });
       if (postgresStore) {
         const result = await postgresStore.deleteProject(projectId);

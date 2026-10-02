@@ -9,7 +9,7 @@ export const normalizeProjectRecord = project => ({ ...project, engine: normaliz
 
 export function defaultProjectRecord() {
   return {
-    id: 'default', name: '默认风控项目', description: 'Team Server 当前 default 工作空间中的真实规则资产',
+    id: 'default', name: '个人贷款审批', description: '个人贷款申请、风险评估与审批决策规则',
     icon: 'shield', engine: 'rules', version: 'v1.0.0', branch: 'main', defaultEnvironment: 'local', archived: false,
     createdAt: '2026-09-28T00:00:00.000Z', updatedAt: new Date().toISOString(), updatedBy: 'Team Server',
   };

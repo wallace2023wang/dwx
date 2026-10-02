@@ -188,3 +188,58 @@ test('RTS-REL-10: 规则流拒绝组合不同 BOM 版本的资产', async () => 
     assert.equal(published.body.versions.at(-1).bomVersion, 2);
   } finally { await env.stop(); }
 });
+
+test('RTS-REL-11: 同服务多版本部署、激活、稳定入口、回退和卸载形成闭环', async () => {
+  const env = await startTestEnv();
+  try {
+    const rule = await publishOne(env, 'rules');
+    const create = name => env.request('/api/projects/default/releases', 'POST', {
+      decisionService: 'default/credit-active', name, target: { type: 'rule', id: rule.id },
+    });
+    const v1 = await create('信用决策 v1');
+    const v2 = await create('信用决策 v2');
+
+    const firstDeploy = await env.request(`/api/projects/default/releases/${v1.body.id}/deploy`, 'POST', { environment: 'local' });
+    assert.equal(firstDeploy.status, 200);
+    assert.equal(firstDeploy.body.deployments[0].status, 'active');
+
+    const secondDeploy = await env.request(`/api/projects/default/releases/${v2.body.id}/deploy`, 'POST', { environment: 'local' });
+    assert.equal(secondDeploy.status, 200);
+    assert.equal(secondDeploy.body.deployments[0].status, 'deployed');
+
+    let releases = (await env.request('/api/projects/default/releases')).body;
+    assert.equal(releases.find(item => item.id === v1.body.id).deployments[0].status, 'active');
+    assert.equal(releases.find(item => item.id === v2.body.id).deployments[0].status, 'deployed');
+
+    let stable = await env.request('/api/projects/default/services/credit-active/execute', 'POST', { facts: {} });
+    assert.equal(stable.status, 200);
+    assert.equal(env.resCalls.at(-1).body.releaseId, v1.body.id);
+
+    const activated = await env.request(`/api/projects/default/releases/${v2.body.id}/activate`, 'POST', { environment: 'local' });
+    assert.equal(activated.status, 200);
+    assert.equal(activated.body.deployments[0].status, 'active');
+    assert.equal(activated.body.rollbackAvailable, true);
+    stable = await env.request('/api/projects/default/services/credit-active/execute', 'POST', { facts: {} });
+    assert.equal(stable.status, 200);
+    assert.equal(env.resCalls.at(-1).body.releaseId, v2.body.id);
+
+    const activeUndeploy = await env.request(`/api/projects/default/releases/${v2.body.id}/undeploy`, 'POST', { environment: 'local' });
+    assert.equal(activeUndeploy.status, 409);
+    assert.match(activeUndeploy.body.error, /当前生效版本/);
+
+    const rolledBack = await env.request(`/api/projects/default/releases/${v2.body.id}/rollback`, 'POST', { environment: 'local' });
+    assert.equal(rolledBack.status, 200);
+    assert.equal(rolledBack.body.id, v1.body.id);
+    assert.equal(rolledBack.body.deployments[0].status, 'active');
+
+    const stopped = await env.request(`/api/projects/default/releases/${v2.body.id}/undeploy`, 'POST', { environment: 'local' });
+    assert.equal(stopped.status, 200);
+    assert.equal(stopped.body.deployments[0].status, 'stopped');
+    assert.equal(env.resCalls.at(-1).path, '/undeploy');
+    assert.equal((await env.request(`/api/projects/default/releases/${v2.body.id}/execute`, 'POST', { facts: {} })).status, 409);
+
+    releases = (await env.request('/api/projects/default/releases')).body;
+    assert.equal(releases.find(item => item.id === v1.body.id).deployments[0].status, 'active');
+    assert.equal(releases.find(item => item.id === v2.body.id).deployments[0].status, 'stopped');
+  } finally { await env.stop(); }
+});

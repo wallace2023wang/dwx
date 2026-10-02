@@ -3,95 +3,7 @@ import axios from 'axios'
 import type { FlowDefinition, FlowDetail, FlowDraft, Ruleset } from '../types'
 import { http } from './client'
 
-const rulesetsByProject: Record<string, Ruleset[]> = {
-  miniloan: [
-    {
-      id: 'miniloan-decision',
-      name: '个人贷款决策服务',
-      flowId: 'loan-approval',
-      flowName: '贷款审批主流程',
-      hitPolicy: 'COLLECT',
-      maxFirings: 100,
-      inputs: ['Borrower', 'Loan'],
-      outputs: ['LoanDecision'],
-      packages: ['validation', 'eligibility', 'underwriting'],
-      sequential: true,
-    },
-  ],
-  'grain-temperature': [
-    {
-      id: 'grain-control',
-      name: 'grain-control',
-      flowId: 'temperature-control',
-      flowName: '粮温调控主流程',
-      hitPolicy: 'PRIORITY',
-      maxFirings: 50,
-      inputs: ['GrainStore'],
-      outputs: ['ControlDecision'],
-      packages: ['monitoring', 'ventilation'],
-      sequential: true,
-    },
-  ],
-}
-
-const demoProjectIds = new Set(['miniloan', 'grain-temperature'])
-
-const flowsByProject: Record<string, Record<string, FlowDefinition>> = {
-  miniloan: {
-    'miniloan-decision': {
-      id: 'loan-approval',
-      name: '贷款审批主流程',
-      nodes: [
-        { id: 'start', kind: 'start', position: { x: 20, y: 185 }, label: '开始', detail: 'Borrower + Loan' },
-        { id: 'validation-gateway', kind: 'gateway', position: { x: 165, y: 180 }, label: '通过校验?' },
-        { id: 'validation', kind: 'ruleTask', position: { x: 360, y: 36 }, label: 'Task 1: validation', detail: '校验包 · 3 条规则' },
-        { id: 'rejection', kind: 'ruleTask', position: { x: 650, y: 36 }, label: 'Task 4: 拒绝理由', detail: '直接返回拒绝', active: false },
-        { id: 'eligibility', kind: 'ruleTask', position: { x: 390, y: 190 }, label: 'Task 2: eligibility', detail: '准入包 · 3 条规则' },
-        { id: 'underwriting', kind: 'ruleTask', position: { x: 690, y: 190 }, label: 'Task 3: underwriting', detail: '承保包 · 2 条规则' },
-        { id: 'end', kind: 'end', position: { x: 980, y: 185 }, label: '结束', detail: 'LoanDecision' },
-      ],
-      connections: [
-        { id: 'start-gateway', source: 'start', target: 'validation-gateway' },
-        { id: 'gateway-validation', source: 'validation-gateway', sourceHandle: 'no', target: 'validation', label: '否', labelTone: 'negative' },
-        { id: 'validation-rejection', source: 'validation', target: 'rejection' },
-        { id: 'rejection-end', source: 'rejection', target: 'end', targetHandle: 'top' },
-        { id: 'gateway-eligibility', source: 'validation-gateway', sourceHandle: 'yes', target: 'eligibility', label: '是', labelTone: 'positive' },
-        { id: 'eligibility-underwriting', source: 'eligibility', target: 'underwriting' },
-        { id: 'underwriting-end', source: 'underwriting', target: 'end' },
-      ],
-    },
-  },
-  'grain-temperature': {
-    'grain-control': {
-      id: 'temperature-control',
-      name: '粮温调控主流程',
-      nodes: [
-        { id: 'start', kind: 'start', position: { x: 30, y: 185 }, label: '开始', detail: 'GrainStore' },
-        { id: 'risk-gateway', kind: 'gateway', position: { x: 190, y: 180 }, label: '温度异常?' },
-        { id: 'monitoring', kind: 'ruleTask', position: { x: 410, y: 70 }, label: 'Task 1: monitoring', detail: '监测包 · 3 条规则' },
-        { id: 'ventilation', kind: 'ruleTask', position: { x: 690, y: 70 }, label: 'Task 2: ventilation', detail: '通风包 · 2 条规则' },
-        { id: 'normal', kind: 'ruleTask', position: { x: 470, y: 240 }, label: 'Task 3: 正常记录', detail: '无需执行调控', active: false },
-        { id: 'end', kind: 'end', position: { x: 980, y: 185 }, label: '结束', detail: 'ControlDecision' },
-      ],
-      connections: [
-        { id: 'start-gateway', source: 'start', target: 'risk-gateway' },
-        { id: 'gateway-monitoring', source: 'risk-gateway', sourceHandle: 'no', target: 'monitoring', label: '是', labelTone: 'negative' },
-        { id: 'monitoring-ventilation', source: 'monitoring', target: 'ventilation' },
-        { id: 'ventilation-end', source: 'ventilation', target: 'end', targetHandle: 'top' },
-        { id: 'gateway-normal', source: 'risk-gateway', sourceHandle: 'yes', target: 'normal', label: '否', labelTone: 'positive' },
-        { id: 'normal-end', source: 'normal', target: 'end' },
-      ],
-    },
-  },
-}
-
-async function mockResult<T>(value: T): Promise<T> {
-  await new Promise((resolve) => window.setTimeout(resolve, 140))
-  return value
-}
-
 export async function loadRulesets(projectId: string): Promise<Ruleset[]> {
-  if (demoProjectIds.has(projectId)) return mockResult(rulesetsByProject[projectId] ?? [])
   const { data } = await http.get<Ruleset[]>(`/projects/${encodeURIComponent(projectId)}/flows`)
   return data
 }
@@ -110,7 +22,6 @@ export function useRuleFlow(projectId: string | undefined, rulesetId: string | u
   return useQuery<FlowDefinition | FlowDetail | null>({
     queryKey: ['projects', projectId, 'rulesets', rulesetId, 'flow'],
     queryFn: async () => {
-      if (projectId && demoProjectIds.has(projectId)) return mockResult(flowsByProject[projectId]?.[rulesetId ?? ''] ?? null)
       const { data } = await http.get<FlowDetail>(`/projects/${encodeURIComponent(projectId ?? '')}/flows/${encodeURIComponent(rulesetId ?? '')}`)
       return data
     },
@@ -128,7 +39,6 @@ export function useCreateFlow(projectId: string | undefined) {
   return useMutation({
     mutationFn: async () => {
       if (!projectId) throw new Error('项目不存在')
-      if (demoProjectIds.has(projectId)) throw new Error('演示项目不支持创建规则流')
       try {
         const { data } = await http.post<FlowDetail>(`/projects/${encodeURIComponent(projectId)}/flows`)
         return data

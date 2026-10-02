@@ -51,6 +51,11 @@ export class PostgresStore {
         number: Number(entry.revision), draft: entry.draft, reason: entry.reason, createdAt: iso(entry.created_at),
       })),
       archived: row.archived,
+      lifecycleStatus: row.lifecycle_status || (row.archived ? 'archived' : 'active'),
+      deprecatedAt: iso(row.deprecated_at) || null,
+      deprecatedBy: row.deprecated_by || null,
+      deprecationReason: row.deprecation_reason || null,
+      replacedByAssetId: row.replaced_by_asset_id || null,
       updatedAt: iso(row.updated_at),
     }, Number(row.revision)));
   }
@@ -68,18 +73,24 @@ export class PostgresStore {
         const now = asset.updatedAt || new Date().toISOString();
         if (!existing.rowCount) {
           await client.query(`INSERT INTO assets
-            (id, project_id, asset_type, revision, draft, published, archived, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`, [
+            (id, project_id, asset_type, revision, draft, published, archived, created_at, updated_at,
+             lifecycle_status, deprecated_at, deprecated_by, deprecation_reason, replaced_by_asset_id)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`, [
             asset.id, projectId, type, asset.revision || 1, asset.draft, asset.published, asset.archived === true,
             asset.revisions?.[0]?.createdAt || now, now,
+            asset.lifecycleStatus || (asset.archived ? 'archived' : 'active'), asset.deprecatedAt || null,
+            asset.deprecatedBy || null, asset.deprecationReason || null, asset.replacedByAssetId || null,
           ]);
         } else {
           const current = Number(existing.rows[0].revision);
           const expected = snapshot?.revision ?? current;
           if (current !== expected) throw new StorageConflictError(`${type}:${asset.id}`, current);
           await client.query(`UPDATE assets SET revision = $2, draft = $3, published = $4,
-            archived = $5, updated_at = $6 WHERE id = $1`, [
+            archived = $5, updated_at = $6, lifecycle_status = $7, deprecated_at = $8,
+            deprecated_by = $9, deprecation_reason = $10, replaced_by_asset_id = $11 WHERE id = $1`, [
             asset.id, asset.revision || current, asset.draft, asset.published, asset.archived === true, now,
+            asset.lifecycleStatus || (asset.archived ? 'archived' : 'active'), asset.deprecatedAt || null,
+            asset.deprecatedBy || null, asset.deprecationReason || null, asset.replacedByAssetId || null,
           ]);
         }
         for (const revision of asset.revisions || []) {
@@ -131,7 +142,8 @@ export class PostgresStore {
       GREATEST((SELECT count(*)::int FROM packages pkg WHERE pkg.project_id = p.id),
         (SELECT count(DISTINCT COALESCE(a.draft->>'category', '未分类'))::int FROM assets a WHERE a.project_id = p.id AND NOT a.archived)) AS package_count,
       (SELECT count(*)::int FROM assets a WHERE a.project_id = p.id AND NOT a.archived) AS asset_count,
-      (SELECT count(DISTINCT d.environment)::int FROM releases r JOIN deployments d ON d.release_id = r.id WHERE r.project_id = p.id) AS environment_count
+      (SELECT count(DISTINCT d.environment)::int FROM releases r JOIN deployments d ON d.release_id = r.id
+        WHERE r.project_id = p.id AND COALESCE(d.receipt->>'status', 'deployed') <> 'stopped') AS environment_count
       FROM projects p WHERE ($1 OR NOT p.archived) ORDER BY p.updated_at DESC`, [includeArchived]);
     return result.rows.map(row => ({
       id: row.id, name: row.name, description: row.description, icon: row.icon, engine: row.engine || 'rules',
@@ -184,7 +196,8 @@ export class PostgresStore {
 
   async deleteProject(id) {
     const production = await this.pool.query(`SELECT 1 FROM releases r JOIN deployments d ON d.release_id = r.id
-      WHERE r.project_id = $1 AND d.environment = 'production' LIMIT 1`, [id]);
+      WHERE r.project_id = $1 AND d.environment = 'production'
+        AND COALESCE(d.receipt->>'status', 'deployed') <> 'stopped' LIMIT 1`, [id]);
     if (production.rowCount) return { blocked: true };
     const client = await this.pool.connect();
     try {
@@ -317,7 +330,9 @@ export class PostgresStore {
         ]);
         for (const deployment of release.deployments || []) {
           await client.query(`INSERT INTO deployments (id, release_id, environment, deployed_at, receipt)
-            VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO NOTHING`, [deployment.id, release.id, deployment.environment, deployment.deployedAt, deployment]);
+            VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO UPDATE SET
+              environment = EXCLUDED.environment, deployed_at = EXCLUDED.deployed_at, receipt = EXCLUDED.receipt`,
+          [deployment.id, release.id, deployment.environment, deployment.deployedAt, deployment]);
         }
         this.snapshots.set(release, { revision: rowRevision, fingerprint: fingerprint(release) });
       }

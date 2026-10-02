@@ -21,10 +21,14 @@ interface ResHealth extends EngineHealth {
   deployments: number
 }
 
-interface ResDeployment {
+interface ProjectSummary {
+  id: string
+}
+
+interface TeamServerRelease {
   decisionService: string
   version: number
-  deployedAt: string
+  deployments: Array<{ environment: string; status?: 'deployed' | 'active' | 'stopped' }>
 }
 
 const buildHttp = axios.create({ baseURL: '/build-api', timeout: 5_000 })
@@ -49,14 +53,21 @@ function service(id: ServiceHealth['id'], name: string, result: PromiseSettledRe
   return { id, name, status: result.status === 'fulfilled' ? 'online' : 'offline', detail: result.status === 'fulfilled' ? detail : '连接失败' }
 }
 
+async function loadActiveReleases() {
+  const { data: projects } = await http.get<ProjectSummary[]>('/projects')
+  const results = await Promise.allSettled(projects.map(project => http.get<TeamServerRelease[]>(`/projects/${encodeURIComponent(project.id)}/releases`)))
+  return results.flatMap(result => result.status === 'fulfilled' ? result.value.data : [])
+    .filter(release => release.deployments.some(deployment => deployment.environment === 'local' && deployment.status === 'active'))
+}
+
 async function loadAdminOverview(): Promise<AdminOverview> {
-  const [principalResult, storageResult, usersResult, engineResult, resResult, deploymentsResult] = await Promise.allSettled([
+  const [principalResult, storageResult, usersResult, engineResult, resResult, activeReleasesResult] = await Promise.allSettled([
     http.get<ServerPrincipal>('/session'),
     http.get<StorageStatus>('/system/storage'),
     http.get<AdminUser[]>('/admin/users'),
     buildHttp.get<EngineHealth>('/health'),
     resHttp.get<ResHealth>('/health'),
-    resHttp.get<ResDeployment[]>('/deployments'),
+    loadActiveReleases(),
   ])
 
   const principal = principalResult.status === 'fulfilled' ? principalResult.value.data : null
@@ -64,15 +75,17 @@ async function loadAdminOverview(): Promise<AdminOverview> {
   const users = usersResult.status === 'fulfilled' ? usersResult.value.data : []
   const engine = engineResult.status === 'fulfilled' ? engineResult.value.data : null
   const res = resResult.status === 'fulfilled' ? resResult.value.data : null
-  const deployments = deploymentsResult.status === 'fulfilled' ? deploymentsResult.value.data : []
-  const latestDeployment = [...deployments].sort((left, right) => right.deployedAt.localeCompare(left.deployedAt))[0]
+  const activeReleases = activeReleasesResult.status === 'fulfilled' ? activeReleasesResult.value : []
+  const currentRelease = activeReleases.length === 1
+    ? `${activeReleases[0].decisionService} v${activeReleases[0].version}`
+    : activeReleases.length > 1 ? `${activeReleases.length} 个决策服务当前生效` : '-'
 
   const localEnvironment: AdminEnvironment = {
     id: 'local',
     purpose: '本机集成验证与端到端测试',
     endpoint: '127.0.0.1:8790',
     deploymentPolicy: 'Team Server 手动部署',
-    currentRelease: latestDeployment ? `${latestDeployment.decisionService} v${latestDeployment.version}` : '-',
+    currentRelease,
     shadowMode: '-',
     status: res ? 'online' : 'offline',
     source: 'server',

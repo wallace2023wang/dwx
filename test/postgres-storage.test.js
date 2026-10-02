@@ -20,7 +20,10 @@ test('PG-STORE-01: JSON 导入、持久化和数据库级乐观锁', { skip: !po
 
   try {
     const imported = await importJson(databaseUrl.toString());
-    assert.deepEqual(imported, { rules: 8, tables: 1, flows: 1, suites: 1, releases: 2, bomVersion: 1 });
+    for (const kind of ['rules', 'tables', 'flows', 'eventStreams', 'suites', 'releases']) {
+      assert.ok(imported[kind] > 0, `${kind} 应导入至少一条记录`);
+    }
+    assert.equal(imported.bomVersion, 1);
     await assert.rejects(() => importJson(databaseUrl.toString()), /拒绝重复导入/);
 
     const first = new PostgresStore(databaseUrl.toString());
@@ -28,9 +31,14 @@ test('PG-STORE-01: JSON 导入、持久化和数据库级乐观锁', { skip: !po
     await Promise.all([first.initialize(), second.initialize()]);
     try {
       const [firstRules, secondRules] = await Promise.all([first.listAssets('rules'), second.listAssets('rules')]);
-      assert.equal(firstRules.length, 8);
+      assert.equal(firstRules.length, imported.rules);
       const changed = firstRules[0];
       changed.draft = { ...changed.draft, name: '数据库集成测试' };
+      changed.lifecycleStatus = 'deprecated';
+      changed.deprecatedAt = new Date().toISOString();
+      changed.deprecatedBy = 'integration-test';
+      changed.deprecationReason = '生命周期持久化验证';
+      changed.replacedByAssetId = firstRules[1]?.id || null;
       changed.revision += 1;
       changed.revisions.push({
         number: changed.revision,
@@ -39,6 +47,12 @@ test('PG-STORE-01: JSON 导入、持久化和数据库级乐观锁', { skip: !po
         draft: structuredClone(changed.draft),
       });
       await first.saveAssets('rules', firstRules);
+      const persistedLifecycle = (await first.listAssets('rules')).find(item => item.id === changed.id);
+      assert.equal(persistedLifecycle.lifecycleStatus, 'deprecated');
+      assert.equal(persistedLifecycle.deprecatedBy, 'integration-test');
+      assert.equal(persistedLifecycle.deprecationReason, '生命周期持久化验证');
+      assert.equal(persistedLifecycle.replacedByAssetId, changed.replacedByAssetId);
+      assert.ok(persistedLifecycle.deprecatedAt);
 
       const stale = secondRules.find(item => item.id === changed.id);
       stale.draft = { ...stale.draft, name: '过期写入' };
@@ -59,9 +73,9 @@ test('PG-STORE-01: JSON 导入、持久化和数据库级乐观锁', { skip: !po
       });
 
       const suites = await first.listTestSuites();
-      assert.equal(suites.length, 1);
+      assert.equal(suites.length, imported.suites);
       assert.ok(Array.isArray(suites[0].cases));
-      assert.equal(suites[0].runs.length, 2);
+      assert.ok(suites.some(suite => suite.runs.length >= 2));
 
       const now = new Date().toISOString();
       const changeSet = {
@@ -158,10 +172,14 @@ test('PG-STORE-01: JSON 导入、持久化和数据库级乐观锁', { skip: !po
 
       isolatedRelease.deployments.push({
         id: `local:${isolatedRelease.id}`, environment: 'local', deployedAt: now,
-        checksum: isolatedRelease.checksum, modelVersion: currentBom.version,
+        checksum: isolatedRelease.checksum, modelVersion: currentBom.version, status: 'deployed',
       });
       await first.saveReleases([isolatedRelease], null, isolatedProject.id);
-      assert.equal((await first.listReleases(isolatedProject.id))[0].deployments[0].environment, 'local');
+      assert.equal((await first.listReleases(isolatedProject.id))[0].deployments[0].status, 'deployed');
+      isolatedRelease.deployments[0].status = 'active';
+      isolatedRelease.deployments[0].activatedAt = now;
+      await first.saveReleases([isolatedRelease], null, isolatedProject.id);
+      assert.equal((await first.listReleases(isolatedProject.id))[0].deployments[0].status, 'active');
 
       assert.deepEqual(await first.deleteProject(isolatedProject.id), { deleted: true });
       assert.deepEqual(await first.listReleases(isolatedProject.id), []);

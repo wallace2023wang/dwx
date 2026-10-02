@@ -98,7 +98,11 @@ function literal(value) {
   }
   if (typeof value === 'boolean') return value ? 'true' : 'false';
   if (value == null || value === '') throw new Error('比较值不能为空');
-  const text = String(value).replaceAll("'", "''");
+  const raw = String(value).trim();
+  if (!raw) throw new Error('比较值不能为空');
+  const number = Number(raw);
+  if (Number.isFinite(number)) return String(number);
+  const text = raw.replaceAll("'", "''");
   return `'${text}'`;
 }
 

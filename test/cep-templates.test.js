@@ -51,6 +51,39 @@ test('CEP P0 templates generate stable insert-into EPL', () => {
   }
 });
 
+test('guided EventStream metadata must reproduce the persisted EPL', () => {
+  const params = { statementName: 'NH3HighAlarm', eventType: 'NH3Reading', field: 'ammoniaPpm', operator: '>=', value: '25' };
+  const epl = buildCepTemplate('single-threshold', params);
+  assert.match(epl, />= 25$/);
+
+  const valid = compileEventStreamDraft({
+    name: '氨气模板',
+    statements: [{ name: params.statementName, enabled: true, mode: 'guided', template: 'single-threshold', params, epl }],
+  }, bom);
+  assert.equal(valid.status, 200);
+
+  const conflicting = compileEventStreamDraft({
+    name: '氨气模板',
+    statements: [{ name: params.statementName, enabled: true, mode: 'guided', template: 'single-threshold', params, epl: epl.replace('>= 25', '< 10') }],
+  }, bom);
+  assert.equal(conflicting.status, 400);
+  assert.match(conflicting.error, /向导参数与 EPL 不一致/);
+
+  const incomplete = compileEventStreamDraft({
+    name: '氨气模板',
+    statements: [{ name: params.statementName, enabled: true, mode: 'guided', epl }],
+  }, bom);
+  assert.equal(incomplete.status, 400);
+  assert.match(incomplete.error, /缺少模板或参数/);
+
+  const missingEpl = compileEventStreamDraft({
+    name: '氨气模板',
+    statements: [{ name: params.statementName, enabled: true, mode: 'guided', template: 'single-threshold', params }],
+  }, bom);
+  assert.equal(missingEpl.status, 400);
+  assert.match(missingEpl.error, /内容需为 1-4000 个字符/);
+});
+
 test('CEP window templates support sliding and tumbling window clauses', () => {
   for (const [templateId, params] of cases.filter(([templateId]) => templateId !== 'single-threshold')) {
     const sliding = buildCepTemplate(templateId, { ...params, windowType: 'sliding' });
@@ -72,14 +105,15 @@ test('CEP template validation rejects unsafe identifiers and normalizes UI opera
 });
 
 test('EventStream authoring metadata persists in draft but stays out of runtime module checksum', () => {
-  const epl = buildCepTemplate('single-threshold', { statementName: 'NH3HighAlarm', eventType: 'NH3Reading', field: 'ammoniaPpm', operator: '>=', value: 25 });
+  const params = { statementName: 'NH3HighAlarm', eventType: 'NH3Reading', field: 'ammoniaPpm', operator: '>=', value: 25 };
+  const epl = buildCepTemplate('single-threshold', params);
   const first = compileEventStreamDraft({
     name: '氨气检测',
-    statements: [{ name: 'NH3HighAlarm', epl, label: '氨气超限', description: '业务说明 A', mode: 'guided', template: 'single-threshold', params: { value: 25 } }],
+    statements: [{ name: 'NH3HighAlarm', epl, label: '氨气超限', description: '业务说明 A', mode: 'guided', template: 'single-threshold', params }],
   }, bom);
   const second = compileEventStreamDraft({
     name: '氨气检测',
-    statements: [{ name: 'NH3HighAlarm', epl, label: '氨气严重超限', description: '业务说明 B', mode: 'guided', template: 'single-threshold', params: { value: 30 } }],
+    statements: [{ name: 'NH3HighAlarm', epl, label: '氨气严重超限', description: '业务说明 B', mode: 'guided', template: 'single-threshold', params }],
   }, bom);
   assert.equal(first.result.checksum, second.result.checksum);
   assert.deepEqual(Object.keys(first.result.module.statements[0]).sort(), ['enabled', 'epl', 'eventTypes', 'name', 'outputEventType']);

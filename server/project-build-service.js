@@ -1,9 +1,10 @@
 import { generateDrl, validateRule } from '../shared/rules.js';
 import { flowSnapshot, tableDrl, validateTable } from '../shared/assets.js';
 import { compileEventStreamDraft } from '../shared/event-streams.js';
-import { advanceAssetRevision, normalizePackageReferences } from './domain-utils.js';
+import { advanceAssetRevision, isActiveAsset, normalizePackageReferences } from './domain-utils.js';
 import { revisionConflict } from './http-utils.js';
 import { eventStreamAuthoring } from './project-presenters.js';
+import { domainErrorResult } from '../shared/errors.js';
 
 export function createProjectBuildService({
   engine,
@@ -26,7 +27,7 @@ export function createProjectBuildService({
   async function publishProjectEventStream(id, expected, projectId, data, createdBy = 'Team Server') {
     if (!Number.isInteger(expected) || expected < 1) return { status: 400, error: '修订号无效' };
     return mutateAssets('eventStreams', async assets => {
-      const item = assets.find(asset => asset.id === id && !asset.archived);
+      const item = assets.find(asset => asset.id === id && isActiveAsset(asset));
       if (!item) return { status: 404, error: '事件流不存在' };
       const conflict = revisionConflict(item, expected);
       if (conflict) return conflict;
@@ -63,7 +64,7 @@ export function createProjectBuildService({
     if (conflict) return conflict;
     let snapshot;
     try { snapshot = flowSnapshot(payload?.draft || item.draft, data.rules, data.tables, data.bom || getCurrentBom(), data.packageRecords || []); }
-    catch (error) { return { status: 400, error: error.message }; }
+    catch (error) { return domainErrorResult(error); }
     const steps = [...snapshot.steps, ...snapshot.branches.flatMap(branch => branch.steps)];
     let engineVersion = null;
     for (const step of steps) {
@@ -86,13 +87,13 @@ export function createProjectBuildService({
   async function publishProjectFlow(id, expected, data, projectId = 'default') {
     if (!Number.isInteger(expected) || expected < 1) return { status: 400, error: '修订号无效' };
     return mutateAssets('flows', async flows => {
-      const item = flows.find(asset => asset.id === id && !asset.archived);
+      const item = flows.find(asset => asset.id === id && isActiveAsset(asset));
       if (!item) return { status: 404, error: '规则流不存在' };
       const conflict = revisionConflict(item, expected);
       if (conflict) return conflict;
       let snapshot;
       try { snapshot = flowSnapshot(item.draft, data.rules, data.tables, data.bom || getCurrentBom(), data.packageRecords || []); }
-      catch (error) { return { status: 400, error: error.message }; }
+      catch (error) { return domainErrorResult(error); }
       const steps = [...snapshot.steps, ...snapshot.branches.flatMap(branch => branch.steps)];
       let engineVersion = null;
       for (const step of steps) {
@@ -123,7 +124,7 @@ export function createProjectBuildService({
     const validation = type === 'rule' ? validateRule(draft, bom) : validateTable(draft, bom).error;
     if (validation) return { status: 400, error: validation };
     const operation = assets => {
-      const item = assets.find(asset => asset.id === id && !asset.archived);
+      const item = assets.find(asset => asset.id === id && isActiveAsset(asset));
       if (!item) return { status: 404, error: '资产不存在' };
       const conflict = revisionConflict(item, expected);
       if (conflict) return conflict;
@@ -151,7 +152,7 @@ export function createProjectBuildService({
   async function publishProjectAsset(id, type, expected, projectId = 'default', bom = getCurrentBom(), projectOrEngine = 'rules') {
     if (!Number.isInteger(expected) || expected < 1) return { status: 400, error: '修订号无效' };
     const operation = async assets => {
-      const item = assets.find(asset => asset.id === id && !asset.archived);
+      const item = assets.find(asset => asset.id === id && isActiveAsset(asset));
       if (!item) return { status: 404, error: '资产不存在' };
       const conflict = revisionConflict(item, expected);
       if (conflict) return conflict;

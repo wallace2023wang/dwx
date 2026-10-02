@@ -209,6 +209,21 @@ test('condition cell parser rejects malformed ranges', () => {
   assert.throws(() => parseConditionCell(field, '==', '500..600..700'), /格式无效/);
 });
 
+test('decision table supports structured same-type field references and treats analysis as unknown', () => {
+  const table = newTable();
+  table.conditions = [{ field: 'creditScore', operator: '>=' }];
+  table.actions = [{ field: 'riskLevel' }];
+  table.rows = [{ enabled: true, priority: 0, conditions: [{ valueSource: 'field', valueField: 'customerAge' }], actions: ['高'] }];
+  const validation = validateTable(table);
+  assert.equal(validation.error, null);
+  assert.match(tableDrl(table), /creditScore >= customerAge/);
+
+  table.rows[0].conditions[0] = { valueSource: 'field', valueField: 'customerType' };
+  assert.match(validateTable(table).error, /同类型/);
+  table.rows[0].conditions[0] = { valueSource: 'field', valueField: 'creditScore' };
+  assert.match(validateTable(table).error, /自身比较/);
+});
+
 test('range syntax rejects non-numeric fields', () => {
   const table = cleanTable();
   table.conditions[0] = { field: 'customerType', operator: '==' };

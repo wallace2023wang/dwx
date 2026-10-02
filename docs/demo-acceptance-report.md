@@ -149,7 +149,7 @@ Decision Workbench 是复刻 IBM iLOG JRules RTS/RES 的规则与决策管理平
 |------|------|------|------|
 | P0-1 | **EventStream 语句级分组/目录**：`statements[]` 增加 `group` 字段（或有序数组），前端按组展示"阶段/业务模块"目录 | 只有 asset 级 `category`，语句目录靠命名约定（`Circ_*`/`Hold_*`/`Repl_*`）与 label | 规则资产规模变大后（几十条语句）无法按业务阶段治理与审阅 |
 | P0-2 | **向导模板支持派生输出字段**：模板参数增加 `outputFields`（如 `phase='CIRCULATION'` 常量列、字段重命名），生成 `select 'X' as phase, ...` | `single-threshold` 只能 `select *`；跨语句状态依赖（timer 语句按 phase 关联）必须高级微调 EPL | 状态机/阶段迁移类规则无法 100% 向导化，业务人员仍需懂 EPL |
-| P0-3 | **服务端 `template+params+epl` 一致性校验落地** | 文档 P1 项，未实现；当前可提交互相矛盾的元数据 | 绕过前端冲突确认，向导与 EPL 可能漂移 |
+| P0-3 | **服务端 `template+params+epl` 一致性校验落地** | 已完成；共享模板生成器会在创建、保存与编译时重算并拒绝不一致 EPL | 已关闭绕过前端造成向导与运行语义漂移的入口 |
 
 ### P1（建议排期）
 

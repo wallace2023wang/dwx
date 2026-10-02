@@ -3,6 +3,7 @@ import { generateDrl, newRule, validateRule } from '../../shared/rules.js';
 import { flowSnapshot, newFlow, newTable, tableCollectedHits, tableDrl, tableExecutionTrace, tableRules, validateFlow, validateTable } from '../../shared/assets.js';
 import { advanceAssetRevision, initializeAssetRevision, normalizePackageReferences } from '../domain-utils.js';
 import { bodyOf, expectedRevision, operationError, reply, revisionConflict } from '../http-utils.js';
+import { domainErrorResult } from '../../shared/errors.js';
 
 export function createLegacyApiHandler({
   engine,
@@ -88,7 +89,10 @@ export function createLegacyApiHandler({
       try {
         const packageRecords = await readPackageRecords('default', { rules, tables });
         flow = payload.published ? item.published : flowSnapshot(payload.draft || item.draft, rules, tables, currentBom, packageRecords);
-      } catch (error) { return reply(res, 400, { error: error.message }); }
+      } catch (error) {
+        const result = domainErrorResult(error);
+        return reply(res, result.status, operationError(result));
+      }
       if (!flow) return reply(res, 400, { error: '规则流尚未发布' });
       const options = {};
       if (Object.prototype.hasOwnProperty.call(payload, 'stopAfter')) options.stopAfter = payload.stopAfter;
@@ -139,7 +143,7 @@ export function createLegacyApiHandler({
         try {
           const packageRecords = await readPackageRecords('default', { rules, tables });
           snapshot = flowSnapshot(item.draft, rules, tables, currentBom, packageRecords);
-        } catch (error) { return { status: 400, error: error.message }; }
+        } catch (error) { return domainErrorResult(error); }
         const steps = [...snapshot.steps, ...snapshot.branches.flatMap(branch => branch.steps)];
         for (const step of steps) {
           const checked = await engine('/compile', { drl: step.drl });

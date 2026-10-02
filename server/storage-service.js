@@ -66,6 +66,7 @@ export function createStorageService({ storage, dataDir, assetFiles, getPostgres
       const scan = t => {
         if (!t) return;
         for (const c of t.conditions || []) add(c.field);
+        for (const row of t.rows || []) for (const cell of row.conditions || []) if (cell?.valueSource === 'field') add(cell.valueField);
         for (const a of t.actions || []) add(a.field);
       };
       scan(asset.draft);

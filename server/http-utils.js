@@ -28,7 +28,12 @@ export function revisionConflict(item, expected) {
 }
 
 export function operationError(result) {
-  const body = { error: result.error };
+  const body = {
+    error: result.error,
+    code: result.code || (result.status === 409 ? 'CONFLICT' : result.status === 404 ? 'NOT_FOUND' : 'VALIDATION_FAILED'),
+  };
+  if (result.details != null) body.details = result.details;
+  if (result.retryable != null) body.retryable = result.retryable;
   if (result.expectedRevision != null) body.expectedRevision = result.expectedRevision;
   if (result.currentRevision != null) body.currentRevision = result.currentRevision;
   if (result.current != null) body.current = result.current;

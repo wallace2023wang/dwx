@@ -15,7 +15,7 @@ export interface ExploreItem {
   searchText: string
   projectId: string
   projectName: string
-  projectSource: 'demo' | 'server'
+  projectSource: 'server'
   packageName: string
   status: AssetStatus | 'model'
   version: string

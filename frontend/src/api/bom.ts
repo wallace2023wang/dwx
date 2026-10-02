@@ -149,70 +149,8 @@ export function flattenFromFactTypes(model: BomModel): FlatBomField[] {
   })))
 }
 
-const miniloanBom: BomModel = {
-  version: 4,
-  updatedBy: '陈分析师',
-  factTypes: [
-    {
-      name: 'Borrower', label: '借款申请人', direction: 'input',
-      fields: [
-        { key: 'age', label: '年龄', type: 'Integer', direction: 'input', references: 2, min: 0, max: 150, unit: '岁', control: 'number' },
-        { key: 'yearlyIncome', label: '申请人年收入', type: 'Decimal', runtimeType: 'Double', direction: 'input', references: 3, min: 0, unit: '元', control: 'number' },
-        { key: 'creditScore', label: '信用分', type: 'Integer', direction: 'input', references: 2 },
-        { key: 'delinquencies', label: '历史逾期次数', type: 'Integer', direction: 'input', references: 2 },
-        { key: 'residency', label: '居住地类型', type: 'String', direction: 'input', references: 1 },
-      ],
-    },
-    {
-      name: 'Loan', label: '贷款申请', direction: 'input',
-      fields: [
-        { key: 'amount', label: '申请贷款金额', type: 'Decimal', runtimeType: 'Double', direction: 'input', references: 3, min: 0, unit: '元', control: 'number' },
-        { key: 'durationMonths', label: '贷款期限', type: 'Integer', direction: 'input', references: 2, min: 1, unit: '月', control: 'number' },
-        { key: 'productType', label: '贷款产品', type: 'Enum', runtimeType: 'String', direction: 'input', references: 1, enum: ['消费贷', '经营贷', '房贷'], control: 'select' },
-      ],
-    },
-    {
-      name: 'LoanDecision', label: '审批结果', direction: 'output',
-      fields: [
-        { key: 'approved', label: '批准', type: 'Boolean', direction: 'output', references: 4, control: 'boolean' },
-        { key: 'riskLevel', label: '风险等级', type: 'Enum', runtimeType: 'String', direction: 'output', references: 5, enum: ['低', '中', '高', '拒绝'], control: 'select' },
-        { key: 'maxAmount', label: '最高审批额度', type: 'Decimal', runtimeType: 'Double', direction: 'output', references: 2, unit: '元' },
-        { key: 'reasons', label: '理由', type: 'List<String>', runtimeType: 'String', direction: 'output', references: 3 },
-      ],
-    },
-  ],
-  vocabulary: [],
-  relationships: ['调用请求 1 -> 1 借款申请人', '调用请求 1 -> 1 贷款申请', '调用请求 1 -> 1 审批结果'],
-  drl: 'declare RuleInput\n  age : Integer\n  amount : Double\n  approved : Boolean\nend',
-}
-miniloanBom.vocabulary = miniloanBom.factTypes.flatMap(fact => fact.fields.map(field => ({ property: `${fact.name}.${field.key}`, label: field.label, type: field.type, references: field.references })))
-
-const grainBom: BomModel = {
-  version: 2,
-  updatedBy: '王工程师',
-  factTypes: [
-    { name: 'GrainStore', label: '粮仓', direction: 'input', fields: [
-      { key: 'averageTemperature', label: '整仓均温', type: 'Decimal', runtimeType: 'Double', direction: 'input', references: 4 },
-      { key: 'insideTemperature', label: '仓内温度', type: 'Decimal', runtimeType: 'Double', direction: 'input', references: 3 },
-      { key: 'outsideTemperature', label: '仓外温度', type: 'Decimal', runtimeType: 'Double', direction: 'input', references: 2 },
-      { key: 'humidity', label: '仓内湿度', type: 'Decimal', runtimeType: 'Double', direction: 'input', references: 2 },
-    ] },
-    { name: 'ControlDecision', label: '调控决策', direction: 'output', fields: [
-      { key: 'alertLevel', label: '告警等级', type: 'String', direction: 'output', references: 3 },
-      { key: 'ventilationRequired', label: '是否通风', type: 'Boolean', direction: 'output', references: 2 },
-      { key: 'reason', label: '决策原因', type: 'String', direction: 'output', references: 2 },
-    ] },
-  ],
-  vocabulary: [],
-  relationships: ['调用请求 1 -> 1 粮仓', '调用请求 1 -> 1 调控决策'],
-  drl: 'declare RuleInput\n  averageTemperature : Double\n  ventilationRequired : Boolean\nend',
-}
-grainBom.vocabulary = grainBom.factTypes.flatMap(fact => fact.fields.map(field => ({ property: `${fact.name}.${field.key}`, label: field.label, type: field.type, references: field.references })))
-
 export async function loadBom(projectId: string): Promise<BomModel> {
-  if (!['miniloan', 'grain-temperature'].includes(projectId)) return (await http.get<BomModel>(`/projects/${encodeURIComponent(projectId)}/bom`)).data
-  await new Promise(resolve => window.setTimeout(resolve, 140))
-  return projectId === 'grain-temperature' ? grainBom : miniloanBom
+  return (await http.get<BomModel>(`/projects/${encodeURIComponent(projectId)}/bom`)).data
 }
 
 function requestError(error: unknown) {
@@ -225,7 +163,6 @@ function requestError(error: unknown) {
 }
 
 async function saveBom(projectId: string, model: BomModel, acknowledgeImpact: boolean): Promise<SaveBomResult> {
-  if (['miniloan', 'grain-temperature'].includes(projectId)) throw new Error('演示项目的 BOM 不能修改')
   try {
     const { data } = await http.put<{ bom: FlatBomModel; warnings: string[] }>(`/projects/${encodeURIComponent(projectId)}/bom`, {
       version: model.version,

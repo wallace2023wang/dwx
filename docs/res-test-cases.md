@@ -46,6 +46,19 @@
 - **前置**：Release 缺 `id` / `decisionService` / `steps`。
 - **预期**：400；错误信息明确指出缺失字段。
 
+### RES-DEP-09：卸载 Release 幂等并释放持久化制品
+- **前置**：Release A 已部署并写入 `<releaseId>.json`。
+- **请求**：`POST /undeploy` `{releaseId}`，然后重复调用一次。
+- **预期**：两次均返回 200；第一次 `removed=true`，第二次 `removed=false`；`/deployments` 不再包含 A，持久化文件已删除，后续执行 A 返回 404。
+
+### RES-DEP-10：规则组步骤部署和执行
+- **前置**：Release 含 `type=rule-group` 的步骤，`drl` 为成员合并后的完整规则集，并携带 `members/memberFingerprint`。
+- **预期**：部署成功且规则可命中；非法 input/output mapping 仍返回 400；执行期不依赖 `members` 解析。
+
+### RES-DEP-11：OpenAPI 公布完整步骤类型
+- **请求**：`GET /openapi.json`。
+- **预期**：`ReleaseStep.type.enum` 包含 `rule`、`table`、`rule-group`，并说明规则组 `drl` 与成员追溯字段的语义。
+
 ---
 
 ## 2. 执行 `/execute`
@@ -89,6 +102,19 @@
 
 ### RES-EXE-09：响应包含 Release 元数据
 - **预期**：响应包含 `releaseId`、`decisionService`、`version`、`durationMs`。
+
+### RES-EXE-10：必填字段缺失拒绝
+- **前置**：冻结 model 将 `phase` 标记为 required input。
+- **请求**：facts 不含 `phase` 或显式传 null。
+- **预期**：400；错误包含缺失字段名。
+
+### RES-EXE-11：可选 Boolean 区分未传与 false
+- **前置**：新 DRL 声明 `flag : java.lang.Boolean`，规则分别判断 `flag == null` 与 `flag == false`。
+- **预期**：未传时命中 null 规则；显式传 false 时命中 false 规则，二者不混淆。
+
+### RES-EXE-12：受限多轮收敛
+- **请求**：`settle=true`、合法 `output -> input` 的 `feedbackMappings` 和 `maxRounds`。
+- **预期**：返回逐轮 `rounds[]`；无命中或反馈不变时停止；循环达到上限时 `limitReached=true`；异类型、反向或重复目标映射返回 400。
 
 ---
 
@@ -153,10 +179,10 @@
 
 | 模块 | 用例数 |
 |---|---|
-| 部署 deploy | 8 |
-| 执行 execute | 9 |
+| 部署 deploy | 11 |
+| 执行 execute | 12 |
 | FactType 反射 | 3 |
 | 持久化 | 3 |
-| 健康检查 | 2 |
+| 健康检查与管理契约 | 3 |
 | 安全隔离 | 3 |
-| **合计** | **28** |
+| **合计** | **35** |

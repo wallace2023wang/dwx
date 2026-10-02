@@ -22,14 +22,14 @@ export interface Project {
   branch: string
   icon: 'loan' | 'warehouse' | 'shield'
   engine: 'rules' | 'cep'
-  source: 'demo' | 'server'
+  source: 'server'
   defaultEnvironment?: string
   archived?: boolean
   createdAt?: string
 }
 
 export type AssetType = 'rule' | 'decision-table' | 'flow' | 'event-stream'
-export type AssetStatus = 'draft' | 'in-review' | 'rejected' | 'published' | 'archived'
+export type AssetStatus = 'draft' | 'in-review' | 'rejected' | 'published' | 'deprecated' | 'archived'
 
 export interface Asset {
   id: string
@@ -40,6 +40,7 @@ export interface Asset {
   version: string
   bomInvalid?: boolean
   bomIssue?: string
+  lifecycleStatus?: 'active' | 'deprecated' | 'archived'
 }
 
 export interface RuleAttributes {
@@ -126,7 +127,7 @@ export interface DecisionTableDraft {
   conditions: Array<{ field: string; operator: string }>
   actions: Array<{ field: string }>
   rows: Array<{
-    conditions: string[]
+    conditions: Array<string | { valueSource: 'field'; valueField: string }>
     actions: string[]
     enabled: boolean
     isDefault?: boolean
@@ -147,6 +148,14 @@ export interface AssetDetail extends Asset {
   decisionTable?: DecisionTableDefinition
   validationWarnings?: string[]
   changeSetId?: string
+  versions?: Array<{ number: number; createdAt?: string; bomVersion: number | null; engineVersion: string | null }>
+  publishedBomVersion?: number | null
+  currentBomVersion?: number
+  bomOutdated?: boolean
+  deprecatedAt?: string | null
+  deprecatedBy?: string | null
+  deprecationReason?: string | null
+  replacedByAssetId?: string | null
 }
 
 export type ChangeSetStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED'
@@ -439,7 +448,7 @@ export interface TestSuite {
 }
 
 export type ReleaseEnvironment = 'dev' | 'test' | 'staging' | 'production' | 'local'
-export type ReleaseState = 'running' | 'built' | 'rolled-back' | 'archived'
+export type ReleaseState = 'active' | 'deployed' | 'built' | 'stopped' | 'running' | 'rolled-back' | 'archived'
 export type ReleaseType = 'patch' | 'minor' | 'major'
 
 export interface ReleaseWebhookConfig {
@@ -466,6 +475,8 @@ export interface ReleaseRecord {
   createdAt: string
   notes: string
   latestForDecisionService?: boolean
+  rollbackAvailable?: boolean
+  stableEndpoint?: string
   engine?: 'rules' | 'cep'
   webhook?: ReleaseWebhookConfig
 }
