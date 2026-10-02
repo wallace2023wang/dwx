@@ -16,7 +16,7 @@ DWX（Decision Workbench X）是一个面向规则、决策流和复杂事件处
 
 ```text
 frontend/                 # 维护中的 React + Vite 前端应用
-server/                   # Team Server API、认证、存储适配与数据库迁移
+server/                   # Team Server API、认证、路由拆分、存储适配与数据库迁移
 shared/                   # 前后端共享的规则、BOM、发布、测试和报表领域逻辑
 engine/                   # Drools 设计期 Build Service
 res/                      # 独立规则执行中心（RES）
@@ -28,6 +28,8 @@ test/                     # Node.js 单元与 API 测试
 docs/                     # 产品、技术、设计与用户文档
 archive/legacy-prototype/ # 早期单文件原型，仅保留为参考
 ```
+
+`server/index.js` 仍是 Team Server 的组合入口；通用 HTTP 工具已拆到 `server/http-utils.js`，资产修订/包名规范化工具已拆到 `server/domain-utils.js`，后台用户目录路由已拆到 `server/routes/admin.js`。后续新增 API 时优先放入 `server/routes/`，避免继续扩大入口文件。
 
 用户操作手册位于 `docs/user-guides/DWX决策工作台-用户操作手册.docx`。
 

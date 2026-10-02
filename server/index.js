@@ -13,6 +13,9 @@ import { renderProjectReport } from '../shared/report.js';
 import { compileEventStreamDraft, eventSchemasFromBom, normalizeEventStreamDraft, validateEventPayloads, validateEventStreamDraft } from '../shared/event-streams.js';
 import { PostgresStore, StorageConflictError } from './postgres-store.js';
 import { AuthError, authenticateRequest, authorizeRequest, publicPrincipal, handleAuthRequest, authorizeProject, authorizeAsset, canAccessProject, canAccessAsset } from './auth.js';
+import { bodyOf, expectedRevision, operationError, reply, revisionConflict } from './http-utils.js';
+import { advanceAssetRevision, initializeAssetRevision, normalizeAssetPackages, normalizePackageRecords, normalizePackageReferences } from './domain-utils.js';
+import { createAdminHandler } from './routes/admin.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const storage = process.env.RULES_DATA_FILE || path.join(root, 'data', 'rules.json');
@@ -369,98 +372,7 @@ async function writePackageRecords(projectId, packages) {
 }
 
 
-const ADMIN_ROLES = ['admin', 'author', 'reviewer', 'release-manager', 'viewer'];
 
-function defaultAdminUsers() {
-  return [
-    { id: 'wallace', username: 'wallace', displayName: 'Wallace', email: 'wallace@company.com', role: 'admin', lastLogin: '2026-09-29 09:30', status: 'active' },
-    { id: 'chen', username: 'chen', displayName: '陈分析师', email: 'chen@company.com', role: 'author', lastLogin: '2026-09-28 17:20', status: 'active' },
-    { id: 'li', username: 'li', displayName: '李审核员', email: 'li@company.com', role: 'reviewer', lastLogin: '2026-09-28 14:05', status: 'active' },
-    { id: 'ops', username: 'ops', displayName: '运维张', email: 'ops@company.com', role: 'release-manager', lastLogin: '2026-09-27 11:00', status: 'active' },
-    { id: 'guest', username: 'guest', displayName: '访客账号', email: 'guest@company.com', role: 'viewer', lastLogin: '2026-09-15 08:42', status: 'disabled' },
-  ];
-}
-
-async function readAdminUsers() {
-  try { return JSON.parse(await fs.readFile(assetFiles.adminUsers, 'utf8')); }
-  catch (error) {
-    if (error.code !== 'ENOENT') throw error;
-    const users = defaultAdminUsers();
-    await writeJsonFile(assetFiles.adminUsers, users);
-    return users;
-  }
-}
-
-async function writeAdminUsers(users) {
-  return writeJsonFile(assetFiles.adminUsers, users);
-}
-
-function normalizeAdminUserPayload(payload, current = null) {
-  const username = typeof payload?.username === 'string' ? payload.username.trim() : '';
-  const displayName = typeof payload?.displayName === 'string' ? payload.displayName.trim() : username;
-  const email = typeof payload?.email === 'string' ? payload.email.trim() : '';
-  const role = typeof payload?.role === 'string' ? payload.role : 'viewer';
-  const status = payload?.status === 'disabled' ? 'disabled' : 'active';
-  if (!/^[a-zA-Z0-9._-]{2,80}$/.test(username)) return { error: '用户名需为 2-80 位字母、数字、点、下划线或连字符' };
-  if (!displayName || displayName.length > 80) return { error: '姓名需为 1-80 个字符' };
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return { error: '邮箱格式无效' };
-  if (!ADMIN_ROLES.includes(role)) return { error: '角色无效' };
-  return {
-    id: current?.id || username,
-    username,
-    displayName,
-    email,
-    role,
-    lastLogin: current?.lastLogin || '从未登录',
-    status,
-  };
-}
-
-async function handleAdmin(req, res, segments) {
-  if (segments.length === 3 && segments[2] === 'roles' && req.method === 'GET') {
-    return reply(res, 200, ADMIN_ROLES);
-  }
-  if (segments.length === 3 && segments[2] === 'users' && req.method === 'GET') {
-    const users = await readAdminUsers();
-    return reply(res, 200, users.map(user => ({ ...user, current: user.username === req.principal.name || user.id === req.principal.id })));
-  }
-  if (segments.length === 3 && segments[2] === 'users' && req.method === 'POST') {
-    const payload = await bodyOf(req);
-    const users = await readAdminUsers();
-    const normalized = normalizeAdminUserPayload(payload);
-    if (normalized.error) return reply(res, 400, { error: normalized.error });
-    if (users.some(user => user.id === normalized.id || user.username === normalized.username || user.email === normalized.email)) return reply(res, 409, { error: '用户名或邮箱已存在' });
-    users.unshift(normalized);
-    await writeAdminUsers(users);
-    await appendAuditEvent('admin.user.created', 'user', normalized.id, `创建用户：${normalized.username}`, { role: normalized.role }, req);
-    return reply(res, 201, { ...normalized, current: false });
-  }
-  if (segments.length === 4 && segments[2] === 'users' && req.method === 'PUT') {
-    const id = decodeURIComponent(segments[3]);
-    const payload = await bodyOf(req);
-    const users = await readAdminUsers();
-    const current = users.find(user => user.id === id);
-    if (!current) return reply(res, 404, { error: '用户不存在' });
-    const normalized = normalizeAdminUserPayload({ ...current, ...payload, username: current.username }, current);
-    if (normalized.error) return reply(res, 400, { error: normalized.error });
-    if (users.some(user => user.id !== id && user.email === normalized.email)) return reply(res, 409, { error: '邮箱已存在' });
-    const next = users.map(user => user.id === id ? normalized : user);
-    await writeAdminUsers(next);
-    await appendAuditEvent('admin.user.updated', 'user', id, `更新用户：${normalized.username}`, { role: normalized.role, status: normalized.status }, req);
-    return reply(res, 200, { ...normalized, current: normalized.username === req.principal.name || normalized.id === req.principal.id });
-  }
-  if (segments.length === 4 && segments[2] === 'users' && req.method === 'DELETE') {
-    const id = decodeURIComponent(segments[3]);
-    if (id === req.principal.id || id === req.principal.name) return reply(res, 400, { error: '不能删除当前登录用户' });
-    const users = await readAdminUsers();
-    const target = users.find(user => user.id === id);
-    if (!target) return reply(res, 404, { error: '用户不存在' });
-    await writeAdminUsers(users.filter(user => user.id !== id));
-    await appendAuditEvent('admin.user.deleted', 'user', id, `删除用户：${target.username}`, {}, req);
-    return reply(res, 204, '');
-  }
-  return reply(res, req.method === 'GET' ? 404 : 405, { error: req.method === 'GET' ? '未找到资源' : 'Method not allowed' });
-}
 
 function blankBom() {
   return { version: 1, updatedAt: new Date().toISOString(), fields: [], eventTypes: [] };
@@ -614,6 +526,12 @@ async function appendAuditEvent(action, resourceType, resourceId, summary, detai
 
 const ASSET_ACTIVITY_TYPES = new Set(['rule', 'table', 'flow', 'event-stream']);
 
+const handleAdmin = createAdminHandler({
+  adminUsersFile: assetFiles.adminUsers,
+  writeJsonFile,
+  appendAuditEvent,
+});
+
 async function recentActivity(principal, limit) {
   const projects = (await readProjectRecords(false)).filter(project => canAccessProject(principal, project));
   const projectById = new Map(projects.map(project => [project.id, project]));
@@ -642,90 +560,10 @@ async function recentActivity(principal, limit) {
     });
 }
 
-function reply(res, status, body, type = 'application/json; charset=utf-8') {
-  res.writeHead(status, { 'content-type': type, 'cache-control': 'no-store' });
-  res.end(type.startsWith('application/json') ? JSON.stringify(body) : body);
-}
 
-function expectedRevision(req, body) {
-  const header = req.headers['if-match'];
-  const raw = body?.revision ?? (typeof header === 'string' ? header.replace(/^W\//, '').replaceAll('"', '') : null);
-  if (raw == null || raw === '') return null;
-  const revision = Number(raw);
-  return Number.isInteger(revision) && revision >= 1 ? revision : NaN;
-}
 
-function revisionConflict(item, expected) {
-  const current = item.revision || 1;
-  return expected != null && expected !== current
-    ? { status: 409, error: `资产修订冲突：客户端 r${expected}，服务器最新 r${current}，请刷新后重试`, expectedRevision: expected, currentRevision: current, current: item }
-    : null;
-}
 
-function operationError(result) {
-  const body = { error: result.error };
-  if (result.expectedRevision != null) body.expectedRevision = result.expectedRevision;
-  if (result.currentRevision != null) body.currentRevision = result.currentRevision;
-  if (result.current != null) body.current = result.current;
-  return body;
-}
 
-function initializeAssetRevision(item, reason = 'created') {
-  const now = item.updatedAt || new Date().toISOString();
-  item.revision = item.revision || 1;
-  item.revisions ||= [{ number: item.revision, createdAt: now, reason, draft: structuredClone(item.draft) }];
-  return item;
-}
-
-function normalizePackageReferences(value) {
-  if (Array.isArray(value)) {
-    for (const item of value) normalizePackageReferences(item);
-    return value;
-  }
-  if (!value || typeof value !== 'object') return value;
-  if (typeof value.category === 'string') value.category = canonicalPackageName(value.category);
-  for (const item of Object.values(value)) normalizePackageReferences(item);
-  return value;
-}
-
-function normalizeAssetPackages(item) {
-  return normalizePackageReferences(item);
-}
-
-function normalizePackageRecords(records = []) {
-  const normalized = new Map();
-  for (const record of records) {
-    const originalName = typeof record?.name === 'string' ? record.name.trim() : '';
-    const name = canonicalPackageName(originalName);
-    if (!name) continue;
-    const parentId = record.parentId ? canonicalPackageName(record.parentId) : null;
-    const label = typeof record.label === 'string' && record.label.trim() && record.label.trim() !== originalName
-      ? record.label.trim()
-      : packageLabel(originalName);
-    const next = { ...record, name, label, parentId };
-    const existing = normalized.get(name);
-    normalized.set(name, existing ? { ...next, assets: existing.assets } : next);
-  }
-  return [...normalized.values()];
-}
-
-function advanceAssetRevision(item, reason, captureDraft = false) {
-  initializeAssetRevision(item);
-  item.revision += 1;
-  item.updatedAt = new Date().toISOString();
-  if (captureDraft) item.revisions.push({
-    number: item.revision, createdAt: item.updatedAt, reason, draft: structuredClone(item.draft),
-  });
-}
-
-async function bodyOf(req) {
-  let data = '';
-  for await (const chunk of req) {
-    data += chunk;
-    if (data.length > 1048576) throw new Error('请求内容过大');
-  }
-  return JSON.parse(data || '{}');
-}
 
 // Serialize mutations so concurrent requests cannot overwrite each other's snapshots.
 let queue = Promise.resolve();

@@ -51,7 +51,12 @@
 | 大规模规则项目容量专项 | P1（规模化） | 当前全量接口、非虚拟化列表、同步组合编译适合中小规模；目标见 `docs/product-requirements.md`“容量与规模化基线” | 先完成 1k/5k/10k 基准，再按瓶颈实施服务端分页、虚拟列表、异步编译、制品外置和 RES 缓存 |
 | 同字段多步骤输出归并策略 | P1 | 仅完成覆盖预警；最大值/优先级/聚合归并仍未设计 | 独立领域设计，明确审批、版本与运行语义后开发 |
 | 双引擎项目路由（rules / cep） | 已完成真实 Esper 集成 | 项目 `engine`、四路端点、EventStream、CEP TestSuite、Release v2、报告与 UI 分支已落地；`cep-build:8791` 与 `cep-res:8792` 已接入 Esper 8.8.0；CEP 容器 backlog（`/events/{releaseId}`、webhook fired/cleared、`CEP_API_KEY`、`/openapi.json`、`/metrics`）已落地；pattern/timer 时间驱动语句 P0 已落地 | 保持 rules 全链路回归；未来对外分发再补商业授权或替换引擎评估 |
-| 自动充氮控制 | P1 | 属于规则侧状态机 + 定时器 + 暂停/继续，不是 CEP v1 范围 | 单独补需求，不与 EventStream/Esper 容器开发混做 |
+| 自动充氮控制 | P1 | 属于规则侧状态机 + 定时器 + 暂停/继续，不是 CEP v1 范围 | 已落地：见 `docs/nitrogen-auto-fill-asset-design.md`（BAL 规则版，阈值判定在规则内、阈值作为参数）。落地过程暴露的平台缺口已转为独立需求 `docs/requirements-platform-gaps-nitrogen.md`（R1–R10） |
+| Rule Group 部署支持 | **P0（已修复待补测试）** | `res/ResServer.java` 原先只允许 `rule`/`table` 步骤类型，导致 `rule-group` 能编译、能过门禁但**部署被拒** | 已加入允许列表并重建 RES 镜像；**缺回归测试**，见 `requirements-platform-gaps-nitrogen.md` R1 |
+| 废弃资产语义 | **P0（待实现）** | 资产状态只有 draft/in-review/published/archived，缺"已废弃"；把废弃资产移出规则包会把状态打回草稿，归档又不解除包归属 | 见 `requirements-platform-gaps-nitrogen.md` R2 / R8 |
+| 决策表条件字段引用 | P1（待评估） | BAL 已支持 `valueSource: "field"` 声明式字段引用，决策表仍只支持字面量 → 阈值类规则无法用决策表表达 | 见 `requirements-platform-gaps-nitrogen.md` R3 |
+| 规则间中间结果传递 | P1（待评估） | 动作只能写 output 字段，同轮规则无法串接；需要调用方"执行到不动点"补偿 | 见 `requirements-platform-gaps-nitrogen.md` R4 |
+| 未赋值 Boolean 的 null 语义 | P1（待决策） | 未赋值 Boolean 被默认成 `false`，`== null` 守卫永不成立；与本文件 §8.1/§8.2 同根因 | 见 `requirements-platform-gaps-nitrogen.md` R5 |
 | Esper 合规评估 | 已确认当前可接受 | 已按需求引入 Esper 8.8.0；项目方确认当前不做商用应用 | 若未来涉及对外分发，再补商业授权或替换引擎评估 |
 | BOM Event Profile | 已完成 | 采用统一 BOM Core + `eventTypes[]` 事件视图；规则侧仍用 `factType/factTypes`，CEP 侧优先用 Event Profile 生成 Esper schema | 后续可补前端 Event Profile 专用编辑 UI |
 
