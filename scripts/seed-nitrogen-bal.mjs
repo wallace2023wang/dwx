@@ -56,10 +56,13 @@ const DEV = {
 };
 
 /**
- * salience 从高到低：结束 > 暂停 > 阈值判定 > 状态迁移。
- * 阈值规则必须排在迁移规则之前，让 pctAtLeastMax / pctBelowMin 先算出来。
+ * 条件构造：
+ *   F(...)  —— 与固定值比较（如 phase == "FILLING"、paused == false）
+ *   FF(...) —— 与**同类型业务字段**比较（平台升级后的声明式字段引用），
+ *              生成 `RuleInput( nitrogenPct >= maxPct )`，而不是 raw 字符串。
+ *              好处：编辑器可正常显示编辑；后端校验类型与自比较；语义明确可评审。
+ *              阈值仍是运行时参数 → 改 maxPct/minPct 立即生效，无需重新发布规则。
  */
-/** 条件构造：固定值与同类型业务字段比较都走平台结构化校验。 */
 const F = (field, operator, value) => ({ field, operator, value });
 const FF = (field, operator, valueField) => ({ field, operator, valueSource: 'field', valueField, value: '' });
 const GUARDS = [F('paused', '==', 'false'), F('endReached', '==', 'false')];
