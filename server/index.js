@@ -23,6 +23,7 @@ import { createProjectPackageHandler } from './routes/project-packages.js';
 import { createProjectEventStreamHandler } from './routes/project-event-streams.js';
 import { createProjectFlowHandler } from './routes/project-flows.js';
 import { createProjectRuleHandler } from './routes/project-rules.js';
+import { createProjectHandlers } from './routes/projects.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const storage = process.env.RULES_DATA_FILE || path.join(root, 'data', 'rules.json');
@@ -338,8 +339,19 @@ async function writePackageRecords(projectId, packages) {
   ]);
 }
 
-
-
+async function deleteProjectData(projects, projectId) {
+  await writeProjectRecords(projects.filter(item => item.id !== projectId));
+  await writePackageRecords(projectId, []);
+  await writeRules([], projectId);
+  await writeAssets('tables', [], projectId);
+  await writeAssets('flows', [], projectId);
+  await writeAssets('eventStreams', [], projectId);
+  await writeAssets('testSuites', [], projectId);
+  await writeReleases([], projectId);
+  await writeChangeSets([], projectId);
+  await deleteAuditEvents(projectId);
+  await fs.rm(bomFile(projectId), { force: true });
+}
 
 function blankBom() {
   return { version: 1, updatedAt: new Date().toISOString(), fields: [], eventTypes: [] };
@@ -620,6 +632,30 @@ const handleProjectRules = createProjectRuleHandler({
   readAssets,
   actorOf,
   readChangeSets,
+});
+
+const {
+  handleProjectCollection,
+  handleProjectLifecycle,
+  handleProjectAuditEvents,
+  handleProjectReport,
+  handleProjectSummary,
+} = createProjectHandlers({
+  createProjectRecord,
+  actorOf,
+  appendAuditEvent,
+  readProjectRecords,
+  canAccessProject,
+  getPostgresStore: () => postgresStore,
+  projectData,
+  readPackageRecords,
+  projectSummary,
+  normalizeProjectEngine,
+  writeProjectRecords,
+  deleteProjectData,
+  readAuditEvents,
+  visibleProjectPackages,
+  renderProjectReport,
 });
 
 async function recentActivity(principal, limit) {
@@ -1967,74 +2003,19 @@ async function publishProjectAsset(id, type, expected, projectId = 'default', bo
 }
 
 async function handleProjects(req, res, segments, url) {
-  if (segments.length === 2 && req.method === 'POST') {
-    const result = await createProjectRecord(await bodyOf(req), actorOf(req));
-    if (result.error) return reply(res, result.status, { error: result.error });
-    await appendAuditEvent('project.created', 'project', result.item.id, `创建项目：${result.item.name}`, {}, req);
-    return reply(res, 201, result.item);
-  }
-  if (segments.length === 2 && req.method === 'GET') {
-    const includeArchived = url.searchParams.get('archived') === 'true';
-    const records = (await readProjectRecords(includeArchived)).filter(project => canAccessProject(req.principal, project));
-    const summaries = await Promise.all(records.map(async project => {
-      if (postgresStore && project.assetCount != null) return { ...project, source: 'server' };
-      const data = await projectData(project.id);
-      const packages = await readPackageRecords(project.id, data);
-      return projectSummary(project, data, packages);
-    }));
-    return reply(res, 200, summaries);
-  }
+  if (segments.length === 2) return handleProjectCollection(req, res, url);
   const projectId = segments[2];
   const projects = await readProjectRecords(true);
   const project = projects.find(item => item.id === projectId);
   if (!project) return reply(res, 404, { error: '项目不存在' });
   authorizeProject(req.principal, project);
-  if (segments.length === 3 && req.method === 'PUT') {
-    const payload = await bodyOf(req);
-    const name = typeof payload?.name === 'string' ? payload.name.trim() : '';
-    const description = typeof payload?.description === 'string' ? payload.description.trim() : '';
-    if (!name || name.length > 80 || description.length > 500) return reply(res, 400, { error: '项目名称或描述无效' });
-    if (payload?.engine != null && payload.engine !== normalizeProjectEngine(project.engine)) return reply(res, 400, { error: '项目引擎创建后不可修改' });
-    const updates = { ...project, name, description, icon: ['loan', 'warehouse', 'shield'].includes(payload.icon) ? payload.icon : project.icon, defaultEnvironment: payload.defaultEnvironment || project.defaultEnvironment || 'local', updatedAt: new Date().toISOString(), updatedBy: actorOf(req) };
-    const saved = postgresStore ? await postgresStore.updateProject(projectId, updates) : (await writeProjectRecords(projects.map(item => item.id === projectId ? updates : item)), updates);
-    return reply(res, 200, { ...saved, source: 'server' });
-  }
-  if (segments.length === 4 && segments[3] === 'archive' && req.method === 'POST') {
-    const saved = postgresStore ? await postgresStore.archiveProject(projectId) : (await writeProjectRecords(projects.map(item => item.id === projectId ? { ...item, archived: true, updatedAt: new Date().toISOString() } : item)), { ...project, archived: true });
-    return reply(res, 200, { ...saved, source: 'server' });
-  }
-  if (segments.length === 3 && req.method === 'DELETE') {
-    if (projectId === 'default') return reply(res, 400, { error: '默认项目不能删除' });
-    const data = await projectData(projectId);
-    const production = data.releases.some(release => (release.deployments || []).some(deployment => deployment.environment === 'production'));
-    if (production) return reply(res, 409, { error: '项目已发布到 production，只能归档' });
-    if (postgresStore) {
-      const result = await postgresStore.deleteProject(projectId);
-      if (result.blocked) return reply(res, 409, { error: '项目已发布到 production，只能归档' });
-    } else {
-      await writeProjectRecords(projects.filter(item => item.id !== projectId));
-      await writePackageRecords(projectId, []);
-      await writeRules([], projectId);
-      await writeAssets('tables', [], projectId);
-      await writeAssets('flows', [], projectId);
-      await writeAssets('eventStreams', [], projectId);
-      await writeAssets('testSuites', [], projectId);
-      await writeReleases([], projectId);
-      await writeChangeSets([], projectId);
-      await deleteAuditEvents(projectId);
-      await fs.rm(bomFile(projectId), { force: true });
-    }
-    return reply(res, 204, '');
-  }
+  const lifecycle = await handleProjectLifecycle(req, res, segments, projectId, project, projects);
+  if (lifecycle !== null) return lifecycle;
   if (segments[3] === 'change-sets') {
     return handleChangeSets(req, res, ['api', 'change-sets', ...segments.slice(4)], projectId, true);
   }
   if (segments.length === 4 && segments[3] === 'audit-events' && req.method === 'GET') {
-    const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 100, 1), 500);
-    const events = postgresStore
-      ? await postgresStore.listAuditEvents(limit, projectId)
-      : (await readAuditEvents(projectId)).slice(0, limit);
-    return reply(res, 200, events);
+    return handleProjectAuditEvents(req, res, url, projectId);
   }
   const data = await projectData(projectId);
   data.project = project;
@@ -2049,12 +2030,9 @@ async function handleProjects(req, res, segments, url) {
     return reply(res, req.method === 'GET' ? 404 : 403, { error: '规则项目不支持事件流资产' });
   }
   if (segments.length === 4 && segments[3] === 'report' && req.method === 'GET') {
-    const packages = visibleProjectPackages(req.principal, data.rules, data.tables, packageRecords, data.bom, data.changeSets);
-    const html = renderProjectReport(project, data, packages, actorOf(req));
-    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-disposition': `inline; filename*=UTF-8''${encodeURIComponent(`${project.name}-资产报告.html`)}` });
-    return res.end(html);
+    return handleProjectReport(req, res, project, data, packageRecords);
   }
-  if (segments.length === 3 && req.method === 'GET') return reply(res, 200, projectSummary(project, data, packageRecords));
+  if (segments.length === 3 && req.method === 'GET') return handleProjectSummary(res, project, data, packageRecords);
   if (segments[3] === 'packages') {
     return handleProjectPackages(req, res, segments, projectId, data, packageRecords);
   }
