@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { generateDrl, newRule, validateRule } from '../shared/rules.js';
 import { applyFlowMappings, flowSnapshot, newFlow, newTable, resolveRuleGroupMembers, ruleGroupFingerprint, selectFlowBranch, tableCollectedHits, tableDrl, tableExecutionTrace, tableRules, validateFlow, validateTable } from '../shared/assets.js';
 import { buildRelease, validateReleaseRequest } from '../shared/releases.js';
-import { defaultBom, validateBom, diffBom, inputFields, outputFields, findField, inferSemanticType } from '../shared/bom.js';
+import { defaultBom, validateBom, inputFields, outputFields, findField, inferSemanticType } from '../shared/bom.js';
 import { evaluateCepTestCase, evaluateTestCase, expandTestCases, normalizeTestSuite, validateTestSuite } from '../shared/test-suites.js';
 import { normalizeChangeSetReferences, snapshotChangeItem, validateChangeSet } from '../shared/changes.js';
 import { canonicalPackageName, packageLabel, PACKAGE_NAME_RE } from '../shared/packages.js';
@@ -16,6 +16,8 @@ import { AuthError, authenticateRequest, authorizeRequest, publicPrincipal, hand
 import { bodyOf, expectedRevision, operationError, reply, revisionConflict } from './http-utils.js';
 import { advanceAssetRevision, initializeAssetRevision, normalizeAssetPackages, normalizePackageRecords, normalizePackageReferences } from './domain-utils.js';
 import { createAdminHandler } from './routes/admin.js';
+import { createEngineClients } from './engine-client.js';
+import { createBomHandlers } from './routes/bom.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const storage = process.env.RULES_DATA_FILE || path.join(root, 'data', 'rules.json');
@@ -45,57 +47,17 @@ const assetProject = item => item.projectId || 'default';
 const VALID_PROJECT_ENGINES = new Set(['rules', 'cep']);
 const normalizeProjectEngine = value => VALID_PROJECT_ENGINES.has(value) ? value : 'rules';
 const normalizeProjectRecord = project => ({ ...project, engine: normalizeProjectEngine(project?.engine) });
-function resolveEngineTargets(projectOrEngine = 'rules') {
-  const engine = typeof projectOrEngine === 'string' ? normalizeProjectEngine(projectOrEngine) : normalizeProjectEngine(projectOrEngine?.engine);
-  return engine === 'cep'
-    ? { engine, buildUrl: cepBuildUrl, runtimeUrl: cepResUrl, label: 'CEP' }
-    : { engine: 'rules', buildUrl: rulesBuildUrl, runtimeUrl: rulesResUrl, label: 'Drools' };
-}
-
-function engineHeaders(target) {
-  return {
-    'content-type': 'application/json',
-    ...(target.engine === 'cep' && cepApiKey ? { 'x-api-key': cepApiKey } : {}),
-  };
-}
+const { engine, executionServer } = createEngineClients({
+  rulesBuildUrl,
+  rulesResUrl,
+  cepBuildUrl,
+  cepResUrl,
+  cepApiKey,
+});
 
 // 当前生效的 BOM。启动时从 data/bom.json 加载，缺失则写入默认 BOM。
 let currentBom = defaultBom();
 let postgresStore = null;
-
-async function engine(endpoint, payload, projectOrEngine = 'rules') {
-  const target = resolveEngineTargets(projectOrEngine);
-  const timeoutMs = Math.min(310000, Math.max(20000, (Number.isInteger(payload?.waitMs) ? payload.waitMs : 0) + 5000));
-  let response;
-  try {
-    response = await fetch(`${target.buildUrl}${endpoint}`, {
-      method: 'POST', headers: engineHeaders(target),
-      body: JSON.stringify(payload), signal: AbortSignal.timeout(timeoutMs),
-    });
-  } catch { return { status: 503, error: `${target.label} 服务不可用，无法验证规则` }; }
-  let result;
-  try { result = await response.json(); }
-  catch { return { status: 502, error: `${target.label} 服务返回了无效响应` }; }
-  if (!response.ok) return { status: response.status === 422 ? 422 : 502, error: result.errors?.join('\n') || result.error || `${target.label} 验证失败` };
-  return { result };
-}
-
-async function executionServer(endpoint, payload, projectOrEngine = 'rules') {
-  const target = resolveEngineTargets(projectOrEngine);
-  const timeoutMs = Math.min(310000, Math.max(20000, (Number.isInteger(payload?.waitMs) ? payload.waitMs : 0) + 5000));
-  let response;
-  try {
-    response = await fetch(`${target.runtimeUrl}${endpoint}`, {
-      method: 'POST', headers: engineHeaders(target),
-      body: JSON.stringify(payload), signal: AbortSignal.timeout(timeoutMs),
-    });
-  } catch { return { status: 503, error: `${target.label} 执行服务不可用` }; }
-  let result;
-  try { result = await response.json(); }
-  catch { return { status: 502, error: `${target.label} 执行服务返回了无效响应` }; }
-  if (!response.ok) return { status: [400, 404, 409, 422].includes(response.status) ? response.status : 502, error: result.errors?.join('\n') || result.error || `${target.label} 执行服务处理失败` };
-  return { result };
-}
 
 /**
  * 按当前 BOM 校验并规范化调用方传入的 facts。
@@ -531,6 +493,18 @@ const handleAdmin = createAdminHandler({
   writeJsonFile,
   appendAuditEvent,
 });
+
+const { bomFieldReferences, handleBom, updateProjectBom } = createBomHandlers({
+  getCurrentBom: () => currentBom,
+  setCurrentBom: bom => { currentBom = bom; },
+  getPostgresStore: () => postgresStore,
+  readRules,
+  readAssets,
+  collectUsedKeys,
+  writeBom,
+  appendAuditEvent,
+});
+
 
 async function recentActivity(principal, limit) {
   const projects = (await readProjectRecords(false)).filter(project => canAccessProject(principal, project));
@@ -1396,88 +1370,6 @@ async function handleTestSuites(req, res, segments, projectId = 'default', proje
   return reply(res, 200, present(result.item));
 }
 
-async function bomFieldReferences(fieldKey, projectId = 'default') {
-  const [rules, tables, flows] = await Promise.all([readRules(projectId), readAssets('tables', projectId), readAssets('flows', projectId)]);
-  const references = [];
-  const add = (item, type, used) => {
-    if (!used || references.some(reference => reference.id === item.id && reference.type === type)) return;
-    references.push({
-      id: item.id,
-      name: item.draft?.name || item.id,
-      type,
-      status: item.published ? 'published' : 'draft',
-    });
-  };
-  for (const item of rules.filter(rule => !rule.archived)) {
-    const used = [...(item.draft?.conditions || []), ...(item.draft?.actions || [])]
-      .some(entry => entry.field === fieldKey || (entry.valueSource === 'field' && entry.valueField === fieldKey));
-    add(item, 'rule', used);
-  }
-  for (const item of tables.filter(table => !table.archived)) {
-    const used = [...(item.draft?.conditions || []), ...(item.draft?.actions || [])].some(entry => entry.field === fieldKey);
-    add(item, 'decision-table', used);
-  }
-  for (const item of flows.filter(flow => !flow.archived)) {
-    const steps = [...(item.draft?.steps || []), ...(item.draft?.branches || []).flatMap(branch => branch.steps || [])];
-    const mappings = steps.flatMap(step => [...(step.inputMappings || []), ...(step.outputMappings || [])]);
-    const branchUses = (item.draft?.branches || []).some(branch => !branch.default && branch.condition?.field === fieldKey);
-    add(item, 'flow', branchUses || mappings.some(mapping => mapping.source === fieldKey || mapping.target === fieldKey));
-  }
-  return references;
-}
-
-async function handleBom(req, res, segments, url) {
-  if (req.method === 'GET' && segments.length === 3 && segments[2] === 'references') {
-    const fieldKey = url.searchParams.get('field');
-    if (!fieldKey) return reply(res, 400, { error: '缺少字段 key' });
-    return reply(res, 200, await bomFieldReferences(fieldKey));
-  }
-  if (req.method === 'GET') return reply(res, 200, currentBom);
-  if (req.method !== 'PUT') return reply(res, 405, { error: 'Method not allowed' });
-  const body = await bodyOf(req);
-  const expected = expectedRevision(req, { revision: body?.version });
-  if (Number.isNaN(expected)) return reply(res, 400, { error: '字段模型版本无效' });
-  if (expected != null && expected !== currentBom.version) return reply(res, 409, {
-    error: '字段模型已被其他用户修改，请刷新后重试', currentRevision: currentBom.version, current: currentBom,
-  });
-  // 允许客户端只传 fields 数组，或传完整 BOM；未提交 eventTypes 时保留既有事件视图。
-  const incoming = normalizeIncomingBom(body, currentBom);
-  const validation = validateBom(incoming);
-  if (validation) return reply(res, 400, { error: validation });
-  const used = await collectUsedKeys();
-  const { errors, warnings } = diffBom(currentBom, incoming, used);
-  if (errors.length && body?.acknowledgeImpact !== true) return reply(res, 400, { error: errors[0], warnings: [...errors, ...warnings] });
-  const acknowledgedWarnings = errors.length ? [...errors, ...warnings] : warnings;
-  const next = {
-    version: (currentBom.version || 0) + 1,
-    updatedAt: new Date().toISOString(),
-    fields: incoming.fields,
-    eventTypes: incoming.eventTypes || [],
-  };
-  try {
-    await writeBom(next, currentBom.version);
-  } catch (error) {
-    if (!(error instanceof StorageConflictError) || !postgresStore) throw error;
-    currentBom = await postgresStore.getBom();
-    return reply(res, 409, {
-      error: '字段模型已被其他用户修改，请刷新后重试',
-      currentRevision: currentBom.version,
-      current: currentBom,
-    });
-  }
-  currentBom = next;
-  await appendAuditEvent('bom.updated', 'bom', 'default', `更新字段模型到 v${next.version}`, { version: next.version, warnings: acknowledgedWarnings }, req);
-  return reply(res, 200, { bom: next, warnings: acknowledgedWarnings });
-}
-
-function normalizeIncomingBom(body, current) {
-  const hasEventTypes = body && !Array.isArray(body) && Object.prototype.hasOwnProperty.call(body, 'eventTypes');
-  const fields = Array.isArray(body?.fields) ? body.fields : body;
-  return {
-    fields,
-    eventTypes: hasEventTypes ? body.eventTypes : (current.eventTypes || []),
-  };
-}
 
 function markLatestReleases(releases) {
   const latest = new Map();
@@ -2436,26 +2328,6 @@ function normalizePackagePayload(payload, packages, currentName = null) {
   return { name, label, parentId };
 }
 
-async function updateProjectBom(req, res, projectId, bom) {
-  const body = await bodyOf(req);
-  const expected = expectedRevision(req, { revision: body?.version });
-  if (Number.isNaN(expected)) return reply(res, 400, { error: '字段模型版本无效' });
-  if (expected != null && expected !== bom.version) return reply(res, 409, {
-    error: '字段模型已被其他用户修改，请刷新后重试', currentRevision: bom.version, current: bom,
-  });
-  const incoming = normalizeIncomingBom(body, bom);
-  const validation = validateBom(incoming);
-  if (validation) return reply(res, 400, { error: validation });
-  const used = await collectUsedKeys(projectId);
-  const { errors, warnings } = diffBom(bom, incoming, used);
-  if (errors.length && body?.acknowledgeImpact !== true) return reply(res, 400, { error: errors[0], warnings: [...errors, ...warnings] });
-  const acknowledgedWarnings = errors.length ? [...errors, ...warnings] : warnings;
-  const next = { version: (bom.version || 0) + 1, updatedAt: new Date().toISOString(), fields: incoming.fields, eventTypes: incoming.eventTypes || [] };
-  await writeBom(next, bom.version, projectId);
-  if (projectId === 'default') currentBom = next;
-  await appendAuditEvent('bom.updated', 'bom', projectId, `更新字段模型到 v${next.version}`, { version: next.version, warnings: acknowledgedWarnings }, req);
-  return reply(res, 200, { bom: next, warnings: acknowledgedWarnings });
-}
 
 async function handleProjects(req, res, segments, url) {
   if (segments.length === 2 && req.method === 'POST') {
