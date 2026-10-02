@@ -1,0 +1,46 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: rules
+      POSTGRES_USER: rules
+      POSTGRES_PASSWORD: rules-local
+    ports:
+      - "127.0.0.1:54329:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rules -d rules"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  engine:
+    build: ./engine
+    ports:
+      - "127.0.0.1:8788:8788"
+  res:
+    build: ./res
+    ports:
+      - "127.0.0.1:8790:8790"
+    volumes:
+      - res-data:/data/releases
+  cep-build:
+    build: ./cep
+    environment:
+      CEP_PORT: 8791
+    ports:
+      - "127.0.0.1:8791:8791"
+  cep-res:
+    build: ./cep
+    environment:
+      CEP_PORT: 8792
+      CEP_DATA_DIR: /data/cep
+    ports:
+      - "127.0.0.1:8792:8792"
+    volumes:
+      - cep-data:/data/cep
+
+volumes:
+  postgres-data:
+  res-data:
+  cep-data:

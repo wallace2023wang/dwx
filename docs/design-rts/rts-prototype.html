@@ -1,0 +1,1181 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Rule Team Server — 规则管理控制台</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='2' fill='%231d365d'/%3E%3Ctext x='8' y='12' text-anchor='middle' fill='white' font-size='9' font-family='sans-serif' font-weight='bold'%3ER%3C/text%3E%3C/svg%3E" />
+<style>
+/* ============ ODM RTS palette (Business Console) ============ */
+:root{
+  --ibm-blue:#0062ff; --ibm-blue-dark:#1d365d; --ibm-blue-light:#dfe7ee;
+  --bg:#f3f3f3; --border:#d0d0d0; --border-light:#e8e8e8;
+  --text:#1a1a1a; --text-2:#595959; --text-3:#8c8c8c;
+  --green:#2e7d32; --green-bg:#e8f5e9;
+  --red:#c62828; --red-bg:#ffebee;
+  --amber:#e65100; --amber-bg:#fff3e0;
+  --purple:#6a1b9a; --purple-bg:#f3e5f5;
+  --side-w:260px; --artlist-w:340px;
+  --font:"Helvetica Neue",Helvetica,"PingFang SC","Microsoft YaHei",Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:var(--font);font-size:12px;color:var(--text);background:var(--bg);overflow:hidden;line-height:1.45}
+button{font-family:inherit;font-size:12px;cursor:pointer;border:none;background:none}
+input,select{font-family:inherit;font-size:12px}
+a{color:var(--ibm-blue);text-decoration:none;cursor:pointer}
+
+/* ============ Top blue banner ============ */
+.banner{height:44px;background:var(--ibm-blue-dark);color:#fff;display:flex;align-items:center;padding:0 20px;gap:0}
+.banner .prod{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:500}
+.banner .prod .mark{width:22px;height:22px;background:var(--ibm-blue);border-radius:2px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px}
+.banner .crumbs{color:#b8c5d6;font-size:11px;margin-left:24px}
+.banner .spacer{flex:1}
+.banner .user{display:flex;align-items:center;gap:8px;font-size:12px;color:#d8e0ea}
+.banner .avatar{width:24px;height:24px;border-radius:50%;background:var(--ibm-blue);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600}
+
+/* ============ Sub tabs (Home/Library) ============ */
+.subnav{background:#fff;border-bottom:1px solid var(--border);display:flex;padding:0 20px;height:36px;align-items:stretch}
+.subnav button{padding:0 16px;color:var(--text-2);border-bottom:2px solid transparent;font-size:12px}
+.subnav button.active{color:var(--ibm-blue);border-bottom-color:var(--ibm-blue);font-weight:500}
+.subnav button:hover{color:var(--text)}
+
+/* ============ Project header (inside decision service) ============ */
+.proj-head{background:#fff;border-bottom:1px solid var(--border);padding:14px 20px 0}
+.proj-head h1{font-size:16px;font-weight:500;display:inline-block;margin-right:16px}
+.proj-head .meta{font-size:11px;color:var(--text-3);margin-top:2px}
+.proj-tabs{display:flex;gap:0;margin-top:12px}
+.proj-tabs button{padding:8px 14px;font-size:12px;color:var(--text-2);border:1px solid transparent;border-bottom:none}
+.proj-tabs button.active{background:var(--bg);border-color:var(--border);color:var(--text);font-weight:500;border-radius:3px 3px 0 0}
+
+/* ============ Three column: tree | artifact list | editor ============ */
+.three-col{display:flex;height:calc(100vh - 44px - 36px - 0px);background:var(--bg)}
+.three-col.with-proj{height:calc(100vh - 44px - 36px - 110px)}
+.col{background:#fff;border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.col-tree{width:var(--side-w)}
+.col-list{width:var(--artlist-w)}
+.col-editor{flex:1;border-right:none;background:#fff;overflow:auto}
+
+.col-head{padding:8px 12px;border-bottom:1px solid var(--border);background:#fafafa;font-size:11px;font-weight:600;color:var(--text-2);display:flex;justify-content:space-between;align-items:center}
+.col-head select{font-size:11px;padding:2px 4px;border:1px solid var(--border);border-radius:2px}
+
+/* Tree */
+.tree{flex:1;overflow:auto;padding:6px 0;font-size:12px}
+.tree .node{display:flex;align-items:center;gap:5px;padding:3px 10px;cursor:pointer;color:var(--text)}
+.tree .node:hover{background:#eaf2fb}
+.tree .node.sel{background:#d6e6f7;border-right:2px solid var(--ibm-blue)}
+.tree .tw{width:10px;font-size:9px;color:var(--text-3)}
+.tree .ic{width:14px;text-align:center;color:var(--text-3)}
+.tree .cnt{margin-left:auto;font-size:10px;color:var(--text-3)}
+.tree .lvl1{padding-left:10px}
+.tree .lvl2{padding-left:26px}
+
+/* Artifact list table */
+.art-list{flex:1;overflow:auto}
+table.arts{width:100%;border-collapse:collapse;font-size:12px}
+table.arts th{background:#fafafa;text-align:left;padding:6px 10px;font-weight:600;font-size:11px;color:var(--text-2);border-bottom:1px solid var(--border);position:sticky;top:0}
+table.arts td{padding:6px 10px;border-bottom:1px solid var(--border-light)}
+table.arts tr:hover td{background:#f0f6fc}
+table.arts tr.sel td{background:#d6e6f7}
+table.arts .nm{color:var(--ibm-blue)}
+table.arts .who{color:var(--text-3);font-size:11px}
+.st{display:inline-block;font-size:10px;padding:1px 6px;border-radius:2px}
+.st.draft{background:var(--amber-bg);color:var(--amber)}
+.st.pub{background:var(--green-bg);color:var(--green)}
+.st.dep{background:var(--purple-bg);color:var(--purple)}
+
+/* ============ Editor ============ */
+.ed-toolbar{padding:8px 16px;border-bottom:1px solid var(--border);background:#fafafa;display:flex;align-items:center;gap:10px}
+.ed-toolbar .crumb{font-size:11px;color:var(--text-3)}
+.ed-toolbar .crumb b{color:var(--text);font-weight:500}
+.ed-title{padding:14px 20px 8px}
+.ed-title h2{font-size:15px;font-weight:500;display:inline-block;margin-right:10px}
+.ed-meta{padding:0 20px 10px;font-size:11px;color:var(--text-3);display:flex;gap:16px;border-bottom:1px solid var(--border-light);margin:0 20px}
+
+/* BAL editor */
+.bal-box{padding:20px 24px;font-size:13px;line-height:2}
+.bal-box .kw{color:var(--purple);font-weight:500}
+.bal-box .term{color:var(--ibm-blue);border-bottom:1px dotted var(--ibm-blue);cursor:pointer}
+.bal-box .term:hover{background:#eaf2fb}
+.bal-box .val{font-family:"Courier New",monospace;background:#f5f5f5;padding:1px 6px;border:1px solid var(--border-light);border-radius:2px;cursor:pointer}
+.bal-box .indent{display:block;margin-left:24px}
+.bal-box .indent2{display:block;margin-left:48px}
+
+/* Properties panel */
+.props{display:flex;border-top:1px solid var(--border);background:#fafafa}
+.props .pcol{flex:1;padding:10px 20px;font-size:11px}
+.props .pcol h4{font-size:10px;text-transform:uppercase;color:var(--text-3);margin-bottom:6px;letter-spacing:.04em}
+.props .prow{display:flex;justify-content:space-between;padding:2px 0}
+.props .prow b{font-weight:500}
+
+/* ============ Buttons ============ */
+.btn{padding:5px 12px;border:1px solid var(--border);background:#fff;border-radius:2px;font-size:12px;color:var(--text)}
+.btn:hover{background:#f0f0f0}
+.btn.primary{background:var(--ibm-blue);color:#fff;border-color:var(--ibm-blue)}
+.btn.primary:hover{background:#0052cc}
+.btn.sm{padding:2px 8px;font-size:11px}
+
+/* ============ Home / Library views ============ */
+.page{padding:20px 24px;height:100%;overflow:auto}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;margin-top:14px}
+.card{background:#fff;border:1px solid var(--border);border-radius:3px;padding:14px;cursor:pointer}
+.card:hover{border-color:var(--ibm-blue);box-shadow:0 1px 4px rgba(0,0,0,.08)}
+.card .ic{width:32px;height:32px;background:var(--ibm-blue-light);color:var(--ibm-blue-dark);border-radius:3px;display:flex;align-items:center;justify-content:center;margin-bottom:8px}
+.card h3{font-size:13px;font-weight:500;margin-bottom:4px}
+.card .sub{font-size:11px;color:var(--text-3)}
+.card .stats{display:flex;gap:14px;margin-top:10px;padding-top:10px;border-top:1px solid var(--border-light)}
+.card .stats div{font-size:10px;color:var(--text-3)}
+.card .stats b{display:block;font-size:14px;color:var(--text);font-weight:500}
+
+/* Table grid (decision table) */
+.dt{margin:16px 20px;background:#fff;border:1px solid var(--border);overflow:auto}
+table.grid{border-collapse:collapse;width:100%;font-size:12px}
+table.grid th,table.grid td{border:1px solid var(--border);padding:5px 8px;text-align:left}
+table.grid th{background:#f0f0f0;font-weight:600;font-size:11px}
+table.grid td input{border:none;outline:none;width:100%}
+table.grid td input:focus{background:#eaf2fb}
+
+/* Empty view */
+.view{display:none}
+.view.active{display:block}
+
+/* Toast */
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--ibm-blue-dark);color:#fff;padding:8px 18px;border-radius:3px;font-size:12px;opacity:0;transition:opacity .2s;z-index:99}
+.toast.show{opacity:1}
+
+/* ============ Flow canvas ============ */
+.flow-canvas{background:#fff;border:1px solid var(--border);border-radius:3px;height:560px;position:relative;overflow:hidden;background-image:radial-gradient(circle,#e8e8e8 1px,transparent 1px);background-size:18px 18px}
+.fnode{position:absolute;background:#fff;border:1.5px solid var(--ibm-blue);border-radius:3px;padding:8px 12px;font-size:11px;min-width:150px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.fnode .ft{font-weight:600;font-size:11px}
+.fnode .fs{font-size:10px;color:var(--text-3);margin-top:2px}
+.fnode.task{border-color:var(--ibm-blue)}
+.fnode.gate{border-color:var(--amber);background:#fff8e1;border-radius:16px}
+.fnode.end{border-color:var(--green);background:var(--green-bg)}
+.fnode.start{border-color:var(--purple);background:var(--purple-bg)}
+.fedge{position:absolute;background:var(--text-3);height:1.5px;transform-origin:left center}
+.fedge-label{position:absolute;font-size:10px;color:var(--text-3);background:#fff;padding:0 4px}
+
+/* ============ BOM two-col ============ */
+.bom-cols{display:grid;grid-template-columns:280px 1fr;gap:14px}
+.bom-obj{background:#fff;border:1px solid var(--border);border-radius:3px}
+.bom-obj h3{padding:8px 12px;background:#fafafa;border-bottom:1px solid var(--border);font-size:12px;font-weight:600}
+.bom-field{padding:6px 12px;border-bottom:1px solid var(--border-light);display:flex;justify-content:space-between;font-size:11px}
+.bom-field:last-child{border-bottom:none}
+.bom-field .fk{font-family:"Courier New",monospace}
+.bom-field .ft{font-size:10px;color:var(--text-3)}
+.bom-vocab{background:#fff;border:1px solid var(--border);border-radius:3px}
+.bom-vocab table{width:100%;border-collapse:collapse;font-size:12px}
+.bom-vocab th{background:#fafafa;text-align:left;padding:6px 10px;font-weight:600;font-size:11px;border-bottom:1px solid var(--border)}
+.bom-vocab td{padding:6px 10px;border-bottom:1px solid var(--border-light)}
+
+/* ============ Test suite ============ */
+.tbl{width:100%;border-collapse:collapse;background:#fff;font-size:12px;border:1px solid var(--border)}
+.tbl th{background:#fafafa;text-align:left;padding:8px 10px;font-weight:600;font-size:11px;border-bottom:1px solid var(--border)}
+.tbl td{padding:8px 10px;border-bottom:1px solid var(--border-light)}
+.tbl tr:last-child td{border-bottom:none}
+.pass{color:var(--green);font-weight:500}
+.fail{color:var(--red);font-weight:500}
+.running{color:var(--amber);font-weight:500}
+.ver{font-family:"Courier New",monospace;color:var(--ibm-blue)}
+
+/* ============ Release list ============ */
+.env-chip{display:inline-block;padding:1px 8px;border-radius:2px;font-size:10px;margin-right:4px}
+.env-prod{background:var(--green-bg);color:var(--green)}
+.env-test{background:var(--blue-bg);color:var(--ibm-blue)}
+.env-shadow{background:var(--purple-bg);color:var(--purple)}
+</style>
+</head>
+<body>
+
+<!-- ============ Top banner ============ -->
+<header class="banner">
+  <div class="prod"><div class="mark">R</div> Decision Workbench</div>
+  <div class="crumbs" id="crumbs">规则仓库</div>
+  <div class="spacer"></div>
+  <div class="user" id="userMenu">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+    <div style="position:relative;cursor:pointer" onclick="toggleUserMenu(event)">
+      <span class="avatar">WL</span>
+      <div id="userDropdown" style="display:none;position:absolute;right:0;top:32px;background:#fff;color:var(--text);min-width:180px;border:1px solid var(--border);border-radius:3px;box-shadow:0 4px 12px rgba(0,0,0,.15);z-index:99">
+        <div style="padding:10px 14px;border-bottom:1px solid var(--border-light)">
+          <div style="font-weight:600;font-size:12px">wallace</div>
+          <div style="font-size:11px;color:var(--text-3)">管理员 · wallace@company.com</div>
+        </div>
+        <div style="padding:4px 0">
+          <div style="padding:7px 14px;font-size:12px;cursor:pointer" onmouseover="this.style.background='#f0f6fc'" onmouseout="this.style.background=''" onclick="toast('修改密码')">修改密码</div>
+          <div style="padding:7px 14px;font-size:12px;cursor:pointer;color:var(--red)" onmouseover="this.style.background='#ffebee'" onmouseout="this.style.background=''" onclick="doLogout()">退出登录</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ============ Login screen ============ -->
+<div id="loginScreen" style="display:none;position:fixed;inset:0;background:linear-gradient(135deg,#1d365d 0%,#0f62ff 100%);z-index:200;display:none;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:6px;padding:36px;width:360px;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:24px">
+      <div style="width:36px;height:36px;background:var(--ibm-blue);border-radius:4px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700">R</div>
+      <div>
+        <div style="font-size:15px;font-weight:600">Decision Workbench</div>
+        <div style="font-size:11px;color:var(--text-3)">规则团队管理控制台</div>
+      </div>
+    </div>
+    <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px">用户名</label>
+    <input id="loginUser" value="wallace" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:3px;margin-bottom:14px;font-size:13px" />
+    <label style="font-size:11px;color:var(--text-2);display:block;margin-bottom:4px">密码</label>
+    <input id="loginPass" type="password" value="********" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:3px;margin-bottom:10px;font-size:13px" />
+    <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:20px">
+      <label style="display:flex;align-items:center;gap:4px;color:var(--text-2)"><input type="checkbox" checked /> 记住我</label>
+      <a style="font-size:11px">忘记密码？</a>
+    </div>
+    <button class="btn primary" style="width:100%;padding:9px" onclick="doLogin()">登 录</button>
+    <div style="margin-top:16px;text-align:center;font-size:10px;color:var(--text-3)">© 2026 规则平台 · v2.1</div>
+  </div>
+</div>
+
+<!-- ============ Sub nav ============ -->
+<nav class="subnav">
+  <button data-v="home" class="active">主页</button>
+  <button data-v="library">库</button>
+  <button data-v="explore">浏览</button>
+  <button data-v="admin">管理</button>
+</nav>
+
+<!-- ============ Project header (hidden on home/library) ============ -->
+<div class="proj-head" id="projHead" style="display:none">
+  <h1>Miniloan 贷款审批</h1>
+  <span class="st dep">分支: main</span>
+  <div class="meta">最近修改: 2026-09-28 16:42 · 陈分析师 · 基线 v2.1.0</div>
+  <div class="proj-tabs" id="projTabs">
+    <button data-ptab="assets" class="active">资产</button>
+    <button data-ptab="flow">规则流</button>
+    <button data-ptab="bom">BOM / 词汇</button>
+    <button data-ptab="tests">测试套件</button>
+    <button data-ptab="releases">发布</button>
+  </div>
+</div>
+
+<!-- ============ Three column workspace ============ -->
+<div class="three-col" id="workspace">
+
+  <!-- Col 1: artifacts tree -->
+  <div class="col col-tree" id="colTree">
+    <div class="col-head">
+      <span>决策资产</span>
+      <select><option>所有项目</option></select>
+    </div>
+    <div class="tree" id="tree"></div>
+  </div>
+
+  <!-- Col 2: artifact list -->
+  <div class="col col-list" id="colList">
+    <div class="col-head">
+      <span id="listTitle">全部资产</span>
+      <select><option>所有类型</option><option>规则</option><option>决策表</option></select>
+    </div>
+    <div class="art-list">
+      <table class="arts">
+        <thead><tr><th>名称</th><th>修改者</th><th>状态</th></tr></thead>
+        <tbody id="artRows"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Col 3: editor -->
+  <div class="col col-editor" id="colEditor">
+    <div style="padding:40px;text-align:center;color:#8c8c8c">
+      <p style="font-size:24px;margin-bottom:8px">📄</p>
+      <p>从左侧选择一个规则或决策表开始编辑</p>
+    </div>
+  </div>
+</div>
+
+<!-- ============ Project-level views (flow/bom/tests/releases) ============ -->
+<div id="projView" style="display:none;height:calc(100vh - 44px - 36px - 110px);overflow:auto;background:var(--bg);padding:20px 24px"></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ===================== Data (miniloan classic BRMS) =====================
+const PKGS = [
+  {id:'validation', name:'validation 校验', items:[
+    {id:'v1', name:'申请人年满 18 岁', type:'规则', who:'陈分析师', st:'pub', ver:'2.1'},
+    {id:'v2', name:'贷款金额必须为正', type:'规则', who:'陈分析师', st:'pub', ver:'2.0'},
+    {id:'v3', name:'贷款期限合理', type:'规则', who:'wallace', st:'draft', ver:'0.4'},
+  ]},
+  {id:'eligibility', name:'eligibility 准入', items:[
+    {id:'e1', name:'贷款金额不超过年收入 3 倍', type:'规则', who:'陈分析师', st:'pub', ver:'2.3'},
+    {id:'e2', name:'信用分达到准入线', type:'决策表', who:'陈分析师', st:'pub', ver:'1.8'},
+    {id:'e3', name:'历史逾期次数上限', type:'规则', who:'wallace', st:'draft', ver:'0.9'},
+  ]},
+  {id:'underwriting', name:'underwriting 承保', items:[
+    {id:'u1', name:'风险等级评估', type:'决策表', who:'陈分析师', st:'pub', ver:'3.0'},
+    {id:'u2', name:'最终审批结果', type:'规则', who:'陈分析师', st:'pub', ver:'2.2'},
+  ]},
+];
+
+// ===================== Helpers =====================
+const $=s=>document.querySelector(s);
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),1500)}
+
+// ===================== Login / logout =====================
+function toggleUserMenu(e){
+  e.stopPropagation();
+  const d=$('#userDropdown');
+  d.style.display = d.style.display==='none' ? 'block' : 'none';
+}
+document.addEventListener('click',()=>{const d=$('#userDropdown'); if(d) d.style.display='none'});
+function doLogin(){
+  $('#loginScreen').style.display='none';
+  toast('登录成功，欢迎回来 wallace');
+}
+function doLogout(){
+  $('#userDropdown').style.display='none';
+  $('#loginScreen').style.display='flex';
+}
+function stTag(st){
+  if(st==='pub') return '<span class="st pub">已发布</span>';
+  if(st==='draft') return '<span class="st draft">草稿</span>';
+  return '<span class="st dep">归档</span>';
+}
+
+// ===================== Render tree =====================
+function renderTree(){
+  let html='';
+  PKGS.forEach((p,i)=>{
+    html+=`<div class="node lvl1" onclick="togglePkg(this)"><span class="tw">▾</span><span class="ic">▸</span><b>${p.name.split(' ')[0]}</b><span class="cnt">${p.items.length}</span></div>`;
+    p.items.forEach(it=>{
+      const ic = it.type==='决策表'?'▦':'≡';
+      html+=`<div class="node lvl2" data-id="${it.id}" onclick="selectArt('${it.id}',this)"><span class="tw"></span><span class="ic">${ic}</span>${it.name}</div>`;
+    });
+  });
+  $('#tree').innerHTML=html;
+}
+function togglePkg(el){
+  const tw=el.querySelector('.tw');
+  tw.textContent = tw.textContent==='▾'?'▸':'▾';
+  let n=el.nextElementSibling;
+  while(n && n.classList.contains('lvl2')){
+    n.style.display = tw.textContent==='▾'?'':'none';
+    n=n.nextElementSibling;
+  }
+}
+
+// ===================== Render artifact list (col 2) =====================
+function renderList(pkg){
+  const p = pkg ? PKGS.find(x=>x.id===pkg) : null;
+  $('#listTitle').textContent = p ? p.name : '全部资产';
+  const items = p ? p.items : PKGS.flatMap(x=>x.items);
+  $('#artRows').innerHTML = items.map(it=>`
+    <tr data-id="${it.id}" onclick="selectArt('${it.id}',this)">
+      <td><span class="nm">${it.name}</span><div style="color:#8c8c8c;font-size:10px">${it.type}</div></td>
+      <td class="who">${it.who}</td>
+      <td>${stTag(it.st)}</td>
+    </tr>`).join('');
+}
+
+// ===================== Select artifact -> editor =====================
+function selectArt(id, el){
+  document.querySelectorAll('.tree .node').forEach(n=>n.classList.remove('sel'));
+  document.querySelectorAll('.art-list tr').forEach(n=>n.classList.remove('sel'));
+  if(el) el.classList.add('sel');
+  // find in tree
+  const treeNode=document.querySelector(`.tree .node[data-id="${id}"]`);
+  if(treeNode) treeNode.classList.add('sel');
+
+  // find item
+  let item=null, pkgName='';
+  for(const p of PKGS){
+    const f=p.items.find(x=>x.id===id);
+    if(f){item=f; pkgName=p.name; break;}
+  }
+  if(!item) return;
+  $('#crumbs').textContent = `规则仓库 / Miniloan / ${pkgName} / ${item.name}`;
+
+  if(item.type==='决策表') renderTable(item);
+  else renderBAL(item);
+}
+
+// ===================== BAL editor =====================
+function renderBAL(item){
+  $('#colEditor').innerHTML=`
+    <div class="ed-toolbar">
+      <span class="crumb">${item.name}</span>
+      <span style="flex:1"></span>
+      <button class="btn sm">DRL 预览</button>
+      <button class="btn sm">验证</button>
+      <button class="btn">保存草稿</button>
+      <button class="btn primary">发布</button>
+    </div>
+    <div class="ed-title">
+      <h2>${item.name}</h2>
+      ${stTag(item.st)}
+      <span style="font-size:11px;color:#8c8c8c">v${item.ver} · ${item.type}</span>
+    </div>
+    <div class="ed-meta">
+      <span>作者: <b>${item.who}</b></span>
+      <span>最后修改: 2026-09-28</span>
+      <span>包: <b>${item.pkg||'eligibility'}</b></span>
+    </div>
+    <div class="bal-box">
+      <div><span class="kw">如果</span></div>
+      <span class="indent"><span class="term">借款申请人</span> 的 <span class="term">年龄</span> <span class="val">&lt;</span> <span class="val">18</span></span>
+      <div style="margin-top:8px"><span class="kw">那么</span></div>
+      <span class="indent">将 <span class="term">审批结果</span> 设置为 <span class="val">"拒绝"</span></span>
+      <span class="indent">并 添加一条理由: <span class="val">"申请人未成年"</span></span>
+      <div style="margin-top:16px;color:#8c8c8c;font-size:11px">
+        业务词汇（蓝色虚线下划线）点击可编辑 · 值（灰底）点击修改
+      </div>
+    </div>
+    <div class="props">
+      <div class="pcol"><h4>规则属性</h4>
+        <div class="prow"><span>优先级</span><b>0</b></div>
+        <div class="prow"><span>命中策略</span><b>FIRST</b></div>
+        <div class="prow"><span>有效日期</span><b>始终</b></div>
+      </div>
+      <div class="pcol"><h4>审计</h4>
+        <div class="prow"><span>创建者</span><b>陈分析师</b></div>
+        <div class="prow"><span>最近审核</span><b>2026-09-20</b></div>
+        <div class="prow"><span>注释</span><b>—</b></div>
+      </div>
+    </div>`;
+}
+
+// ===================== Decision table =====================
+function renderTable(item){
+  $('#colEditor').innerHTML=`
+    <div class="ed-toolbar">
+      <span class="crumb">${item.name}</span>
+      <span style="flex:1"></span>
+      <button class="btn sm">添加行</button>
+      <button class="btn sm">从 Excel 导入</button>
+      <button class="btn primary">保存并验证</button>
+    </div>
+    <div class="ed-title">
+      <h2>${item.name}</h2>
+      ${stTag(item.st)}
+      <span style="font-size:11px;color:#8c8c8c">v${item.ver}</span>
+    </div>
+    <div class="dt">
+      <table class="grid">
+        <colgroup><col style="width:30px"><col style="width:18%"><col style="width:18%"><col style="width:18%"><col style="width:18%"><col style="width:28%"></colgroup>
+        <thead><tr>
+          <th>#</th><th>信用分</th><th>年收入</th><th>逾期次数</th><th>风险等级</th><th>审批额度系数</th>
+        </tr></thead>
+        <tbody>
+          <tr><td style="text-align:center;color:#8c8c8c">1</td><td><input value="&lt; 600" /></td><td><input value="任意" /></td><td><input value="任意" /></td><td><input value="HIGH" /></td><td><input value="0" /></td></tr>
+          <tr><td style="text-align:center;color:#8c8c8c">2</td><td><input value="600..700" /></td><td><input value="&lt; 100000" /></td><td><input value="0" /></td><td><input value="MEDIUM" /></td><td><input value="0.5" /></td></tr>
+          <tr><td style="text-align:center;color:#8c8c8c">3</td><td><input value="600..700" /></td><td><input value="&gt;= 100000" /></td><td><input value="0" /></td><td><input value="LOW" /></td><td><input value="0.8" /></td></tr>
+          <tr><td style="text-align:center;color:#8c8c8c">4</td><td><input value="&gt;= 700" /></td><td><input value="任意" /></td><td><input value="0" /></td><td><input value="LOW" /></td><td><input value="1.0" /></td></tr>
+          <tr><td style="text-align:center;color:#8c8c8c">5</td><td><input value="任意" /></td><td><input value="任意" /></td><td><input value="&gt;= 3" /></td><td><input value="HIGH" /></td><td><input value="0" /></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="padding:0 24px;font-size:11px;color:#8c8c8c">
+      空单元格 = 通配 · 区间语法 a..b · 默认行在最下方 · 命中策略: COLLECT
+    </div>`;
+}
+
+// ===================== Sub navigation =====================
+document.querySelectorAll('.subnav button').forEach(b=>{
+  b.onclick=()=>{
+    document.querySelectorAll('.subnav button').forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    const v=b.dataset.v;
+    $('#projHead').style.display = (v==='home'||v==='library')?'none':'block';
+    if(v==='home') showHome();
+    else if(v==='library') showLibrary();
+    else if(v==='explore') showExplore();
+    else if(v==='admin') showAdmin();
+  };
+});
+
+function showHome(){
+  $('#workspace').style.display='none';
+  $('#crumbs').textContent='规则仓库';
+  const d=document.createElement('div');d.className='page';d.id='page';
+  d.innerHTML=`
+    <h2 style="font-weight:500;font-size:18px;margin-bottom:16px">欢迎，wallace</h2>
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:14px">
+      <div class="card" style="cursor:default">
+        <div class="p-head" style="font-weight:600;margin-bottom:8px">最近活动</div>
+        <div style="padding:6px 0;border-bottom:1px solid #e8e8e8">陈分析师发布了 <b>风险等级评估 v3.0</b> 到 Production · 2 小时前</div>
+        <div style="padding:6px 0;border-bottom:1px solid #e8e8e8">你修改了 <b>贷款期限合理</b>（草稿 v0.4）· 昨天</div>
+        <div style="padding:6px 0">RES 部署 <b>miniloan v2.1.0</b> 成功 · 昨天</div>
+      </div>
+      <div class="card" style="cursor:default">
+        <div style="font-weight:600;margin-bottom:8px">我参与的决策服务</div>
+        <div><a onclick="openProj()">📋 Miniloan 贷款审批</a></div>
+        <div style="margin-top:6px"><a>📦 信贷反欺诈规则</a></div>
+      </div>
+    </div>`;
+  // replace
+  const old=$('#page'); if(old) old.remove();
+  document.body.appendChild(d);
+}
+
+function showLibrary(){
+  $('#workspace').style.display='none';
+  $('#crumbs').textContent='规则仓库 / 库';
+  const old=$('#page'); if(old) old.remove();
+  const d=document.createElement('div');d.className='page';d.id='page';
+  d.innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h2 style="font-weight:500;font-size:18px">决策服务库</h2>
+      <button class="btn primary">+ 新建决策服务</button>
+    </div>
+    <div class="cards">
+      <div class="card" onclick="openProj()">
+        <div class="ic">📋</div>
+        <h3>Miniloan 贷款审批</h3>
+        <div class="sub">3 个规则包 · 8 个资产</div>
+        <div class="stats"><div><b>v2.1</b>当前</div><div><b>3</b>包</div><div><b>2</b>环境</div></div>
+      </div>
+      <div class="card">
+        <div class="ic">🛡</div>
+        <h3>信贷反欺诈</h3>
+        <div class="sub">2 个规则包 · 5 个资产</div>
+        <div class="stats"><div><b>v1.4</b>当前</div><div><b>2</b>包</div><div><b>1</b>环境</div></div>
+      </div>
+      <div class="card" style="border-style:dashed;display:flex;align-items:center;justify-content:center;color:#8c8c8c;cursor:pointer">
+        + 从模板新建
+      </div>
+    </div>`;
+  document.body.appendChild(d);
+}
+
+function showExplore(){
+  $('#workspace').style.display='none';
+  $('#projView').style.display='none';
+  $('#projHead').style.display='none';
+  $('#crumbs').textContent='规则仓库 / 浏览';
+  const old=$('#page'); if(old) old.remove();
+  const d=document.createElement('div');d.className='page';d.id='page';
+  d.innerHTML=`
+    <h2 style="font-weight:500;font-size:18px;margin-bottom:14px">浏览与治理</h2>
+    <div style="background:#fff;border:1px solid var(--border);border-radius:3px;padding:14px;margin-bottom:14px;display:flex;gap:10px;align-items:center">
+      <input placeholder="全局搜索：规则名 / 业务术语 / BOM 字段…" style="flex:1;padding:8px 12px;border:1px solid var(--border);border-radius:3px;font-size:13px" />
+      <button class="btn primary">搜索</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <div style="background:#fff;border:1px solid var(--border);border-radius:3px">
+        <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-weight:600;font-size:12px">⚠ 需要关注（2）</div>
+        <div style="padding:8px 14px;border-bottom:1px solid var(--border-light);font-size:12px">
+          <span style="color:var(--red)">●</span> 决策表「风险等级评估」第 5 行未命中（逾期≥3 → HIGH）
+          <div style="font-size:11px;color:var(--text-3);margin-top:2px">被第 3 行 MEDIUM 覆盖 · 影响规则: 最终审批结果</div>
+        </div>
+        <div style="padding:8px 14px;font-size:12px">
+          <span style="color:var(--amber)">●</span> BOM 字段 creditScore 被 2 个规则引用，类型变更可能影响
+          <div style="font-size:11px;color:var(--text-3);margin-top:2px">影响规则: 信用分达到准入线、风险等级评估</div>
+        </div>
+      </div>
+      <div style="background:#fff;border:1px solid var(--border);border-radius:3px">
+        <div style="padding:10px 14px;border-bottom:1px solid var(--border);font-weight:600;font-size:12px">最近修改</div>
+        <div style="padding:8px 14px;border-bottom:1px solid var(--border-light);font-size:12px"><a onclick="openProj()">整仓均温超限告警</a> <span style="color:var(--text-3);font-size:11px">陈分析师 · 2 小时前</span></div>
+        <div style="padding:8px 14px;border-bottom:1px solid var(--border-light);font-size:12px"><a>贷款期限合理</a> <span style="color:var(--text-3);font-size:11px">wallace · 昨天</span></div>
+        <div style="padding:8px 14px;font-size:12px"><a>风险等级评估</a> <span style="color:var(--text-3);font-size:11px">陈分析师 · 昨天</span></div>
+      </div>
+    </div>`;
+  document.body.appendChild(d);
+}
+function showAdmin(){
+  $('#workspace').style.display='none';
+  $('#projView').style.display='none';
+  $('#projHead').style.display='none';
+  $('#crumbs').textContent='规则仓库 / 管理';
+  const old=$('#page'); if(old) old.remove();
+  const d=document.createElement('div');d.className='page';d.id='page';
+  d.innerHTML=`
+    <h2 style="font-weight:500;font-size:18px;margin-bottom:14px">管理控制台</h2>
+    <div class="admin-tabs" style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:16px">
+      <button class="btn sm admin-tab active" data-atab="users" style="border-radius:3px 3px 0 0">用户</button>
+      <button class="btn sm admin-tab" data-atab="roles" style="border-radius:3px 3px 0 0">角色与权限</button>
+      <button class="btn sm admin-tab" data-atab="envs" style="border-radius:3px 3px 0 0">环境与 RES</button>
+    </div>
+    <div id="adminBody"></div>`;
+  document.body.appendChild(d);
+  // bind tabs
+  d.querySelectorAll('.admin-tab').forEach(b=>{
+    b.onclick=()=>{
+      d.querySelectorAll('.admin-tab').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+      renderAdminBody(b.dataset.atab);
+    };
+  });
+  renderAdminBody('users');
+}
+
+function renderAdminBody(tab){
+  const body=document.querySelector('#adminBody');
+  if(tab==='users'){
+    body.innerHTML=`
+      <div style="display:flex;justify-content:space-between;margin-bottom:12px">
+        <div style="font-size:12px;color:var(--text-3)">共 6 个用户 · 3 个活跃</div>
+        <button class="btn primary">+ 新建用户</button>
+      </div>
+      <table class="tbl">
+        <thead><tr><th>用户</th><th>姓名</th><th>邮箱</th><th>角色</th><th>最近登录</th><th>状态</th><th></th></tr></thead>
+        <tbody>
+          <tr><td><b>wallace</b></td><td>Wallace</td><td>wallace@company.com</td><td><span class="st dep">管理员</span></td><td>2026-09-29 09:30</td><td><span class="pass">● 活跃</span></td><td><button class="btn sm">编辑</button></td></tr>
+          <tr><td><b>chen</b></td><td>陈分析师</td><td>chen@company.com</td><td><span class="st pub">规则作者</span></td><td>2026-09-28 17:20</td><td><span class="pass">● 活跃</span></td><td><button class="btn sm">编辑</button></td></tr>
+          <tr><td><b>li</b></td><td>李审核</td><td>li@company.com</td><td><span class="st draft">发布审核</span></td><td>2026-09-28 14:05</td><td><span class="pass">● 活跃</span></td><td><button class="btn sm">编辑</button></td></tr>
+          <tr><td><b>ops</b></td><td>运维张</td><td>ops@company.com</td><td><span class="st dep">部署员</span></td><td>2026-09-27 11:00</td><td><span class="pass">● 活跃</span></td><td><button class="btn sm">编辑</button></td></tr>
+          <tr><td><b>guest</b></td><td>访客账号</td><td>guest@company.com</td><td>只读</td><td>2026-09-15</td><td><span style="color:var(--text-3)">● 禁用</span></td><td><button class="btn sm">编辑</button></td></tr>
+        </tbody>
+      </table>`;
+  } else if(tab==='roles'){
+    body.innerHTML=`
+      <div style="font-size:12px;color:var(--text-3);margin-bottom:12px">权限矩阵：勾选表示该角色拥有此操作权限</div>
+      <table class="tbl">
+        <thead><tr><th style="width:22%">权限</th><th>管理员</th><th>规则作者</th><th>发布审核</th><th>部署员</th><th>只读</th></tr></thead>
+        <tbody>
+          <tr><td>浏览规则与决策表</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+          <tr><td>编辑草稿 / BOM</td><td>✓</td><td>✓</td><td>—</td><td>—</td><td>—</td></tr>
+          <tr><td>提交审批</td><td>✓</td><td>✓</td><td>—</td><td>—</td><td>—</td></tr>
+          <tr><td>审核并发布 Release</td><td>✓</td><td>—</td><td>✓</td><td>—</td><td>—</td></tr>
+          <tr><td>部署到 RES</td><td>✓</td><td>—</td><td>—</td><td>✓</td><td>—</td></tr>
+          <tr><td>执行试运行 / 影子回放</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>—</td></tr>
+          <tr><td>管理用户与角色</td><td>✓</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+          <tr><td>管理环境 / RES 注册</td><td>✓</td><td>—</td><td>—</td><td>✓</td><td>—</td></tr>
+        </tbody>
+      </table>
+      <div style="margin-top:14px;background:#fff;border:1px solid var(--border);border-radius:3px;padding:12px;font-size:11px;color:var(--text-3)">
+        职责分离原则：规则作者不能自己发布自己的规则；部署员不能改规则；审核和部署必须由不同人完成（双人审批）。
+      </div>`;
+  } else if(tab==='envs'){
+    body.innerHTML=`
+      <div style="display:flex;justify-content:space-between;margin-bottom:12px">
+        <div style="font-size:12px;color:var(--text-3)">默认预置 4 个环境（最佳实践），可按需新增自定义环境</div>
+        <button class="btn primary">+ 新增环境</button>
+      </div>
+      <table class="tbl">
+        <thead><tr><th>环境</th><th>用途</th><th>RES 端点</th><th>自动部署</th><th>当前 Release</th><th>Shadow 模式</th><th>状态</th><th></th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="env-chip" style="background:#f3e5f5;color:#6a1b9a">dev</span></td>
+            <td>规则作者本地调试，不跑业务流量</td>
+            <td class="ver">res.dev:8790</td>
+            <td>每次保存草稿自动部署</td>
+            <td class="ver">v2.2.0-SNAPSHOT</td>
+            <td>—</td>
+            <td><span class="pass">● 在线</span></td>
+            <td><button class="btn sm">编辑</button></td>
+          </tr>
+          <tr>
+            <td><span class="env-chip env-test">test</span></td>
+            <td>CI 跑测试套件，每次 Release 构建自动部署</td>
+            <td class="ver">res.test:8790</td>
+            <td>构建 Release 后自动部署</td>
+            <td class="ver">v2.1.0</td>
+            <td>—</td>
+            <td><span class="pass">● 在线</span></td>
+            <td><button class="btn sm">编辑</button></td>
+          </tr>
+          <tr>
+            <td><span class="env-chip" style="background:#fff3e0;color:#e65100">staging</span></td>
+            <td>预发，与生产同配置；人工验证 + 影子对比后再切生产</td>
+            <td class="ver">res.staging:8790</td>
+            <td>手动部署</td>
+            <td class="ver">v2.1.0</td>
+            <td>☑ 与生产对比中</td>
+            <td><span class="pass">● 在线</span></td>
+            <td><button class="btn sm">编辑</button></td>
+          </tr>
+          <tr>
+            <td><span class="env-chip env-prod">production</span></td>
+            <td>真实业务流量，需双人审批才能部署</td>
+            <td class="ver">res.prod:8790</td>
+            <td>手动部署（双人审批）</td>
+            <td class="ver">v2.1.0</td>
+            <td>☑ 并行影子运行</td>
+            <td><span class="pass">● 在线</span></td>
+            <td><button class="btn sm">编辑</button></td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="margin-top:14px;background:#fff;border:1px solid var(--border);border-radius:3px;padding:12px;font-size:11px;color:var(--text-3);line-height:1.8">
+        <b>环境说明：</b><br/>
+        • <b>dev</b>：规则作者保存草稿后自动部署到此处，用于即时试运行，不跑业务流量。<br/>
+        • <b>test</b>：CI 环境，每次构建 Release 自动部署并跑测试套件；测试不通过不能进 staging。<br/>
+        • <b>staging</b>：与生产同配置，发布前人工验证；可开启 Shadow 模式对比旧版本输出差异。<br/>
+        • <b>production</b>：真实流量，部署需双人审批；Shadow 模式并行运行但不产生副作用（不推送告警、不写状态）。<br/>
+        • 以上为默认预置环境；点击"+ 新增环境"可添加自定义环境名（如"监管沙箱"、"灾备"），绑定任意 RES 端点。
+      </div>`;
+  }
+}
+
+function openProj(){
+  // switch to workspace
+  document.querySelectorAll('.subnav button').forEach(x=>x.classList.remove('active'));
+  document.querySelector('[data-v="explore"]').classList.add('active');
+  $('#projHead').style.display='block';
+  $('#workspace').style.display='flex';
+  $('#projView').style.display='none';
+  const old=$('#page'); if(old) old.remove();
+  renderTree();
+  renderList(null);
+  setPtab('assets');
+  $('#crumbs').textContent='规则仓库 / Miniloan 贷款审批';
+}
+
+// ===================== Project sub-tabs =====================
+function setPtab(tab){
+  document.querySelectorAll('#projTabs button').forEach(b=>b.classList.toggle('active',b.dataset.ptab===tab));
+  if(tab==='assets'){
+    $('#workspace').style.display='flex';
+    $('#projView').style.display='none';
+    return;
+  }
+  $('#workspace').style.display='none';
+  $('#projView').style.display='block';
+  if(tab==='flow') renderFlow();
+  else if(tab==='bom') renderBomView();
+  else if(tab==='tests') renderTests();
+  else if(tab==='releases') renderReleases();
+}
+document.querySelectorAll('#projTabs button').forEach(b=>{
+  b.onclick=()=>setPtab(b.dataset.ptab);
+});
+
+// ===================== Rule flow =====================
+function renderFlow(){
+  $('#crumbs').textContent='规则仓库 / Miniloan / 规则流';
+  $('#projView').innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div><h2 style="font-size:16px;font-weight:500">规则集与规则流</h2>
+      <div style="font-size:11px;color:var(--text-3);margin-top:2px">Ruleset = 可执行单元：绑定一个流程 + 选哪些包 + 执行参数</div></div>
+      <div><button class="btn">试运行</button> <button class="btn primary">保存</button></div>
+    </div>
+
+    <!-- Ruleset config card -->
+    <div style="background:#fff;border:1px solid var(--border);border-radius:3px;padding:14px 16px;margin-bottom:14px">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;font-size:11px">
+        <div>
+          <div style="color:var(--text-3);margin-bottom:3px">Ruleset 名称</div>
+          <div style="display:flex;gap:4px;align-items:center">
+            <select style="border:1px solid var(--border);padding:3px 6px;border-radius:2px;font-size:11px;font-family:Courier New,monospace">
+              <option>miniloan-decision</option>
+              <option>miniloan-fraud-check</option>
+            </select>
+            <button class="btn sm" onclick="toast('新建 Ruleset')">+ 新建</button>
+          </div>
+        </div>
+        <div>
+          <div style="color:var(--text-3);margin-bottom:3px">绑定规则流</div>
+          <select style="border:1px solid var(--border);padding:3px 6px;border-radius:2px;font-size:11px">
+            <option>贷款审批主流程</option>
+          </select>
+        </div>
+        <div>
+          <div style="color:var(--text-3);margin-bottom:3px">命中策略</div>
+          <select style="border:1px solid var(--border);padding:3px 6px;border-radius:2px;font-size:11px">
+            <option>COLLECT（收集全部命中）</option>
+            <option>FIRST（首条命中即停）</option>
+            <option>PRIORITY（按优先级）</option>
+          </select>
+        </div>
+        <div>
+          <div style="color:var(--text-3);margin-bottom:3px">最大 firing 次数</div>
+          <input value="100" style="border:1px solid var(--border);padding:3px 6px;border-radius:2px;width:80px;font-size:11px" />
+        </div>
+        <div>
+          <div style="color:var(--text-3);margin-bottom:3px">输入签名（facts）</div>
+          <div style="font-size:11px">Borrower, Loan</div>
+        </div>
+        <div>
+          <div style="color:var(--text-3);margin-bottom:3px">输出签名（facts）</div>
+          <div style="font-size:11px">LoanDecision</div>
+        </div>
+        <div>
+          <div style="color:var(--text-3);margin-bottom:3px">包含规则包</div>
+          <div style="font-size:11px">validation ✓ · eligibility ✓ · underwriting ✓</div>
+        </div>
+        <div>
+          <div style="color:var(--text-3);margin-bottom:3px">顺序执行</div>
+          <div style="font-size:11px"><input type="checkbox" checked /> sequential</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="background:#fff;border:1px solid var(--border);border-radius:3px;height:460px;position:relative;overflow:hidden">
+      <!-- Canvas toolbar -->
+      <div style="position:absolute;top:8px;right:8px;z-index:5;background:#fff;border:1px solid var(--border);border-radius:3px;padding:3px;display:flex;gap:2px">
+        <button class="btn sm" title="放大">＋</button>
+        <button class="btn sm" title="缩小">－</button>
+        <button class="btn sm" title="适应窗口">⤢</button>
+        <button class="btn sm" title="自动布局">⚡</button>
+      </div>
+      <!-- SVG canvas -->
+      <svg width="100%" height="100%" style="background-image:radial-gradient(circle,#e0e0e0 1px,transparent 1px);background-size:20px 20px">
+        <defs>
+          <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z" fill="#666"/>
+          </marker>
+        </defs>
+        <!-- edges -->
+        <!-- start -> gateway -->
+        <line x1="120" y1="220" x2="200" y2="220" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <!-- gateway -> task1 (up, no) -->
+        <path d="M 260 200 L 260 100 L 380 100" stroke="#666" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+        <!-- task1 -> task4 (right) -->
+        <line x1="560" y1="100" x2="680" y2="100" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <!-- gateway -> task2 (yes, right) -->
+        <line x1="320" y1="220" x2="440" y2="220" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <text x="370" y="214" font-size="11" fill="#2e7d32">是</text>
+        <text x="268" y="160" font-size="11" fill="#c62828">否</text>
+        <!-- task2 -> task3 -->
+        <line x1="620" y1="220" x2="700" y2="220" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <!-- task3 -> end -->
+        <line x1="880" y1="220" x2="980" y2="220" stroke="#666" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <!-- task4 -> end (down then right) -->
+        <path d="M 820 100 L 920 100 L 920 200" stroke="#666" stroke-width="1.5" fill="none" marker-end="url(#arrow)"/>
+
+        <!-- Start node: circle green -->
+        <g>
+          <circle cx="90" cy="220" r="28" fill="#e8f5e9" stroke="#2e7d32" stroke-width="2"/>
+          <text x="90" y="218" text-anchor="middle" font-size="11" font-weight="600" fill="#2e7d32">开始</text>
+          <text x="90" y="232" text-anchor="middle" font-size="9" fill="#525252">LoanRequest</text>
+        </g>
+
+        <!-- Gateway: diamond orange -->
+        <g>
+          <polygon points="260,180 320,220 260,260 200,220" fill="#fff8e1" stroke="#e65100" stroke-width="2"/>
+          <text x="260" y="218" text-anchor="middle" font-size="10" font-weight="600" fill="#e65100">通过校验?</text>
+        </g>
+
+        <!-- Task 1: blue rectangle -->
+        <g>
+          <rect x="380" y="70" width="180" height="60" rx="4" fill="#fff" stroke="#0f62ff" stroke-width="1.5"/>
+          <text x="470" y="95" text-anchor="middle" font-size="12" font-weight="600" fill="#1a1a1a">Task 1: validation</text>
+          <text x="470" y="113" text-anchor="middle" font-size="10" fill="#8c8c8c">校验包 · 3 条规则</text>
+        </g>
+
+        <!-- Task 2: blue rectangle -->
+        <g>
+          <rect x="440" y="190" width="180" height="60" rx="4" fill="#fff" stroke="#0f62ff" stroke-width="1.5"/>
+          <text x="530" y="215" text-anchor="middle" font-size="12" font-weight="600" fill="#1a1a1a">Task 2: eligibility</text>
+          <text x="530" y="233" text-anchor="middle" font-size="10" fill="#8c8c8c">准入包 · 3 条规则</text>
+        </g>
+
+        <!-- Task 3: blue rectangle -->
+        <g>
+          <rect x="700" y="190" width="180" height="60" rx="4" fill="#fff" stroke="#0f62ff" stroke-width="1.5"/>
+          <text x="790" y="215" text-anchor="middle" font-size="12" font-weight="600" fill="#1a1a1a">Task 3: underwriting</text>
+          <text x="790" y="233" text-anchor="middle" font-size="10" fill="#8c8c8c">承保包 · 决策表</text>
+        </g>
+
+        <!-- Task 4: rejection (gray dashed) -->
+        <g>
+          <rect x="680" y="70" width="180" height="60" rx="4" fill="#fafafa" stroke="#8c8c8c" stroke-width="1.5" stroke-dasharray="4,3"/>
+          <text x="770" y="95" text-anchor="middle" font-size="12" font-weight="600" fill="#525252">Task 4: 拒绝理由</text>
+          <text x="770" y="113" text-anchor="middle" font-size="10" fill="#8c8c8c">直接返回拒绝</text>
+        </g>
+
+        <!-- End node: circle red -->
+        <g>
+          <circle cx="1010" cy="220" r="28" fill="#ffebee" stroke="#c62828" stroke-width="2"/>
+          <text x="1010" y="218" text-anchor="middle" font-size="11" font-weight="600" fill="#c62828">结束</text>
+          <text x="1010" y="232" text-anchor="middle" font-size="9" fill="#525252">LoanDecision</text>
+        </g>
+      </svg>
+    </div>`;
+}
+
+// ===================== BOM / Vocabulary =====================
+function renderBomView(){
+  $('#crumbs').textContent='规则仓库 / Miniloan / BOM 与词汇';
+  $('#projView').innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div><h2 style="font-size:16px;font-weight:500">BOM 业务对象模型</h2>
+      <div style="font-size:11px;color:var(--text-3);margin-top:2px">版本 v4 · 3 个事实类型 · 12 个字段 · 修改者 陈分析师</div></div>
+      <div><button class="btn">验证</button> <button class="btn primary">保存</button></div>
+    </div>
+
+    <div style="background:#eaf4ff;border:1px solid #b6d4fe;border-radius:3px;padding:10px 14px;margin-bottom:14px;font-size:11px;color:#0b4a7a">
+      <b>事实模型策略：</b>HTTP 请求 JSON 直接作为事实插入 KieSession，<b>无 Java POJO / 无 XOM 映射层</b>。
+      BOM 变更后自动生成 DRL <code style="background:#fff;padding:1px 4px">declare</code> 块并重新编译。
+      嵌套集合会拆成多个事实对象分别 insert（见下方"事实拆解"）。
+    </div>
+
+    <div class="bom-cols">
+      <div>
+        <div class="bom-obj" style="margin-bottom:12px">
+          <h3>📋 Borrower 借款申请人 <span style="color:var(--text-3);font-weight:normal;font-size:10px">· 1 个事实</span></h3>
+          <div class="bom-field"><span><span class="fk">age</span> <span class="ft">Integer</span></span><span class="ft">输入</span></div>
+          <div class="bom-field"><span><span class="fk">yearlyIncome</span> <span class="ft">BigDecimal</span></span><span class="ft">输入</span></div>
+          <div class="bom-field"><span><span class="fk">creditScore</span> <span class="ft">Integer</span></span><span class="ft">输入</span></div>
+          <div class="bom-field"><span><span class="fk">delinquencies</span> <span class="ft">Integer</span></span><span class="ft">输入</span></div>
+        </div>
+        <div class="bom-obj" style="margin-bottom:12px">
+          <h3>💰 Loan 贷款 <span style="color:var(--text-3);font-weight:normal;font-size:10px">· 1 个事实</span></h3>
+          <div class="bom-field"><span><span class="fk">amount</span> <span class="ft">BigDecimal</span></span><span class="ft">输入</span></div>
+          <div class="bom-field"><span><span class="fk">durationMonths</span> <span class="ft">Integer</span></span><span class="ft">输入</span></div>
+        </div>
+        <div class="bom-obj" style="margin-bottom:12px">
+          <h3>📤 LoanDecision 审批结果 <span style="color:var(--text-3);font-weight:normal;font-size:10px">· 输出事实</span></h3>
+          <div class="bom-field"><span><span class="fk">approved</span> <span class="ft">boolean</span></span><span class="ft">输出</span></div>
+          <div class="bom-field"><span><span class="fk">riskLevel</span> <span class="ft">enum {LOW,MED,HIGH}</span></span><span class="ft">输出</span></div>
+          <div class="bom-field"><span><span class="fk">maxAmount</span> <span class="ft">BigDecimal</span></span><span class="ft">输出</span></div>
+          <div class="bom-field"><span><span class="fk">reasons</span> <span class="ft">List&lt;String&gt;</span></span><span class="ft">输出集合</span></div>
+        </div>
+
+        <div class="bom-vocab" style="margin-top:12px">
+          <h3 style="padding:8px 12px;background:#fafafa;border-bottom:1px solid var(--border);font-size:12px">对象关系</h3>
+          <div style="padding:10px 12px;font-size:11px;line-height:1.8">
+            <div>Request 1 → 1 Borrower</div>
+            <div>Request 1 → 1 Loan</div>
+            <div>Request 1 → 1 LoanDecision（输出）</div>
+            <div style="color:var(--text-3)">（接 dograin 后：Request 1 → N TemperaturePoint 集合）</div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="bom-vocab" style="margin-bottom:14px">
+          <h3 style="padding:8px 12px;background:#fafafa;border-bottom:1px solid var(--border);font-size:12px">业务词汇表（Verbalization）</h3>
+          <table>
+            <thead><tr><th>BOM 属性</th><th>业务说法</th><th>类型</th><th>引用</th></tr></thead>
+            <tbody>
+              <tr><td><span class="fk">Borrower.age</span></td><td>申请人年龄</td><td>Integer</td><td>2</td></tr>
+              <tr><td><span class="fk">Borrower.yearlyIncome</span></td><td>申请人年收入</td><td>BigDecimal</td><td>3</td></tr>
+              <tr><td><span class="fk">Borrower.creditScore</span></td><td>信用分</td><td>Integer</td><td>2</td></tr>
+              <tr><td><span class="fk">Borrower.delinquencies</span></td><td>历史逾期次数</td><td>Integer</td><td>2</td></tr>
+              <tr><td><span class="fk">Loan.amount</span></td><td>申请贷款金额</td><td>BigDecimal</td><td>3</td></tr>
+              <tr><td><span class="fk">LoanDecision.approved</span></td><td>审批结果</td><td>boolean</td><td>4</td></tr>
+              <tr><td><span class="fk">LoanDecision.riskLevel</span></td><td>风险等级</td><td>enum</td><td>5</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="bom-vocab">
+          <h3 style="padding:8px 12px;background:#fafafa;border-bottom:1px solid var(--border);font-size:12px">
+            DRL 自动生成预览
+            <button style="float:right;font-size:10px;color:var(--ibm-blue)" onclick="toast('已复制 DRL')">复制</button>
+          </h3>
+          <pre style="padding:12px;font-family:'Courier New',monospace;font-size:11px;line-height:1.6;background:#fafafa;overflow:auto">declare Borrower
+  age : Integer
+  yearlyIncome : BigDecimal
+  creditScore : Integer
+  delinquencies : Integer
+end
+
+declare Loan
+  amount : BigDecimal
+  durationMonths : Integer
+end
+
+declare LoanDecision
+  approved : boolean
+  riskLevel : String   // LOW | MED | HIGH
+  maxAmount : BigDecimal
+  reasons : java.util.List
+end</pre>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ===================== Test suite =====================
+function renderTests(){
+  $('#crumbs').textContent='规则仓库 / Miniloan / 测试套件';
+  $('#projView').innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div><h2 style="font-size:16px;font-weight:500">测试套件：基准场景</h2>
+      <div style="font-size:11px;color:var(--text-3);margin-top:2px">12 个场景 · 上次运行 2026-09-28 · <span class="pass">11 通过</span> / <span class="fail">1 失败</span></div></div>
+      <div><button class="btn">导入 Excel</button> <button class="btn primary">▶ 全部运行</button></div>
+    </div>
+    <table class="tbl">
+      <thead><tr>
+        <th>#</th><th>场景名</th><th>年龄</th><th>信用分</th><th>年收入</th><th>逾期</th><th>期望结果</th><th>实际结果</th><th>状态</th>
+      </tr></thead>
+      <tbody>
+        <tr><td>1</td><td>未成年拒绝</td><td>17</td><td>720</td><td>150000</td><td>0</td><td>拒绝</td><td>拒绝</td><td class="pass">✓ 通过</td></tr>
+        <tr><td>2</td><td>优质客户</td><td>35</td><td>750</td><td>200000</td><td>0</td><td>批准 LOW</td><td>批准 LOW</td><td class="pass">✓ 通过</td></tr>
+        <tr><td>3</td><td>中等信用低收入</td><td>42</td><td>650</td><td>80000</td><td>0</td><td>批准 MEDIUM</td><td>批准 MEDIUM</td><td class="pass">✓ 通过</td></tr>
+        <tr><td>4</td><td>信用分不足</td><td>28</td><td>580</td><td>120000</td><td>1</td><td>拒绝 HIGH</td><td>拒绝 HIGH</td><td class="pass">✓ 通过</td></tr>
+        <tr><td>5</td><td>多次逾期</td><td>50</td><td>680</td><td>180000</td><td>3</td><td>拒绝 HIGH</td><td>批准 MEDIUM</td><td class="fail">✗ 失败</td></tr>
+        <tr><td>6</td><td>贷款额超收入 3 倍</td><td>33</td><td>720</td><td>60000</td><td>0</td><td>拒绝</td><td>拒绝</td><td class="pass">✓ 通过</td></tr>
+        <tr><td>7</td><td>边界：刚好 18 岁</td><td>18</td><td>600</td><td>100000</td><td>0</td><td>批准 MEDIUM</td><td>批准 MEDIUM</td><td class="pass">✓ 通过</td></tr>
+        <tr><td>8</td><td>边界：信用分 600</td><td>30</td><td>600</td><td>100000</td><td>0</td><td>批准 MEDIUM</td><td>批准 MEDIUM</td><td class="pass">✓ 通过</td></tr>
+      </tbody>
+    </table>
+    <div style="margin-top:10px;font-size:11px;color:var(--red)">
+      ✗ 场景 5 失败：期望拒绝（逾期 3 次），实际 MEDIUM —— 决策表第 5 行（逾期≥3 → HIGH）未命中，疑似优先级被第 3 行覆盖
+    </div>`;
+}
+
+// ===================== Release builder wizard =====================
+let relStep=1;
+const relDraft={ assets:[], version:'2.2.0', notes:'', targets:['dev','test'], approval:false };
+function renderReleaseWizard(){
+  $('#crumbs').textContent='规则仓库 / Miniloan / 发布 / 构建新 Release';
+  $('#projView').innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 style="font-size:16px;font-weight:500">构建新 Release</h2>
+      <button class="btn" onclick="renderReleases()">← 返回发布历史</button>
+    </div>
+
+    <!-- Step indicator -->
+    <div style="display:flex;margin-bottom:20px;background:#fff;border:1px solid var(--border);border-radius:3px;padding:12px 20px">
+      ${[1,2,3,4,5].map(i=>`
+        <div style="flex:1;display:flex;align-items:center;gap:8px;${i<5?'border-right:1px solid var(--border-light);padding-right:16px':''}">
+          <div style="width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;
+            background:${i<=relStep?'var(--ibm-blue)':'#e0e0e0'};color:#fff">${i}</div>
+          <div style="font-size:11px;color:${i<=relStep?'var(--text)':'var(--text-3)'};font-weight:${i===relStep?'600':'400'}">
+            ${['选择资产','版本信息','编译验证','部署目标','确认构建'][i-1]}
+          </div>
+        </div>`).join('')}
+    </div>
+
+    <div id="wizardBody" style="background:#fff;border:1px solid var(--border);border-radius:3px;padding:20px;min-height:360px"></div>
+
+    <div style="display:flex;justify-content:space-between;margin-top:14px">
+      <button class="btn" onclick="relStep>1?(relStep--,renderReleaseWizard()):renderReleases()" ${relStep===1?'style="visibility:hidden"':''}>← 上一步</button>
+      <button class="btn primary" onclick="wizardNext()">${relStep===5?'🚀 构建 Release':'下一步 →'}</button>
+    </div>`;
+  renderWizardStep();
+}
+
+function renderWizardStep(){
+  const b=document.querySelector('#wizardBody');
+  if(relStep===1){
+    b.innerHTML=`
+      <h3 style="font-size:13px;margin-bottom:12px">选择要包含在本 Release 中的资产</h3>
+      <table class="tbl">
+        <thead><tr><th style="width:30px"></th><th>资产</th><th>包</th><th>当前版本</th><th>状态</th></tr></thead>
+        <tbody>
+          ${PKGS.flatMap(p=>p.items).map((it,i)=>`
+            <tr><td><input type="checkbox" ${it.st!=='archived'?'checked':''} onchange="relDraft.assets=this.checked?'add':'del'"></td>
+            <td>${it.name}</td><td>${pName(it)}</td><td class="ver">v${it.ver}</td><td>${stTag(it.st)}</td></tr>`).join('')}
+        </tbody>
+      </table>
+      <div style="margin-top:10px;font-size:11px;color:var(--text-3)">归档资产默认不勾选；草稿资产会随 Release 一起编译，不通过则阻断构建。</div>`;
+  }
+  if(relStep===2){
+    b.innerHTML=`
+      <h3 style="font-size:13px;margin-bottom:16px">版本信息</h3>
+      <div style="display:grid;grid-template-columns:200px 1fr;gap:12px;align-items:center;max-width:560px">
+        <label style="font-size:12px;color:var(--text-2)">版本号</label>
+        <input value="${relDraft.version}" style="padding:7px 10px;border:1px solid var(--border);border-radius:3px;font-family:Courier New,monospace" />
+        <label style="font-size:12px;color:var(--text-2)">发布说明</label>
+        <textarea rows="4" placeholder="本次变更摘要…" style="padding:7px 10px;border:1px solid var(--border);border-radius:3px;font-size:12px">新增"贷款期限合理"规则；调整风险等级表第 5 行优先级</textarea>
+        <label style="font-size:12px;color:var(--text-2)">Release 类型</label>
+        <div><label style="margin-right:16px;font-size:12px"><input type="radio" name="rt" checked /> 小版本（补丁）</label>
+        <label style="margin-right:16px;font-size:12px"><input type="radio" name="rt" /> 次版本（新规则）</label>
+        <label style="font-size:12px"><input type="radio" name="rt" /> 主版本（BOM 变更）</label></div>
+      </div>`;
+  }
+  if(relStep===3){
+    b.innerHTML=`
+      <h3 style="font-size:13px;margin-bottom:12px">编译与测试验证</h3>
+      <div style="padding:12px;border:1px solid var(--border-light);border-radius:3px;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;font-size:12px">
+          <span>✅ Drools DRL 编译</span><span class="pass">通过 · 0 错误 0 警告</span>
+        </div>
+      </div>
+      <div style="padding:12px;border:1px solid var(--border-light);border-radius:3px;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;font-size:12px">
+          <span>✅ BOM 校验（12 字段）</span><span class="pass">通过 · 无删除/无类型变更</span>
+        </div>
+      </div>
+      <div style="padding:12px;border:1px solid var(--border-light);border-radius:3px;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;font-size:12px">
+          <span>⚠ 测试套件</span><span class="fail">11/12 通过（场景 5 失败）</span>
+        </div>
+        <div style="margin-top:8px;font-size:11px;color:var(--red)">场景 5「多次逾期」期望 HIGH 实际 MEDIUM——继续构建将标记为已知问题</div>
+      </div>
+      <div style="padding:12px;border:1px solid var(--border-light);border-radius:3px">
+        <div style="display:flex;justify-content:space-between;font-size:12px">
+          <span>✅ 冲突检测</span><span class="pass">无重叠/矛盾规则</span>
+        </div>
+      </div>`;
+  }
+  if(relStep===4){
+    b.innerHTML=`
+      <h3 style="font-size:13px;margin-bottom:12px">部署目标环境</h3>
+      <table class="tbl">
+        <thead><tr><th style="width:30px"></th><th>环境</th><th>部署策略</th><th>Shadow 对比</th></tr></thead>
+        <tbody>
+          <tr><td><input type="checkbox" checked onchange="relDraft.targets=this.checked?addT('dev'):delT('dev')"></td><td><span class="env-chip" style="background:#f3e5f5;color:#6a1b9a">dev</span></td><td>自动部署</td><td>—</td></tr>
+          <tr><td><input type="checkbox" checked onchange="relDraft.targets=this.checked?addT('test'):delT('test')"></td><td><span class="env-chip env-test">test</span></td><td>自动部署 + 跑测试</td><td>—</td></tr>
+          <tr><td><input type="checkbox" onchange="relDraft.targets=this.checked?addT('staging'):delT('staging')"></td><td><span class="env-chip" style="background:#fff3e0;color:#e65100">staging</span></td><td>手动部署</td><td>☑ 对比当前 prod</td></tr>
+          <tr><td><input type="checkbox" onchange="relDraft.targets=this.checked?addT('prod'):delT('prod')"></td><td><span class="env-chip env-prod">production</span></td><td>双人审批</td><td>☑ 并行影子</td></tr>
+        </tbody>
+      </table>
+      <div style="margin-top:10px;font-size:11px;color:var(--text-3)">勾选 production 需指定第二位审批人；未审批前不会真正上线。</div>`;
+  }
+  if(relStep===5){
+    b.innerHTML=`
+      <h3 style="font-size:13px;margin-bottom:16px">确认构建 v${relDraft.version}</h3>
+      <table class="tbl" style="max-width:640px">
+        <tr><td style="width:160px;color:var(--text-3)">版本号</td><td class="ver">v${relDraft.version}</td></tr>
+        <tr><td style="color:var(--text-3)">包含资产</td><td>8 个（validation 3 · eligibility 3 · underwriting 2）</td></tr>
+        <tr><td style="color:var(--text-3)">发布说明</td><td>新增"贷款期限合理"；调整风险等级表第 5 行</td></tr>
+        <tr><td style="color:var(--text-3)">编译</td><td><span class="pass">通过</span></td></tr>
+        <tr><td style="color:var(--text-3)">测试</td><td><span class="fail">11/12 通过（场景 5 已知问题）</span></td></tr>
+        <tr><td style="color:var(--text-3)">部署到</td><td>${['dev','test','staging','prod'].filter(t=>relDraft.targets.includes(t)).map(t=>`<span class="env-chip env-test">${t}</span>`).join(' ')}</td></tr>
+        <tr><td style="color:var(--text-3)">校验和</td><td style="font-family:Courier New;font-size:11px">sha256: a3f9…e21c（构建后生成）</td></tr>
+      </table>
+      <div style="margin-top:16px;padding:10px;background:#fff8e1;border:1px solid #ffe082;border-radius:3px;font-size:11px">
+        ⚠ 测试套件有 1 个未通过场景。继续构建将把该问题标记为已知问题，并要求测试负责人签字确认。
+      </div>`;
+  }
+}
+function pName(it){ for(const p of PKGS){ if(p.items.find(x=>x.id===it.id)) return p.name; } return ''; }
+function addT(t){ relDraft.targets.push(t); }
+function delT(t){ relDraft.targets=relDraft.targets.filter(x=>x!==t); }
+function wizardNext(){
+  if(relStep<5){ relStep++; renderReleaseWizard(); }
+  else { toast(`Release v${relDraft.version} 构建成功，已部署到 ${relDraft.targets.join(', ')}`); setTimeout(renderReleases, 1200); }
+}
+
+// ===================== Releases list =====================
+function renderReleases(){
+  $('#crumbs').textContent='规则仓库 / Miniloan / 发布';
+  $('#projView').innerHTML=`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div><h2 style="font-size:16px;font-weight:500">发布历史</h2>
+      <div style="font-size:11px;color:var(--text-3);margin-top:2px">每次发布冻结 DRL + BOM + 校验和，不可变</div></div>
+      <button class="btn primary" onclick="relStep=1;renderReleaseWizard()">构建新 Release</button>
+    </div>
+    <table class="tbl">
+      <thead><tr><th>版本</th><th>状态/环境</th><th>包含资产</th><th>校验和</th><th>作者</th><th>时间</th><th></th></tr></thead>
+      <tbody>
+        <tr><td><span class="ver">v2.1.0</span></td>
+          <td><span class="env-chip env-prod">Production</span><span class="env-chip env-shadow">Shadow</span> Running</td>
+          <td>validation 3 · eligibility 3 · underwriting 2</td>
+          <td style="font-family:Courier New;font-size:10px;color:var(--text-3)">a3f9…e21c</td>
+          <td>陈分析师</td><td>2026-09-28 14:20</td>
+          <td><button class="btn sm">部署记录</button></td></tr>
+        <tr><td><span class="ver">v2.0.5</span></td>
+          <td><span class="env-chip env-test">Test</span> 已回退</td>
+          <td>+ 贷款期限合理（草稿）</td>
+          <td style="font-family:Courier New;font-size:10px;color:var(--text-3)">b7c1…90aa</td>
+          <td>wallace</td><td>2026-09-25 11:08</td>
+          <td><button class="btn sm">回退</button></td></tr>
+        <tr><td><span class="ver">v2.0.0</span></td>
+          <td><span class="env-chip env-prod">Production</span> 归档</td>
+          <td>validation 2 · eligibility 2 · underwriting 2</td>
+          <td style="font-family:Courier New;font-size:10px;color:var(--text-3)">90de…f031</td>
+          <td>陈分析师</td><td>2026-09-10 09:15</td>
+          <td></td></tr>
+        <tr><td><span class="ver">v1.9.0</span></td>
+          <td>归档</td>
+          <td>初版上线</td>
+          <td style="font-family:Courier New;font-size:10px;color:var(--text-3)">c2a4…77bd</td>
+          <td>陈分析师</td><td>2026-08-20 16:40</td>
+          <td></td></tr>
+      </tbody>
+    </table>
+    <div style="margin-top:16px;background:#fff;border:1px solid var(--border);border-radius:3px;padding:14px">
+      <h3 style="font-size:12px;font-weight:600;margin-bottom:8px">RES 部署目标</h3>
+      <div style="font-size:11px;color:var(--text-3)">环境 Production → RES @ res.prod:9090 · Shadow 影子运行不推送状态 · 部署需双人审批</div>
+    </div>`;
+}
+
+// ===================== Init =====================
+renderTree();
+renderList(null);
+</script>
+</body>
+</html>
