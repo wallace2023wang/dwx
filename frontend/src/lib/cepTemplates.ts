@@ -23,7 +23,12 @@ export interface CepTemplateParams {
   windowType?: 'sliding' | 'tumbling'
   windowSize?: string | number
   windowUnit?: 'seconds' | 'minutes' | 'hours'
+  outputFields?: CepOutputField[]
 }
+
+export type CepOutputField =
+  | { alias: string; source: 'field'; field: string }
+  | { alias: string; source: 'constant'; value: string | number | boolean }
 
 const IDENTIFIER_RE = /^[A-Za-z][A-Za-z0-9_]{0,63}$/
 const FIELD_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/
@@ -84,6 +89,30 @@ function literal(value: unknown) {
   return `'${text.replace(/'/g, "''")}'`
 }
 
+function outputLiteral(value: unknown) {
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new Error('输出固定值数字无效')
+    return String(value)
+  }
+  if (typeof value === 'boolean') return value ? 'true' : 'false'
+  if (typeof value !== 'string') throw new Error('输出固定值只能是文本、数字或布尔值')
+  return `'${value.replace(/'/g, "''")}'`
+}
+
+function selectClause(outputFields: CepOutputField[] | undefined) {
+  if (!outputFields?.length) return '*'
+  if (outputFields.length > 50) throw new Error('输出字段不能超过 50 个')
+  const aliases = new Set<string>()
+  return outputFields.map((output, index) => {
+    const alias = requireIdentifier(output.alias, '输出字段别名', true)
+    if (aliases.has(alias)) throw new Error(`输出字段别名重复：${alias}`)
+    aliases.add(alias)
+    if (output.source === 'field') return `${requireIdentifier(output.field, '源字段', true)} as ${alias}`
+    if (output.source === 'constant') return `${outputLiteral(output.value)} as ${alias}`
+    throw new Error(`第 ${index + 1} 个输出字段来源无效`)
+  }).join(', ')
+}
+
 function windowClause(params: CepTemplateParams) {
   const unit = params.windowUnit || 'minutes'
   const view = params.windowType === 'tumbling' ? '#time_batch' : '#time'
@@ -95,7 +124,7 @@ export function buildCepTemplate(id: CepTemplateId, params: CepTemplateParams) {
   const eventType = requireIdentifier(params.eventType, '事件源')
   const field = params.field ? requireIdentifier(params.field, '字段', true) : ''
   const groupField = params.groupField ? requireIdentifier(params.groupField, '分组字段', true) : ''
-  if (id === 'single-threshold') return `insert into ${name}Event select * from ${eventType} where ${field} ${op(params.operator || '>=')} ${literal(params.value)}`
+  if (id === 'single-threshold') return `insert into ${name}Event select ${selectClause(params.outputFields)} from ${eventType} where ${field} ${op(params.operator || '>=')} ${literal(params.value)}`
   if (id === 'window-average') return `insert into ${name}Event select ${groupField}, avg(${field}) as avg_${field} from ${eventType}${windowClause(params)} group by ${groupField} having avg(${field}) ${op(params.operator || '>=', ['>', '>=', '<', '<=', '='])} ${literal(params.value)}`
   if (id === 'window-fluctuation') return `insert into ${name}Event select ${groupField}, max(${field}) as max_${field}, min(${field}) as min_${field} from ${eventType}${windowClause(params)} group by ${groupField} having max(${field}) - min(${field}) >= ${finiteNumber(params.delta ?? params.value, '差值阈值')}`
   if (id === 'event-count') return `insert into ${name}Event select ${groupField}, count(*) as cnt from ${eventType}${windowClause(params)} group by ${groupField} having count(*) >= ${positiveInteger(params.count ?? params.value, '次数阈值')}`

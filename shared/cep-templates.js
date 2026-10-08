@@ -106,6 +106,33 @@ function literal(value) {
   return `'${text}'`;
 }
 
+function outputLiteral(value) {
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw new Error('输出固定值数字无效');
+    return String(value);
+  }
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value !== 'string') throw new Error('输出固定值只能是文本、数字或布尔值');
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+function selectClause(params) {
+  if (params.outputFields == null) return '*';
+  if (!Array.isArray(params.outputFields)) throw new Error('输出字段必须是数组');
+  if (!params.outputFields.length) return '*';
+  if (params.outputFields.length > 50) throw new Error('输出字段不能超过 50 个');
+  const aliases = new Set();
+  return params.outputFields.map((output, index) => {
+    if (!output || typeof output !== 'object' || Array.isArray(output)) throw new Error(`第 ${index + 1} 个输出字段无效`);
+    const alias = requireIdentifier(output.alias, '输出字段别名', true);
+    if (aliases.has(alias)) throw new Error(`输出字段别名重复：${alias}`);
+    aliases.add(alias);
+    if (output.source === 'field') return `${requireIdentifier(output.field, '源字段', true)} as ${alias}`;
+    if (output.source === 'constant') return `${outputLiteral(output.value)} as ${alias}`;
+    throw new Error(`第 ${index + 1} 个输出字段来源无效`);
+  }).join(', ');
+}
+
 function eventType(params) {
   return requireIdentifier(params.eventType, '事件源');
 }
@@ -140,11 +167,11 @@ export const CEP_TEMPLATES = Object.freeze([
     id: 'single-threshold',
     name: '单点阈值',
     category: 'threshold',
-    params: ['statementName', 'eventType', 'field', 'operator', 'value'],
+    params: ['statementName', 'eventType', 'field', 'operator', 'value', 'outputFields'],
     build(params) {
       const name = statementName(params);
       const { source, watchedField, op, value } = thresholdParams(params);
-      return `insert into ${name}Event select * from ${source} where ${watchedField} ${op} ${value}`;
+      return `insert into ${name}Event select ${selectClause(params)} from ${source} where ${watchedField} ${op} ${value}`;
     },
     describe(params) {
       const { source, watchedField, op, value } = thresholdParams(params);

@@ -8,6 +8,7 @@ export interface EplStatement {
   output?: string[]
   label?: string
   description?: string
+  group?: string
   mode?: 'guided' | 'advanced'
   template?: string
   params?: Record<string, unknown>
@@ -19,7 +20,8 @@ export interface EventStreamVersion {
   createdAt?: string
   createdBy?: string
   statements?: EplStatement[]
-  authoring?: Array<Pick<EplStatement, 'name' | 'label' | 'description' | 'mode' | 'template' | 'params'>>
+  draft?: EventStreamDraft
+  authoring?: Array<Pick<EplStatement, 'name' | 'label' | 'description' | 'group' | 'mode' | 'template' | 'params'>>
 }
 export interface EventStreamSummary {
   id: string
@@ -31,6 +33,7 @@ export interface EventStreamSummary {
   version: number
   revision: number
   statementCount: number
+  hasDraftChanges?: boolean
   statementLabels?: string[]
   updatedAt?: string
   modifiedBy?: string

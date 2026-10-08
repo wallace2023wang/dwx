@@ -225,6 +225,7 @@ export function normalizeEventStreamDraft(input = {}) {
       ...(Array.isArray(statement?.output) ? { output: statement.output.filter(item => typeof item === 'string') } : {}),
       ...(typeof statement?.label === 'string' ? { label: statement.label.trim() } : {}),
       ...(typeof statement?.description === 'string' ? { description: statement.description.trim() } : {}),
+      ...(typeof statement?.group === 'string' && statement.group.trim() ? { group: statement.group.trim() } : {}),
       ...(['guided', 'advanced'].includes(statement?.mode) ? { mode: statement.mode } : {}),
       ...(typeof statement?.template === 'string' && statement.template.trim() ? { template: statement.template.trim() } : {}),
       ...(statement?.params && typeof statement.params === 'object' && !Array.isArray(statement.params) ? { params: structuredClone(statement.params) } : {}),
@@ -250,6 +251,7 @@ export function validateEventStreamDraft(input, bom = { fields: [] }) {
     names.add(statement.name);
     if (statement.label != null && (typeof statement.label !== 'string' || statement.label.length > 80)) return `${label}中文检测名不能超过 80 字`;
     if (statement.description != null && (typeof statement.description !== 'string' || statement.description.length > 500)) return `${label}业务说明不能超过 500 字`;
+    if (statement.group != null && (typeof statement.group !== 'string' || statement.group.length > 80)) return `${label}分组名称不能超过 80 字`;
     if (statement.mode != null && !['guided', 'advanced'].includes(statement.mode)) return `${label}编辑模式无效`;
     if (statement.template != null && (typeof statement.template !== 'string' || statement.template.length > 80)) return `${label}模板 ID 无效`;
     if (statement.params != null && (typeof statement.params !== 'object' || Array.isArray(statement.params))) return `${label}模板参数无效`;

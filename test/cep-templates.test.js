@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { CEP_TEMPLATES, buildCepTemplate, normalizeCepOperator, renderCepTemplateDescription } from '../shared/cep-templates.js';
-import { compileEventStreamDraft } from '../shared/event-streams.js';
+import { compileEventStreamDraft, normalizeEventStreamDraft } from '../shared/event-streams.js';
 
 const bom = {
   version: 1,
@@ -104,6 +104,44 @@ test('CEP template validation rejects unsafe identifiers and normalizes UI opera
   assert.throws(() => buildCepTemplate('single-threshold', { statementName: 'Bad', eventType: 'NH3Reading', field: 'ammoniaPpm;delete', value: 1 }), /字段/);
 });
 
+test('single-threshold template supports renamed fields and typed constant outputs', () => {
+  const params = {
+    statementName: 'PhaseChanged',
+    eventType: 'NH3Reading',
+    field: 'ammoniaPpm',
+    operator: '>=',
+    value: 25,
+    outputFields: [
+      { source: 'constant', alias: 'phase', value: 'CIRCULATION' },
+      { source: 'field', alias: 'siteId', field: 'warehouseId' },
+      { source: 'constant', alias: 'active', value: true },
+    ],
+  };
+  const epl = buildCepTemplate('single-threshold', params);
+  assert.equal(epl, "insert into PhaseChangedEvent select 'CIRCULATION' as phase, warehouseId as siteId, true as active from NH3Reading where ammoniaPpm >= 25");
+  assert.equal(buildCepTemplate('single-threshold', {
+    ...params,
+    outputFields: [{ source: 'constant', alias: 'message', value: "operator's alert" }],
+  }), "insert into PhaseChangedEvent select 'operator''s alert' as message from NH3Reading where ammoniaPpm >= 25");
+  assert.match(buildCepTemplate('single-threshold', {
+    ...params,
+    outputFields: [{ source: 'constant', alias: 'code', value: '123' }],
+  }), /select '123' as code/);
+
+  const compiled = compileEventStreamDraft({
+    name: '派生输出',
+    statements: [{ name: params.statementName, mode: 'guided', template: 'single-threshold', params, epl }],
+  }, bom);
+  assert.equal(compiled.status, 200, compiled.error || '');
+});
+
+test('derived output validation rejects unsafe or duplicate aliases and fields', () => {
+  const base = { statementName: 'BadOutput', eventType: 'NH3Reading', field: 'ammoniaPpm', value: 25 };
+  assert.throws(() => buildCepTemplate('single-threshold', { ...base, outputFields: [{ source: 'field', alias: 'bad alias', field: 'warehouseId' }] }), /输出字段别名/);
+  assert.throws(() => buildCepTemplate('single-threshold', { ...base, outputFields: [{ source: 'field', alias: 'site', field: 'warehouseId;drop' }] }), /源字段/);
+  assert.throws(() => buildCepTemplate('single-threshold', { ...base, outputFields: [{ source: 'field', alias: 'site', field: 'warehouseId' }, { source: 'constant', alias: 'site', value: 1 }] }), /输出字段别名重复/);
+});
+
 test('EventStream authoring metadata persists in draft but stays out of runtime module checksum', () => {
   const params = { statementName: 'NH3HighAlarm', eventType: 'NH3Reading', field: 'ammoniaPpm', operator: '>=', value: 25 };
   const epl = buildCepTemplate('single-threshold', params);
@@ -112,11 +150,58 @@ test('EventStream authoring metadata persists in draft but stays out of runtime 
     statements: [{ name: 'NH3HighAlarm', epl, label: '氨气超限', description: '业务说明 A', mode: 'guided', template: 'single-threshold', params }],
   }, bom);
   const second = compileEventStreamDraft({
-    name: '氨气检测',
-    statements: [{ name: 'NH3HighAlarm', epl, label: '氨气严重超限', description: '业务说明 B', mode: 'guided', template: 'single-threshold', params }],
+    name: '氨气检测（更新说明）',
+    description: '事件流总体说明',
+    statements: [{ name: 'NH3HighAlarm', epl, label: '氨气严重超限', description: '  业务说明 B  ', mode: 'guided', template: 'single-threshold', params }],
   }, bom);
+  const normalized = normalizeEventStreamDraft({
+    name: '氨气检测',
+    description: '  总体说明  ',
+    statements: [{ name: 'NH3HighAlarm', epl, description: '  人工业务说明  ' }],
+  });
+  assert.equal(normalized.description, '总体说明');
+  assert.equal(normalized.statements[0].description, '人工业务说明');
   assert.equal(first.result.checksum, second.result.checksum);
   assert.deepEqual(Object.keys(first.result.module.statements[0]).sort(), ['enabled', 'epl', 'eventTypes', 'name', 'outputEventType']);
+});
+
+test('EPL preserves Chinese comments as runtime text', () => {
+  const plainEpl = 'select * from NH3Reading';
+  const commentedEpl = '// 检测氨气浓度\n/* 中文块注释 */\nselect * from NH3Reading';
+  const plain = compileEventStreamDraft({ name: '无注释', statements: [{ name: 'DetectNH3', epl: plainEpl }] }, bom);
+  const commented = compileEventStreamDraft({ name: '中文注释', statements: [{ name: 'DetectNH3', epl: commentedEpl }] }, bom);
+  assert.equal(commented.status, 200, commented.error || '');
+  assert.equal(commented.result.module.statements[0].epl, commentedEpl);
+  assert.notEqual(plain.result.checksum, commented.result.checksum);
+});
+
+test('EventStream statement groups persist as authoring metadata without changing runtime checksum', () => {
+  const statements = cases.slice(0, 2).map(([template, params], index) => ({
+    name: params.statementName,
+    epl: buildCepTemplate(template, params),
+    group: index === 0 ? '实时检测' : '窗口检测',
+  }));
+  const normalized = normalizeEventStreamDraft({ name: '分组检测', statements: [{ ...statements[0], group: '  实时检测  ' }, statements[1]] });
+  assert.equal(normalized.statements[0].group, '实时检测');
+
+  const grouped = compileEventStreamDraft({ name: '分组检测', statements }, bom);
+  const renamed = compileEventStreamDraft({ name: '分组检测', statements: statements.map(statement => ({ ...statement, group: '其他分组' })) }, bom);
+  assert.equal(grouped.status, 200, grouped.error || '');
+  assert.equal(grouped.result.checksum, renamed.result.checksum);
+
+  const tooLong = compileEventStreamDraft({ name: '分组检测', statements: [{ ...statements[0], group: 'x'.repeat(81) }] }, bom);
+  assert.equal(tooLong.status, 400);
+  assert.match(tooLong.error, /分组名称不能超过 80 字/);
+});
+
+test('EventStream statement order remains runtime-significant', () => {
+  const statements = cases.slice(0, 2).map(([template, params]) => ({ name: params.statementName, epl: buildCepTemplate(template, params) }));
+  const forward = compileEventStreamDraft({ name: '排序检测', statements }, bom);
+  const reversed = compileEventStreamDraft({ name: '排序检测', statements: [...statements].reverse() }, bom);
+  assert.equal(forward.status, 200, forward.error || '');
+  assert.equal(reversed.status, 200, reversed.error || '');
+  assert.notEqual(forward.result.checksum, reversed.result.checksum);
+  assert.deepEqual(forward.result.module.statements.map(statement => statement.name), statements.map(statement => statement.name));
 });
 
 test('CEP validation accepts time-driven patterns and same-stream derived events', () => {
