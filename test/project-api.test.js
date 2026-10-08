@@ -4,6 +4,26 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { startTestEnv } from './helpers.js';
 
+async function publishProjectRuleset(env, projectId, ruleId, name = '项目业务规则集') {
+  const created = await env.request(`/api/projects/${projectId}/flows`, 'POST');
+  assert.equal(created.status, 201);
+  const saved = await env.request(`/api/projects/${projectId}/flows/${created.body.id}`, 'PUT', {
+    revision: created.body.revision,
+    draft: {
+      ...created.body.draft,
+      name,
+      steps: [{ type: 'rule', id: ruleId }],
+      branches: [],
+    },
+  });
+  assert.equal(saved.status, 200);
+  const published = await env.request(`/api/projects/${projectId}/flows/${created.body.id}/publish`, 'POST', {
+    revision: saved.body.revision,
+  });
+  assert.equal(published.status, 200);
+  return published.body;
+}
+
 
 test('home activity returns real events with project context', async () => {
   const env = await startTestEnv();
@@ -81,6 +101,76 @@ test('advanced rule conditions survive project API save and compile unchanged', 
     assert.equal(compiled.status, 200);
     assert.match(compiled.body.drl, /not RuleInput\( creditScore < 0 \)/);
     assert.match(compiled.body.drl, /customerAge >= 18, creditScore >= customerAge/);
+  } finally {
+    await env.stop();
+  }
+});
+
+test('Rule Project variables are persisted and available to BAL editors', async () => {
+  const env = await startTestEnv();
+  try {
+    const current = await env.request('/api/projects/default');
+    assert.equal(current.status, 200);
+    const updated = await env.request('/api/projects/default', 'PUT', {
+      name: current.body.name,
+      description: current.body.description,
+      icon: current.body.icon,
+      defaultEnvironment: current.body.defaultEnvironment,
+      variables: [{ name: 'approved', label: '已批准', type: 'Boolean', defaultValue: false }],
+    });
+    assert.equal(updated.status, 200);
+    assert.deepEqual(updated.body.variables.map(variable => variable.name), ['approved']);
+    const reloaded = await env.request('/api/projects/default');
+    assert.equal(reloaded.status, 200);
+    assert.deepEqual(reloaded.body.variables.map(variable => variable.name), ['approved']);
+
+    const copied = await env.request('/api/projects', 'POST', {
+      name: '复制项目变量',
+      description: '复制 Rule Project 变量',
+      icon: 'shield',
+      copyProjectId: 'default',
+    });
+    assert.equal(copied.status, 201);
+    assert.deepEqual(copied.body.variables.map(variable => variable.name), ['approved']);
+
+    const createdProject = await env.request('/api/projects', 'POST', {
+      name: '新建变量项目',
+      description: '新项目变量保存回归',
+      icon: 'shield',
+      bomTemplate: 'blank',
+    });
+    assert.equal(createdProject.status, 201);
+    const updatedProject = await env.request(`/api/projects/${createdProject.body.id}`, 'PUT', {
+      name: createdProject.body.name,
+      description: createdProject.body.description,
+      icon: createdProject.body.icon,
+      defaultEnvironment: createdProject.body.defaultEnvironment,
+      variables: [{ name: 'seenA', label: '见过 A', type: 'Boolean', defaultValue: false }],
+    });
+    assert.equal(updatedProject.status, 200);
+    assert.deepEqual(updatedProject.body.variables.map(variable => variable.name), ['seenA']);
+    const reloadedProject = await env.request(`/api/projects/${createdProject.body.id}`);
+    assert.equal(reloadedProject.status, 200);
+    assert.deepEqual(reloadedProject.body.variables.map(variable => variable.name), ['seenA']);
+
+    const created = await env.request('/api/projects/default/rules', 'POST', {
+      type: 'rule', name: '项目变量规则', category: 'variables',
+    });
+    assert.equal(created.status, 201);
+    const draft = {
+      ...created.body.draft,
+      conditions: [{ fieldSource: 'variable', field: 'approved', operator: '==', value: 'true' }],
+      actions: [{ fieldSource: 'variable', field: 'approved', value: 'false' }],
+    };
+    const saved = await env.request(`/api/projects/default/rules/${created.body.id}`, 'PUT', {
+      revision: created.body.revision,
+      draft,
+    });
+    assert.equal(saved.status, 200);
+    assert.deepEqual(saved.body.projectVariables.map(variable => variable.name), ['approved']);
+    assert.match(saved.body.content, /RuleContext/);
+    assert.match(saved.body.content, /approved == true/);
+    assert.match(saved.body.content, /setApproved\(false\)/);
   } finally {
     await env.stop();
   }
@@ -370,6 +460,80 @@ test('project decision-table API creates, analyzes, and compiles cell comparison
   }
 });
 
+test('project decision-table API persists and compiles Rule Project variable columns', async () => {
+  const env = await startTestEnv();
+  try {
+    const current = await env.request('/api/projects/default');
+    assert.equal(current.status, 200);
+    const updated = await env.request('/api/projects/default', 'PUT', {
+      name: current.body.name,
+      description: current.body.description,
+      icon: current.body.icon,
+      defaultEnvironment: current.body.defaultEnvironment,
+      variables: [{ name: 'approved', label: '已批准', type: 'Boolean', defaultValue: false }],
+    });
+    assert.equal(updated.status, 200);
+
+    const created = await env.request('/api/projects/default/rules', 'POST', {
+      type: 'decision-table',
+      name: '变量决策表',
+      category: 'variables',
+    });
+    assert.equal(created.status, 201);
+
+    const draft = {
+      ...created.body.draft,
+      conditions: [{ field: 'approved', fieldSource: 'variable', operator: '==' }],
+      actions: [{ field: 'approved', fieldSource: 'variable' }],
+      rows: [{ enabled: true, priority: 0, conditions: ['true'], actions: ['false'] }],
+    };
+    const saved = await env.request(`/api/projects/default/rules/${created.body.id}`, 'PUT', {
+      revision: created.body.revision,
+      draft,
+    });
+    assert.equal(saved.status, 200);
+    assert.deepEqual(saved.body.draft.conditions, draft.conditions);
+    assert.deepEqual(saved.body.draft.actions, draft.actions);
+    assert.deepEqual(saved.body.projectVariables.map(variable => variable.name), ['approved']);
+    assert.match(saved.body.content, /RuleContext/);
+    assert.match(saved.body.content, /approved == true/);
+    assert.match(saved.body.content, /setApproved\(false\)/);
+
+    const analysis = await env.request(`/api/projects/default/rules/${created.body.id}/analyze`, 'POST', {
+      revision: saved.body.revision,
+      draft: saved.body.draft,
+    });
+    assert.equal(analysis.status, 200);
+    assert.equal(analysis.body.error, null);
+    assert.match(analysis.body.drl, /RuleContext/);
+
+    const compiled = await env.request(`/api/projects/default/rules/${created.body.id}/compile`, 'POST', {
+      revision: saved.body.revision,
+      draft: saved.body.draft,
+    });
+    assert.equal(compiled.status, 200);
+    assert.match(compiled.body.drl, /setApproved\(false\)/);
+
+    const published = await env.request(`/api/projects/default/rules/${created.body.id}/publish`, 'POST', {
+      revision: saved.body.revision,
+    });
+    assert.equal(published.status, 200);
+    assert.match(published.body.content, /declare RuleContext/);
+
+    const invalid = await env.request(`/api/projects/default/rules/${created.body.id}/compile`, 'POST', {
+      revision: published.body.revision,
+      draft: {
+        ...published.body.draft,
+        conditions: [{ field: 'missingVariable', fieldSource: 'variable', operator: '==', }],
+      },
+    });
+    assert.equal(invalid.status, 400);
+    assert.match(invalid.body.error, /条件列字段重复或比较方式无效|不存在|无效/);
+  } finally {
+    await env.stop();
+  }
+});
+
 test('project compatibility API exposes the default workspace without duplicating assets', async () => {
   const env = await startTestEnv();
   try {
@@ -457,7 +621,7 @@ test('project compatibility API exposes the default workspace without duplicatin
       revision: createdFlow.body.revision,
       draft: {
         ...createdFlow.body.draft,
-        name: '项目 API 规则流',
+        name: '项目 API 规则集',
         description: '先规则后决策表',
         steps: [{ type: 'rule', id: created.id }],
         branches: [
@@ -485,7 +649,7 @@ test('project compatibility API exposes the default workspace without duplicatin
     const rulesets = await env.request('/api/projects/default/rulesets');
     assert.equal(rulesets.status, 200);
     assert.equal(rulesets.body.length, 1);
-    assert.equal(rulesets.body[0].flowName, '项目 API 规则流');
+    assert.equal(rulesets.body[0].flowName, '项目 API 规则集');
     assert.equal(rulesets.body[0].needsRepublish, false);
 
     const latestRule = await env.request(`/api/projects/default/rules/${created.id}`);
@@ -511,6 +675,11 @@ test('project compatibility API exposes the default workspace without duplicatin
     });
     assert.equal(staleFlow.status, 409);
     assert.equal(staleFlow.body.currentRevision, 3);
+    const republishedFlow = await env.request(`/api/projects/default/flows/${createdFlow.body.id}/publish`, 'POST', {
+      revision: publishedFlow.body.revision,
+    });
+    assert.equal(republishedFlow.status, 200);
+    assert.equal(republishedFlow.body.needsRepublish, false);
 
     const suite = await env.request('/api/test-suites', 'POST', {
       name: '项目 API 回归', description: '', target: { type: 'rule', id: created.id }, required: true,
@@ -537,17 +706,14 @@ test('project compatibility API exposes the default workspace without duplicatin
       decisionService: 'default/project-api', name: '项目 API Release', description: '项目级发布兼容接口',
       target: { type: 'rule', id: created.id },
     });
-    assert.equal(release.status, 201);
-    assert.equal(release.body.qualityGate.passed, true);
+    assert.equal(release.status, 400);
+    assert.match(release.body.error, /必须以规则集为发布目标/);
     const projectReleases = await env.request('/api/projects/default/releases');
     assert.equal(projectReleases.status, 200);
-    assert.equal(projectReleases.body.length, 1);
-    const deployed = await env.request(`/api/projects/default/releases/${release.body.id}/deploy`, 'POST', { environment: 'local' });
-    assert.equal(deployed.status, 200);
-    assert.equal(deployed.body.deployments[0].environment, 'local');
+    assert.equal(projectReleases.body.length, 0);
 
     const flowRelease = await env.request('/api/projects/default/releases', 'POST', {
-      decisionService: 'default/project-flow', name: '项目规则流 Release', description: '项目级规则流发布',
+      decisionService: 'default/project-flow', name: '项目规则集 Release', description: '项目级规则集发布',
       target: { type: 'flow', id: createdFlow.body.id },
     });
     assert.equal(flowRelease.status, 201);
@@ -714,20 +880,21 @@ test('project Release builds, deploys, executes, and stays isolated from other p
     });
     assert.equal(published.status, 200);
     assert.equal(published.body.status, 'published');
+    const ruleset = await publishProjectRuleset(env, project.id, created.id, '项目年龄准入规则集');
 
     const invalidNamespace = await env.request(`/api/projects/${project.id}/releases`, 'POST', {
       decisionService: 'other/project-age', name: '错误命名空间', description: '',
-      target: { type: 'rule', id: created.id },
+      target: { type: 'flow', id: ruleset.id },
     });
     assert.equal(invalidNamespace.status, 400);
     assert.match(invalidNamespace.body.error, new RegExp(`${project.id}/grain-alarm`));
 
     const release = await env.request(`/api/projects/${project.id}/releases`, 'POST', {
       decisionService: `${project.id}/project-age`, name: '项目规则 Release', description: '冻结项目资产和 BOM',
-      target: { type: 'rule', id: created.id },
+      target: { type: 'flow', id: ruleset.id },
     }, { 'x-actor': 'release-author' });
     assert.equal(release.status, 201);
-    assert.equal(release.body.target.id, created.id);
+    assert.equal(release.body.target.id, ruleset.id);
     assert.equal(release.body.createdBy, 'release-author');
     assert.equal(release.body.model.version, 1);
     assert.equal(release.body.model.fields.find(field => field.key === 'customerAge').factType, 'Borrower');
@@ -736,7 +903,7 @@ test('project Release builds, deploys, executes, and stays isolated from other p
 
     const newerRelease = await env.request(`/api/projects/${project.id}/releases`, 'POST', {
       decisionService: 'project-age', name: '项目规则 Release 2', description: '验证最新版标记',
-      target: { type: 'rule', id: created.id },
+      target: { type: 'flow', id: ruleset.id },
     });
     assert.equal(newerRelease.status, 201);
     assert.equal(newerRelease.body.version, 2);
@@ -834,8 +1001,9 @@ test('project Release rejects execution when a frozen required input is missing'
     assert.equal((await env.request(`/api/projects/${project.id}/rules/${rule.id}/publish`, 'POST', {
       revision: savedRule.revision,
     })).status, 200);
+    const ruleset = await publishProjectRuleset(env, project.id, rule.id, '必填年龄规则集');
     const release = await env.request(`/api/projects/${project.id}/releases`, 'POST', {
-      decisionService: 'required-input', name: '必填字段 Release', target: { type: 'rule', id: rule.id },
+      decisionService: 'required-input', name: '必填字段 Release', target: { type: 'flow', id: ruleset.id },
     });
     assert.equal(release.status, 201);
     assert.equal(release.body.model.fields.find(field => field.key === 'customerAge').required, true);
@@ -879,10 +1047,11 @@ test('project test suites support isolated CRUD, execution, and Release gates', 
     assert.equal((await env.request(`/api/projects/${project.id}/rules/${createdRule.id}/publish`, 'POST', {
       revision: savedRule.revision,
     })).status, 200);
+    const ruleset = await publishProjectRuleset(env, project.id, createdRule.id, '项目年龄准入规则集');
 
     const suitePayload = {
       name: '项目年龄准入回归', description: '项目级必需套件',
-      target: { type: 'rule', id: createdRule.id }, required: true,
+      target: { type: 'flow', id: ruleset.id }, required: true,
       cases: [{
         id: 'underage', name: '未成年客户', enabled: true, facts: { customerAge: 17 },
         expected: { outputs: { riskLevel: '高' }, fired: ['mock 规则 [1]'] },
@@ -891,7 +1060,7 @@ test('project test suites support isolated CRUD, execution, and Release gates', 
     const createdSuite = await env.request(`/api/projects/${project.id}/tests`, 'POST', suitePayload);
     assert.equal(createdSuite.status, 201);
     assert.equal(createdSuite.body.revision, 1);
-    assert.equal(createdSuite.body.targetName, '测试套件年龄准入');
+    assert.equal(createdSuite.body.targetName, '项目年龄准入规则集');
     const suiteId = createdSuite.body.id;
 
     assert.deepEqual((await env.request(`/api/projects/${project.id}/test-suites`)).body.map(item => item.id), [suiteId]);
@@ -909,7 +1078,7 @@ test('project test suites support isolated CRUD, execution, and Release gates', 
     assert.equal(versionRun.body.report.targetVersion, 1);
     const blockedRelease = await env.request(`/api/projects/${project.id}/releases`, 'POST', {
       decisionService: `${project.id}/gated`, name: '应被测试门禁阻止', description: '',
-      target: { type: 'rule', id: createdRule.id },
+      target: { type: 'flow', id: ruleset.id },
     });
     assert.equal(blockedRelease.status, 409);
     assert.equal(blockedRelease.body.gate.suites[0].id, suiteId);
@@ -941,7 +1110,7 @@ test('project test suites support isolated CRUD, execution, and Release gates', 
 
     const release = await env.request(`/api/projects/${project.id}/releases`, 'POST', {
       decisionService: 'gated', name: '测试门禁通过', description: '',
-      target: { type: 'rule', id: createdRule.id },
+      target: { type: 'flow', id: ruleset.id },
     });
     assert.equal(release.status, 201);
     assert.equal(release.body.decisionService, `${project.id}/gated`);
@@ -995,6 +1164,16 @@ test('CEP project supports event-stream publish, suite gate, release and local e
     const published = await env.request(`/api/projects/${projectId}/event-streams/${created.body.id}/publish`, 'POST', { revision: created.body.revision });
     assert.equal(published.status, 200);
     assert.equal(published.body.status, 'published');
+    assert.equal(published.body.hasDraftChanges, false);
+
+    const savedAfterPublish = await env.request(`/api/projects/${projectId}/event-streams/${created.body.id}`, 'PUT', {
+      revision: published.body.revision,
+      draft: { ...published.body.draft, description: '下一版本草稿' },
+    });
+    assert.equal(savedAfterPublish.status, 200);
+    assert.equal(savedAfterPublish.body.hasDraftChanges, true);
+    const streamList = await env.request(`/api/projects/${projectId}/event-streams`);
+    assert.equal(streamList.body.find(item => item.id === created.body.id).hasDraftChanges, true);
 
     const suite = await env.request(`/api/projects/${projectId}/test-suites`, 'POST', {
       name: '高温事件检测', description: '', target: { type: 'event-stream', id: created.body.id }, required: true,

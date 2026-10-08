@@ -43,7 +43,7 @@ export function createProjectRouter({
     data.packageRecords = packageRecords;
     const projectEngine = normalizeProjectEngine(project.engine);
     if (projectEngine === 'cep' && ['rules', 'tables', 'flows', 'rulesets'].includes(segments[3])) {
-      const message = 'CEP 项目不支持规则资产、决策表或规则流';
+      const message = 'CEP 项目不支持规则资产、决策表或规则集';
       return reply(res, req.method === 'GET' ? 404 : 403, { error: message });
     }
     if (projectEngine === 'rules' && segments[3] === 'event-streams') {
@@ -73,13 +73,13 @@ export function createProjectRouter({
       return handleTestSuites(req, res, ['api', 'test-suites', ...segments.slice(4)], projectId, data);
     }
     if (segments.length === 4 && segments[3] === 'releases') {
-      return handleReleases(req, res, ['api', 'releases'], projectId);
+      return handleReleases(req, res, ['api', 'releases'], projectId, true);
     }
     if (segments.length === 6 && segments[3] === 'releases' && ['deploy', 'activate', 'rollback', 'undeploy', 'execute', 'events', 'webhook'].includes(segments[5])) {
-      return handleReleases(req, res, ['api', 'releases', segments[4], segments[5]], projectId);
+      return handleReleases(req, res, ['api', 'releases', segments[4], segments[5]], projectId, true);
     }
     if (segments.length === 6 && segments[3] === 'services' && segments[5] === 'execute') {
-      return handleReleases(req, res, ['api', 'services', segments[4], 'execute'], projectId);
+      return handleReleases(req, res, ['api', 'services', segments[4], 'execute'], projectId, true);
     }
     if (segments[3] === 'rules') {
       return handleProjectRules(req, res, segments, url, projectId, data, packageRecords);

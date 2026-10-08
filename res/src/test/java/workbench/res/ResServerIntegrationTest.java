@@ -63,6 +63,28 @@ final class ResServerIntegrationTest {
     return release;
   }
 
+  private static ObjectNode releaseVersion(String id, int version, ObjectNode model, String drl) throws Exception {
+    ObjectNode release = release(id, model, drl);
+    release.put("version", version);
+    release.put("checksum", ResServer.checksum(release));
+    return release;
+  }
+
+  private static ObjectNode releaseWithSteps(String id, ObjectNode model, String... drls) throws Exception {
+    ObjectNode release = release(id, model, drls[0]);
+    ArrayNode steps = (ArrayNode) release.withArray("steps");
+    steps.removeAll();
+    for (int index = 0; index < drls.length; index++) {
+      steps.addObject()
+          .put("name", "步骤 " + (index + 1))
+          .put("type", "rule")
+          .put("assetVersion", 1)
+          .put("drl", drls[index]);
+    }
+    release.put("checksum", ResServer.checksum(release));
+    return release;
+  }
+
   private static ObjectNode model(String... definitions) {
     ObjectNode model = JSON.createObjectNode();
     model.put("version", 1);
@@ -72,6 +94,19 @@ final class ResServerIntegrationTest {
       fields.addObject().put("key", parts[0]).put("type", parts[1]).put("kind", parts[2]).put("required", parts.length > 3 && Boolean.parseBoolean(parts[3]));
     }
     return model;
+  }
+
+  @Test
+  void checksumIncludesDisplayVersion() throws Exception {
+    ObjectNode release = release("display-version-checksum", model("outcome:String:output:false"), """
+        package workbench
+        declare RuleInput
+          outcome : String
+        end
+        """);
+    String withoutDisplayVersion = ResServer.checksum(release);
+    release.put("displayVersion", "2.1.1");
+    assertNotEquals(withoutDisplayVersion, ResServer.checksum(release));
   }
 
   @Test
@@ -110,6 +145,53 @@ final class ResServerIntegrationTest {
     } finally {
       ObjectNode cleanup = JSON.createObjectNode().put("releaseId", id);
       call("/undeploy", "POST", cleanup, 200);
+    }
+  }
+
+  @Test
+  void decisionServiceExecutesActiveReleaseWithoutReleaseId() throws Exception {
+    String firstId = "service-route-v1";
+    String secondId = "service-route-v2";
+    ObjectNode first = releaseVersion(firstId, 1, model("outcome:String:output:false"), """
+        package workbench
+        declare RuleInput
+          outcome : String
+        end
+        rule "v1" when $i : RuleInput() then modify($i) { setOutcome("v1") } end
+        """);
+    ObjectNode second = releaseVersion(secondId, 2, model("outcome:String:output:false"), """
+        package workbench
+        declare RuleInput
+          outcome : String
+        end
+        rule "v2" when $i : RuleInput() then modify($i) { setOutcome("v2") } end
+        """);
+    first.put("decisionService", "test.service-route");
+    first.put("checksum", ResServer.checksum(first));
+    second.put("decisionService", "test.service-route");
+    second.put("checksum", ResServer.checksum(second));
+    try {
+      call("/deploy", "POST", first, 201);
+      call("/deploy", "POST", second, 201);
+
+      ObjectNode request = JSON.createObjectNode();
+      request.putObject("facts");
+      JsonNode initiallyActive = call("/services/test.service-route/execute", "POST", request, 200);
+      assertEquals(firstId, initiallyActive.path("releaseId").asText());
+      assertEquals("v1", initiallyActive.path("facts").path("outcome").asText());
+
+      ObjectNode activate = JSON.createObjectNode();
+      activate.put("releaseId", secondId).put("decisionService", "test.service-route");
+      call("/activate", "POST", activate, 200);
+
+      ObjectNode serviceRequest = JSON.createObjectNode();
+      serviceRequest.put("decisionService", "test.service-route").putObject("facts");
+      JsonNode switched = call("/execute", "POST", serviceRequest, 200);
+      assertEquals(secondId, switched.path("releaseId").asText());
+      assertEquals("v2", switched.path("facts").path("outcome").asText());
+    } finally {
+      call("/undeploy", "POST", JSON.createObjectNode().put("releaseId", secondId), 200);
+      call("/undeploy", "POST", JSON.createObjectNode().put("releaseId", firstId), 200);
     }
   }
 
@@ -158,6 +240,142 @@ final class ResServerIntegrationTest {
       assertEquals("missing", executed.path("facts").path("outcome").asText(), executed.toPrettyString());
       JsonNode openapi = call("/openapi.json", "GET", null, 200);
       assertTrue(openapi.at("/components/schemas/ReleaseStep/properties/type/enum").toString().contains("rule-group"));
+    } finally {
+      call("/undeploy", "POST", JSON.createObjectNode().put("releaseId", id), 200);
+    }
+  }
+
+  @Test
+  void rulesetVariablesAreScopedToExecuteAndSharedAcrossSteps() throws Exception {
+    String id = "ruleset-variable-it";
+    ObjectNode release = releaseWithSteps(id, model("age:Integer:input:true", "nextAge:Integer:output:false"), """
+        package workbench
+        declare RuleInput
+          age : java.lang.Integer
+          nextAge : java.lang.Integer
+        end
+        declare RuleContext
+          approved : java.lang.Boolean
+        end
+        rule "mark" when
+          $i : RuleInput(age < 18)
+          $c : RuleContext()
+        then
+          modify($c) { setApproved(true) }
+        end
+        """, """
+        package workbench
+        declare RuleInput
+          age : java.lang.Integer
+          nextAge : java.lang.Integer
+        end
+        declare RuleContext
+          approved : java.lang.Boolean
+        end
+        rule "emit" when
+          $i : RuleInput()
+          $c : RuleContext(approved == true)
+        then
+          modify($i) { setNextAge(19) }
+        end
+        """);
+    release.putArray("variables").addObject()
+        .put("name", "approved")
+        .put("label", "已批准")
+        .put("type", "Boolean")
+        .put("defaultValue", false)
+        .putNull("enum")
+        .put("description", "execution-local");
+    release.put("checksum", ResServer.checksum(release));
+    try {
+      call("/deploy", "POST", release, 201);
+
+      ObjectNode request = JSON.createObjectNode();
+      request.put("releaseId", id).putObject("facts").put("age", 17);
+      JsonNode executed = call("/execute", "POST", request, 200);
+      assertTrue(executed.path("variables").path("approved").asBoolean());
+      assertEquals(19, executed.path("facts").path("nextAge").asInt());
+      assertFalse(executed.path("facts").has("approved"));
+      assertTrue(executed.path("trace").get(0).path("variables").path("approved").asBoolean());
+      assertTrue(executed.path("trace").get(1).path("variables").path("approved").asBoolean());
+
+      ObjectNode isolated = JSON.createObjectNode();
+      isolated.put("releaseId", id).putObject("facts").put("age", 20);
+      JsonNode second = call("/execute", "POST", isolated, 200);
+      assertFalse(second.path("variables").path("approved").asBoolean());
+      assertFalse(second.path("facts").has("nextAge"));
+
+      ObjectNode injected = JSON.createObjectNode();
+      injected.put("releaseId", id).putObject("facts").put("age", 20).put("approved", true);
+      assertTrue(call("/execute", "POST", injected, 400).path("error").asText().contains("未知事实字段"));
+    } finally {
+      call("/undeploy", "POST", JSON.createObjectNode().put("releaseId", id), 200);
+    }
+  }
+
+  @Test
+  void rulesetVariablesSurviveSettleRoundsButResetPerRequest() throws Exception {
+    String id = "ruleset-variable-settle-it";
+    ObjectNode release = releaseWithSteps(id, model("phase:String:input:true", "nextPhase:String:output:false", "outcome:String:output:false"), """
+        package workbench
+        declare RuleInput
+          phase : String
+          nextPhase : String
+          outcome : String
+        end
+        declare RuleContext
+          seenA : java.lang.Boolean
+        end
+        rule "mark A" when
+          $i : RuleInput(phase == "A")
+          $c : RuleContext()
+        then
+          modify($c) { setSeenA(true) }
+          modify($i) { setNextPhase("B") }
+        end
+        """, """
+        package workbench
+        declare RuleInput
+          phase : String
+          nextPhase : String
+          outcome : String
+        end
+        declare RuleContext
+          seenA : java.lang.Boolean
+        end
+        rule "finish B after A" when
+          $i : RuleInput(phase == "B")
+          $c : RuleContext(seenA == true)
+        then
+          modify($i) { setOutcome("done") }
+        end
+        """);
+    release.putArray("variables").addObject()
+        .put("name", "seenA")
+        .put("label", "已见 A")
+        .put("type", "Boolean")
+        .put("defaultValue", false)
+        .putNull("enum")
+        .put("description", "settle-round-local");
+    release.put("checksum", ResServer.checksum(release));
+    try {
+      call("/deploy", "POST", release, 201);
+
+      ObjectNode request = JSON.createObjectNode();
+      request.put("releaseId", id).put("settle", true).put("maxRounds", 4).putObject("facts").put("phase", "A");
+      request.putArray("feedbackMappings").addObject().put("source", "nextPhase").put("target", "phase");
+      JsonNode executed = call("/execute", "POST", request, 200);
+      assertEquals("done", executed.path("facts").path("outcome").asText(), executed.toPrettyString());
+      assertTrue(executed.path("variables").path("seenA").asBoolean());
+      assertTrue(executed.path("rounds").get(0).path("variables").path("seenA").asBoolean());
+      assertTrue(executed.path("rounds").get(1).path("variables").path("seenA").asBoolean());
+
+      ObjectNode isolated = JSON.createObjectNode();
+      isolated.put("releaseId", id).put("settle", true).put("maxRounds", 4).putObject("facts").put("phase", "B");
+      isolated.putArray("feedbackMappings").addObject().put("source", "nextPhase").put("target", "phase");
+      JsonNode second = call("/execute", "POST", isolated, 200);
+      assertFalse(second.path("variables").path("seenA").asBoolean());
+      assertFalse(second.path("facts").has("outcome"));
     } finally {
       call("/undeploy", "POST", JSON.createObjectNode().put("releaseId", id), 200);
     }

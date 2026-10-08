@@ -7,6 +7,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.DirectoryStream;
@@ -47,14 +48,17 @@ public final class ResServer {
   private static final int MAX_BODY = 2 * 1024 * 1024;
   private static final int MAX_FIRES_PER_STEP = 100;
   private static final Path DATA_DIR = Path.of(System.getenv().getOrDefault("RES_DATA_DIR", "data/releases"));
+  private static final Path ACTIVE_ROUTES_FILE = DATA_DIR.resolve("active-services.routes");
   private static final Path CONFIG_FILE = Path.of(System.getenv().getOrDefault("RES_CONFIG_FILE", "config/res.properties"));
   private static final int SESSION_POOL_SIZE = loadSessionPoolSize();
   private static final Map<String, Deployment> DEPLOYMENTS = new ConcurrentHashMap<>();
+  private static final Map<String, String> ACTIVE_RELEASES = new ConcurrentHashMap<>();
   private static final Object DEPLOY_LOCK = new Object();
 
   // factTypes: 从编译后 DRL 的 declare RuleInput 反射得到的字段名→Java 类型映射。
   // RES 不保存 BOM 副本，DRL 里的 declare 块就是字段表的冻结快照。
-  private record Deployment(JsonNode release, List<KieContainerSessionsPool> sessionPools, Map<String, Class<?>> factTypes, String deployedAt) {
+  private record Deployment(JsonNode release, List<KieContainerSessionsPool> sessionPools,
+      Map<String, Class<?>> factTypes, Map<String, Class<?>> variableTypes, String deployedAt) {
     void shutdown() {
       for (KieContainerSessionsPool pool : sessionPools) pool.shutdown();
     }
@@ -76,6 +80,7 @@ public final class ResServer {
   public static void main(String[] args) throws IOException {
     Files.createDirectories(DATA_DIR);
     loadDeployments();
+    loadActiveRoutes();
     Runtime.getRuntime().addShutdownHook(new Thread(ResServer::shutdownDeployments));
     int port = Integer.parseInt(System.getenv().getOrDefault("RES_PORT", "8790"));
     startServer(port, true);
@@ -88,8 +93,10 @@ public final class ResServer {
     server.createContext("/health", ResServer::health);
     server.createContext("/deployments", ResServer::listDeployments);
     server.createContext("/deploy", ResServer::deploy);
+    server.createContext("/activate", ResServer::activate);
     server.createContext("/undeploy", ResServer::undeploy);
     server.createContext("/execute", ResServer::execute);
+    server.createContext("/services", ResServer::executeService);
     server.createContext("/openapi.json", ResServer::openapi);
     if (pooledExecutor) server.setExecutor(Executors.newFixedThreadPool(Math.max(4, Runtime.getRuntime().availableProcessors())));
     server.start();
@@ -127,7 +134,8 @@ public final class ResServer {
         "engine", "Drools",
         "version", DROOLS_VERSION,
         "sessionPoolSize", SESSION_POOL_SIZE,
-        "deployments", DEPLOYMENTS.size()));
+        "deployments", DEPLOYMENTS.size(),
+        "activeServices", ACTIVE_RELEASES.size()));
   }
 
   private static void listDeployments(HttpExchange exchange) throws IOException {
@@ -147,9 +155,15 @@ public final class ResServer {
     info.put("title", "Decision Workbench Rule Execution Server");
     info.put("version", "1.0.0");
     ObjectNode paths = root.putObject("paths");
-    for (String path : List.of("/deploy", "/undeploy", "/execute")) {
+    for (String path : List.of("/deploy", "/activate", "/undeploy", "/execute", "/services/{decisionService}/execute")) {
       ObjectNode operation = paths.putObject(path).putObject("post");
-      operation.put("summary", switch (path) { case "/deploy" -> "部署冻结 Release"; case "/undeploy" -> "卸载 Release"; default -> "执行 Release，支持可选多轮收敛"; });
+      operation.put("summary", switch (path) {
+        case "/deploy" -> "部署冻结 Release";
+        case "/activate" -> "切换决策服务当前生效 Release";
+        case "/undeploy" -> "卸载 Release";
+        case "/services/{decisionService}/execute" -> "按稳定决策服务标识执行当前生效 Release";
+        default -> "按 Release ID 或 decisionService 执行，支持可选多轮收敛";
+      });
       operation.putObject("responses").putObject("200").put("description", "成功");
     }
     paths.putObject("/deployments").putObject("get").putObject("responses").putObject("200").put("description", "已部署 Release 列表");
@@ -182,6 +196,7 @@ public final class ResServer {
         if (!existing.release().path("checksum").asText().equals(release.path("checksum").asText())) {
           send(exchange, 409, Map.of("error", "相同 Release ID 已存在不同内容")); return;
         }
+        activateFirstDeployment(existing.release());
         send(exchange, 200, deploymentResponse(existing.release(), existing.deployedAt())); return;
       }
 
@@ -195,7 +210,31 @@ public final class ResServer {
         throw exception;
       }
       DEPLOYMENTS.put(id, deployment);
+      activateFirstDeployment(release);
       send(exchange, 201, deploymentResponse(release, deployment.deployedAt()));
+    }
+  }
+
+  private static void activate(HttpExchange exchange) throws IOException {
+    if (!method(exchange, "POST")) return;
+    JsonNode request;
+    try { request = readBody(exchange); }
+    catch (IllegalArgumentException exception) { send(exchange, 400, Map.of("error", exception.getMessage())); return; }
+    String releaseId = request.path("releaseId").asText("");
+    synchronized (DEPLOY_LOCK) {
+      Deployment deployment = DEPLOYMENTS.get(releaseId);
+      if (deployment == null) { send(exchange, 404, Map.of("error", "Release 未部署")); return; }
+      String decisionService = deployment.release().path("decisionService").asText();
+      String requestedService = request.path("decisionService").asText(decisionService);
+      if (!decisionService.equals(requestedService)) { send(exchange, 409, Map.of("error", "Release 不属于指定决策服务")); return; }
+      ACTIVE_RELEASES.put(decisionService, releaseId);
+      persistActiveRoutes();
+      send(exchange, 200, Map.of(
+          "ok", true,
+          "decisionService", decisionService,
+          "releaseId", releaseId,
+          "version", deployment.release().path("version").asInt(),
+          "activatedAt", Instant.now().toString()));
     }
   }
 
@@ -210,6 +249,8 @@ public final class ResServer {
     synchronized (DEPLOY_LOCK) {
       Deployment deployment = DEPLOYMENTS.remove(releaseId);
       Files.deleteIfExists(DATA_DIR.resolve(releaseId + ".json"));
+      ACTIVE_RELEASES.entrySet().removeIf(entry -> releaseId.equals(entry.getValue()));
+      persistActiveRoutes();
       if (deployment != null) deployment.shutdown();
       send(exchange, 200, Map.of(
           "ok", true,
@@ -221,11 +262,43 @@ public final class ResServer {
 
   private static void execute(HttpExchange exchange) throws IOException {
     if (!method(exchange, "POST")) return;
-    long started = System.nanoTime();
     JsonNode request;
     try { request = readBody(exchange); }
     catch (IllegalArgumentException exception) { send(exchange, 400, Map.of("error", exception.getMessage())); return; }
+    executeRequest(exchange, request, System.nanoTime());
+  }
+
+  private static void executeService(HttpExchange exchange) throws IOException {
+    if (!method(exchange, "POST")) return;
+    String path = exchange.getRequestURI().getRawPath();
+    String prefix = "/services/";
+    String suffix = "/execute";
+    if (!path.startsWith(prefix) || !path.endsWith(suffix) || path.length() <= prefix.length() + suffix.length()) {
+      send(exchange, 404, Map.of("error", "决策服务执行路径无效")); return;
+    }
+    String encodedService = path.substring(prefix.length(), path.length() - suffix.length());
+    String decisionService;
+    try { decisionService = URLDecoder.decode(encodedService, StandardCharsets.UTF_8); }
+    catch (IllegalArgumentException exception) { send(exchange, 400, Map.of("error", "决策服务标识无效")); return; }
+    JsonNode body;
+    try { body = readBody(exchange); }
+    catch (IllegalArgumentException exception) { send(exchange, 400, Map.of("error", exception.getMessage())); return; }
+    if (!body.isObject()) { send(exchange, 400, Map.of("error", "请求体必须是对象")); return; }
+    ObjectNode request = ((ObjectNode) body).deepCopy();
+    request.put("decisionService", decisionService);
+    executeRequest(exchange, request, System.nanoTime());
+  }
+
+  private static void executeRequest(HttpExchange exchange, JsonNode request, long started) throws IOException {
     String releaseId = request.path("releaseId").asText("");
+    if (releaseId.isBlank()) {
+      String decisionService = request.path("decisionService").asText("");
+      if (!decisionService.matches("[a-z0-9][a-z0-9._/-]{2,79}")) {
+        send(exchange, 400, Map.of("error", "必须提供有效的 releaseId 或 decisionService")); return;
+      }
+      releaseId = ACTIVE_RELEASES.getOrDefault(decisionService, "");
+      if (releaseId.isBlank()) { send(exchange, 404, Map.of("error", "决策服务没有当前生效 Release")); return; }
+    }
     Deployment deployment = DEPLOYMENTS.get(releaseId);
     if (deployment == null) { send(exchange, 404, Map.of("error", "Release 未部署")); return; }
     JsonNode input = request.path("facts");
@@ -234,6 +307,9 @@ public final class ResServer {
     if (requiredError != null) { send(exchange, 400, Map.of("error", requiredError)); return; }
     Map<String, Object> facts;
     try { facts = parseFacts(input, deployment.factTypes()); }
+    catch (IllegalArgumentException exception) { send(exchange, 400, Map.of("error", exception.getMessage())); return; }
+    Map<String, Object> variables;
+    try { variables = defaultVariables(deployment.release().path("variables")); }
     catch (IllegalArgumentException exception) { send(exchange, 400, Map.of("error", exception.getMessage())); return; }
 
     boolean settle = request.path("settle").asBoolean(false);
@@ -252,7 +328,7 @@ public final class ResServer {
     int roundLimit = settle ? maxRounds : 1;
     try {
       for (int round = 1; round <= roundLimit; round++) {
-        RoundResult result = executeRound(deployment, facts);
+        RoundResult result = executeRound(deployment, facts, variables);
         trace.addAll(result.trace());
         total += result.count();
         limitReached = result.limitReached();
@@ -265,6 +341,7 @@ public final class ResServer {
         roundItem.put("round", round);
         roundItem.put("count", result.count());
         roundItem.put("facts", new LinkedHashMap<>(facts));
+        roundItem.put("variables", new LinkedHashMap<>(variables));
         roundItem.put("trace", result.trace());
         roundItem.put("feedback", feedback);
         if (result.path() != null) roundItem.put("path", result.path());
@@ -283,6 +360,7 @@ public final class ResServer {
       failedStep.put("assetVersion", failure.step == null ? null : failure.step.path("assetVersion").asInt());
       response.put("failedStep", failedStep);
       response.put("facts", facts);
+      response.put("variables", variables);
       response.put("trace", failure.trace);
       send(exchange, 500, response); return;
     }
@@ -296,6 +374,7 @@ public final class ResServer {
     response.put("decisionService", deployment.release().path("decisionService").asText());
     response.put("version", deployment.release().path("version").asInt());
     response.put("facts", facts);
+    response.put("variables", variables);
     response.put("trace", trace);
     if (finalPath != null) response.put("path", finalPath);
     if (settle) response.put("rounds", rounds);
@@ -305,7 +384,8 @@ public final class ResServer {
     send(exchange, 200, response);
   }
 
-  private static RoundResult executeRound(Deployment deployment, Map<String, Object> facts) throws RoundFailure {
+  private static RoundResult executeRound(Deployment deployment, Map<String, Object> facts,
+      Map<String, Object> variables) throws RoundFailure {
     ArrayList<Map<String, Object>> trace = new ArrayList<>();
     int total = 0;
     boolean limitReached = false;
@@ -356,6 +436,19 @@ public final class ResServer {
             if (!entry.getValue().isPrimitive() && !facts.containsKey(entry.getKey())) type.set(fact, entry.getKey(), null);
           }
           for (Map.Entry<String, Object> entry : facts.entrySet()) type.set(fact, entry.getKey(), entry.getValue());
+          FactType contextType = session.getKieBase().getFactType("workbench", "RuleContext");
+          Object context = null;
+          if (contextType != null) {
+            context = contextType.newInstance();
+            Set<String> contextFields = new HashSet<>();
+            for (FactField field : contextType.getFields()) contextFields.add(field.getName());
+            for (Map.Entry<String, Object> entry : variables.entrySet()) {
+              if (contextFields.contains(entry.getKey())) {
+                contextType.set(context, entry.getKey(), entry.getValue());
+              }
+            }
+            session.insert(context);
+          }
           List<String> fired = new ArrayList<>();
           session.addEventListener(new DefaultAgendaEventListener() {
             @Override public void afterMatchFired(AfterMatchFiredEvent event) {
@@ -371,6 +464,13 @@ public final class ResServer {
             Object value = type.get(fact, key);
             if (value != null) facts.put(key, value);
           }
+          if (context != null) {
+            for (FactField field : contextType.getFields()) {
+              String key = field.getName();
+              Object value = contextType.get(context, key);
+              if (value != null) variables.put(key, value);
+            }
+          }
           List<Map<String, Object>> outputMappings = applyMappings(step.path("outputMappings"), facts);
           Map<String, Object> item = new LinkedHashMap<>();
           item.put("name", step.path("name").asText());
@@ -381,6 +481,7 @@ public final class ResServer {
           item.put("decisionHits", decisionHits);
           item.put("count", count);
           item.put("facts", new LinkedHashMap<>(facts));
+          item.put("variables", new LinkedHashMap<>(variables));
           Map<String, Object> mappings = new LinkedHashMap<>();
           mappings.put("inputs", inputMappings);
           mappings.put("outputs", outputMappings);
@@ -479,10 +580,21 @@ public final class ResServer {
   private static Deployment buildDeployment(JsonNode release, String deployedAt) throws CompileFailure {
     List<KieContainer> containers = compile(release);
     Map<String, Class<?>> factTypes = reflectFactTypes(containers.get(0));
+    Map<String, Class<?>> variableTypes = new LinkedHashMap<>();
+    for (KieContainer container : containers) {
+      for (Map.Entry<String, Class<?>> entry : reflectVariableTypes(container).entrySet()) {
+        Class<?> previous = variableTypes.putIfAbsent(entry.getKey(), entry.getValue());
+        if (previous != null && !previous.equals(entry.getValue())) {
+          throw new CompileFailure(List.of("规则集变量在步骤间类型不一致：" + entry.getKey()));
+        }
+      }
+    }
+    List<String> variableErrors = validateVariableTypes(release.path("variables"), variableTypes);
+    if (!variableErrors.isEmpty()) throw new CompileFailure(variableErrors);
     List<KieContainerSessionsPool> pools = containers.stream()
         .map(container -> container.newKieSessionsPool(SESSION_POOL_SIZE))
         .toList();
-    return new Deployment(release.deepCopy(), pools, factTypes, deployedAt);
+    return new Deployment(release.deepCopy(), pools, factTypes, variableTypes, deployedAt);
   }
 
   private static List<KieContainer> compile(JsonNode release) throws CompileFailure {
@@ -514,12 +626,49 @@ public final class ResServer {
       if (!model.isObject() || !model.path("version").canConvertToInt() || model.path("version").asInt() < 1
           || !model.path("fields").isArray() || model.path("fields").isEmpty()) return "发布包字段模型无效";
     }
+    JsonNode variables = release.path("variables");
+    if (!variables.isMissingNode()) {
+      if (!variables.isArray() || variables.size() > 50) return "发布包规则集变量无效";
+      Set<String> names = new HashSet<>();
+      Set<String> modelKeys = new HashSet<>();
+      for (JsonNode field : release.path("model").path("fields")) modelKeys.add(field.path("key").asText());
+      for (JsonNode variable : variables) {
+        String name = variable.path("name").asText("");
+        String type = variable.path("type").asText("");
+        if (!name.matches("[a-z][a-zA-Z0-9_]{1,31}") || !names.add(name)
+            || !List.of("Integer", "Double", "Boolean", "String").contains(type)
+            || modelKeys.contains(name)
+            || !variable.path("label").isTextual() || variable.path("label").asText().isBlank()
+            || variable.path("label").asText().length() > 40
+            || variable.path("description").asText("").length() > 200) {
+          return "发布包规则集变量无效";
+        }
+        JsonNode defaultValue = variable.path("defaultValue");
+        boolean validDefault = switch (type) {
+          case "Integer" -> defaultValue.isIntegralNumber() && defaultValue.canConvertToInt();
+          case "Double" -> defaultValue.isNumber() && Double.isFinite(defaultValue.doubleValue());
+          case "Boolean" -> defaultValue.isBoolean();
+          case "String" -> defaultValue.isTextual() && defaultValue.asText().length() <= 200;
+          default -> false;
+        };
+        if (!validDefault) return "发布包规则集变量默认值无效";
+        JsonNode enumValues = variable.path("enum");
+        if (!enumValues.isMissingNode() && !enumValues.isNull()) {
+          if (!"String".equals(type) || !enumValues.isArray() || enumValues.isEmpty() || enumValues.size() > 50) return "发布包规则集变量枚举定义无效";
+          Set<String> enumSet = new HashSet<>();
+          for (JsonNode value : enumValues) {
+            if (!value.isTextual() || value.asText().isBlank() || !enumSet.add(value.asText())) return "发布包规则集变量枚举定义无效";
+          }
+          if (!enumSet.contains(defaultValue.asText())) return "发布包规则集变量默认值不在枚举范围内";
+        }
+      }
+    }
     JsonNode steps = release.path("steps");
     if (!steps.isArray() || steps.isEmpty() || steps.size() > 20) return "发布包步骤数量无效";
     int totalDrl = 0;
     for (JsonNode step : steps) {
       if (!step.path("name").isTextual() || step.path("name").asText().isBlank()) return "发布包步骤名称无效";
-      // rule-group 是规则流里的"整包执行"步骤：快照已把成员规则合成为完整 DRL，
+      // rule-group 是规则集里的"整包执行"步骤：快照已把成员规则合成为完整 DRL，
       // 执行方式与 rule/table 完全相同，因此这里只需放行类型。
       if (!List.of("rule", "table", "rule-group").contains(step.path("type").asText())) return "发布包步骤类型无效";
       if (!step.path("drl").isTextual() || step.path("drl").asText().length() > 200_000) return "发布包 DRL 无效或过大";
@@ -596,8 +745,10 @@ public final class ResServer {
     for (String key : List.of("schemaVersion", "decisionService", "version", "name", "description", "target", "engine", "steps")) {
       content.set(key, release.get(key));
     }
+    if (release.has("displayVersion")) content.set("displayVersion", release.get("displayVersion"));
     if (release.has("model")) content.set("model", release.get("model"));
     if (release.has("routing")) content.set("routing", release.get("routing"));
+    if (release.has("variables")) content.set("variables", release.get("variables"));
     byte[] bytes = JSON.writeValueAsBytes(canonical(content));
     return "sha256:" + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
   }
@@ -651,6 +802,33 @@ public final class ResServer {
     return map;
   }
 
+  private static Map<String, Class<?>> reflectVariableTypes(KieContainer container) {
+    FactType type = container.getKieBase().getFactType("workbench", "RuleContext");
+    Map<String, Class<?>> map = new LinkedHashMap<>();
+    if (type == null) return map;
+    for (FactField field : type.getFields()) map.put(field.getName(), field.getType());
+    return map;
+  }
+
+  private static List<String> validateVariableTypes(JsonNode definitions, Map<String, Class<?>> variableTypes) {
+    List<String> errors = new ArrayList<>();
+    if (!definitions.isArray()) return errors;
+    for (JsonNode definition : definitions) {
+      String name = definition.path("name").asText();
+      Class<?> actual = variableTypes.get(name);
+      Class<?> expected = switch (definition.path("type").asText()) {
+        case "Integer" -> Integer.class;
+        case "Double" -> Double.class;
+        case "Boolean" -> Boolean.class;
+        case "String" -> String.class;
+        default -> null;
+      };
+      if (actual == null) errors.add("规则集变量缺少 RuleContext 字段：" + name);
+      else if (expected != null && !expected.equals(actual)) errors.add("规则集变量类型与 DRL 不一致：" + name);
+    }
+    return errors;
+  }
+
   /**
    * 按 FactType 声明的类型 coerce 调用方传入的 facts。
    * 未知 key 拒绝；类型不匹配拒绝。
@@ -669,6 +847,26 @@ public final class ResServer {
       facts.put(key, typed);
     }
     return facts;
+  }
+
+  private static Map<String, Object> defaultVariables(JsonNode definitions) {
+    Map<String, Object> variables = new LinkedHashMap<>();
+    if (!definitions.isArray()) return variables;
+    for (JsonNode definition : definitions) {
+      String name = definition.path("name").asText();
+      String type = definition.path("type").asText();
+      JsonNode value = definition.path("defaultValue");
+      Object typed = switch (type) {
+        case "Integer" -> value.isIntegralNumber() && value.canConvertToInt() ? value.intValue() : null;
+        case "Double" -> value.isNumber() && Double.isFinite(value.doubleValue()) ? value.doubleValue() : null;
+        case "Boolean" -> value.isBoolean() ? value.booleanValue() : null;
+        case "String" -> value.isTextual() ? value.asText() : null;
+        default -> null;
+      };
+      if (typed == null) throw new IllegalArgumentException("规则集变量默认值无效：" + name);
+      variables.put(name, typed);
+    }
+    return variables;
   }
 
   private static String requiredFactError(JsonNode release, JsonNode input) {
@@ -711,6 +909,22 @@ public final class ResServer {
     catch (AtomicMoveNotSupportedException exception) { Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING); }
   }
 
+  private static void activateFirstDeployment(JsonNode release) throws IOException {
+    String decisionService = release.path("decisionService").asText();
+    if (ACTIVE_RELEASES.putIfAbsent(decisionService, release.path("id").asText()) == null) persistActiveRoutes();
+  }
+
+  private static void persistActiveRoutes() throws IOException {
+    if (ACTIVE_RELEASES.isEmpty()) {
+      Files.deleteIfExists(ACTIVE_ROUTES_FILE);
+      return;
+    }
+    Path temporary = DATA_DIR.resolve("active-services." + ProcessHandle.current().pid() + ".tmp");
+    JSON.writerWithDefaultPrettyPrinter().writeValue(temporary.toFile(), new TreeMap<>(ACTIVE_RELEASES));
+    try { Files.move(temporary, ACTIVE_ROUTES_FILE, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING); }
+    catch (AtomicMoveNotSupportedException exception) { Files.move(temporary, ACTIVE_ROUTES_FILE, StandardCopyOption.REPLACE_EXISTING); }
+  }
+
   private static void loadDeployments() throws IOException {
     try (DirectoryStream<Path> files = Files.newDirectoryStream(DATA_DIR, "*.json")) {
       for (Path file : files) {
@@ -728,6 +942,29 @@ public final class ResServer {
     }
   }
 
+  private static void loadActiveRoutes() throws IOException {
+    if (Files.isRegularFile(ACTIVE_ROUTES_FILE)) {
+      JsonNode routes = JSON.readTree(ACTIVE_ROUTES_FILE.toFile());
+      routes.fields().forEachRemaining(entry -> {
+        Deployment deployment = DEPLOYMENTS.get(entry.getValue().asText());
+        if (deployment != null && entry.getKey().equals(deployment.release().path("decisionService").asText())) {
+          ACTIVE_RELEASES.put(entry.getKey(), entry.getValue().asText());
+        }
+      });
+      return;
+    }
+    Map<String, Deployment> latest = new HashMap<>();
+    for (Deployment deployment : DEPLOYMENTS.values()) {
+      String service = deployment.release().path("decisionService").asText();
+      Deployment previous = latest.get(service);
+      if (previous == null || deployment.release().path("version").asInt() > previous.release().path("version").asInt()) latest.put(service, deployment);
+    }
+    for (Map.Entry<String, Deployment> entry : latest.entrySet()) {
+      ACTIVE_RELEASES.put(entry.getKey(), entry.getValue().release().path("id").asText());
+    }
+    if (!ACTIVE_RELEASES.isEmpty()) persistActiveRoutes();
+  }
+
   private static Map<String, Object> deploymentSummary(JsonNode release, String deployedAt) {
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("deploymentId", "local:" + release.path("id").asText());
@@ -740,6 +977,7 @@ public final class ResServer {
     result.put("steps", release.path("steps").size());
     result.put("sessionPoolSize", SESSION_POOL_SIZE);
     result.put("deployedAt", deployedAt);
+    result.put("active", release.path("id").asText().equals(ACTIVE_RELEASES.get(release.path("decisionService").asText())));
     return result;
   }
 

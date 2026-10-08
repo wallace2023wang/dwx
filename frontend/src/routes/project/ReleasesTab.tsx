@@ -1,6 +1,6 @@
 import { CheckCircle2, CircleStop, History, LoaderCircle, Plus, Power, Rocket, RotateCcw, Server } from 'lucide-react'
 import { Fragment, useMemo, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { useActivateRelease, useConfigureReleaseWebhook, useCreateRelease, useDeployRelease, useReleases, useRollbackRelease, useUndeployRelease } from '../../api/releases'
 import { useRulesets } from '../../api/flows'
 import { usePackages, useProject } from '../../api/projects'
@@ -41,6 +41,7 @@ function suggestedVersion(releases: ReleaseRecord[]) {
 
 export default function ReleasesTab() {
   const { projectId } = useParams()
+  const navigate = useNavigate()
   const { data: project } = useProject(projectId)
   const isCepProject = project?.engine === 'cep'
   const { data: releases = [], isPending } = useReleases(projectId)
@@ -79,22 +80,24 @@ export default function ReleasesTab() {
         }))
       return assets.length ? [{ id: '__event_streams__', name: '事件流', label: '可发布事件流', assets }] : []
     }
-    const publishedPackages = packages
-      .map(packageNode => ({ ...packageNode, assets: packageNode.assets.filter(asset => asset.status === 'published') }))
-      .filter(packageNode => packageNode.assets.length)
-    const flows = rulesets.filter(ruleset => ruleset.status === 'published').map(ruleset => ({
+    const flows = rulesets.filter(ruleset => (ruleset.version || 0) > 0).map(ruleset => ({
       id: ruleset.id,
       name: ruleset.flowName,
       type: 'flow' as const,
       modifiedBy: 'Team Server',
       status: 'published' as const,
       version: String(ruleset.version || 1),
+      needsRepublish: ruleset.needsRepublish,
+      outdatedDependencies: ruleset.outdatedDependencies,
     }))
-    return flows.length ? [...publishedPackages, { id: '__flows__', name: '规则流', label: '可执行流程', assets: flows }] : publishedPackages
+    return [{ id: '__flows__', name: '规则集', label: '最小发布与执行单元', assets: flows }]
   }, [eventStreams, isCepProject, packages, rulesets, serverProject])
 
   const build = async (draft: ReleaseDraft, assetSummary: string) => {
-    const target = releasePackages.flatMap(packageNode => packageNode.assets).find(asset => asset.id === draft.assetIds[0])
+    const selected = releasePackages.flatMap(packageNode => packageNode.assets).find(asset => asset.id === draft.assetIds[0])
+    const targetType = selected?.type === 'decision-table' ? 'table' : selected?.type
+    const previous = releases.find(release => release.target?.id === selected?.id && release.target?.type === targetType)
+    const target = selected ? { ...selected, decisionService: previous?.decisionService } : undefined
     const release = await createRelease.mutateAsync({ draft, assetSummary, target })
     setCreatedVersion(release.version)
     setShowWizard(false)
@@ -125,6 +128,7 @@ export default function ReleasesTab() {
           isBuilding={createRelease.isPending}
           buildError={createRelease.error?.message}
           singleTarget={serverProject}
+          onRepublishTarget={targetId => navigate(`/projects/${encodeURIComponent(projectId ?? '')}/flow?flow=${encodeURIComponent(targetId)}`)}
           onCancel={() => { setShowWizard(false); createRelease.reset() }}
           onBuild={build}
         />
@@ -139,12 +143,12 @@ export default function ReleasesTab() {
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-base font-medium"><History size={17} />发布历史</h1>
-          <p className="mt-0.5 text-[11px] text-ink-3">每次发布冻结 {isCepProject ? 'EPL、事件 schema、BOM' : 'DRL、BOM、规则流'} 和校验和，构建后不可修改</p>
+          <p className="mt-0.5 text-[11px] text-ink-3">每次发布冻结 {isCepProject ? 'EPL、事件 schema、BOM' : 'DRL、BOM、规则集'} 和校验和，构建后不可修改</p>
         </div>
         <button type="button" className="primary-button" onClick={() => { setCreatedVersion(''); setShowWizard(true) }}><Plus size={14} />构建新 Release</button>
       </div>
 
-      {createdVersion && <div className="mb-3 flex items-center gap-2 rounded-[3px] border border-[#c8e6c9] bg-[#f4fbf4] px-3 py-2 text-[11px] text-env-production"><CheckCircle2 size={14} />Release v{createdVersion} 构建成功，已加入发布历史。</div>}
+      {createdVersion && <div className="mb-3 flex items-center gap-2 rounded-[3px] border border-[#c8e6c9] bg-[#f4fbf4] px-3 py-2 text-[11px] text-env-production"><CheckCircle2 size={14} />Release v{createdVersion} 构建成功，尚未影响运行流量。请点击“部署”；若已有当前生效版本，部署后还需点击“激活”。</div>}
       {releaseOperationError && <div className="mb-3 rounded-[3px] border border-[#ffcdd2] bg-[#fff5f5] px-3 py-2 text-[11px] text-[#c62828]">{releaseOperationError.message}</div>}
 
       <section className="overflow-hidden rounded-[3px] border border-ink-border bg-white" aria-label="Release 发布历史">
@@ -154,7 +158,7 @@ export default function ReleasesTab() {
             <tbody>{releases.map((release) => (
               <Fragment key={release.id}>
               <tr className="border-b border-[#e8e8e8] last:border-0 hover:bg-[#f0f6fc]">
-                <td className="px-[10px] py-2"><span className="font-mono text-brand-primary">v{release.version}</span>{release.latestForDecisionService && <span className="ml-1.5 bg-brand-primary-l px-1.5 py-0.5 text-[9px] text-brand-primary">最新</span>}{release.name && <span className="mt-0.5 block text-[11px] text-ink-1">{release.name}</span>}{release.decisionService && <span className="block font-mono text-[9px] text-ink-3">{release.decisionService}</span>}</td>
+                <td className="px-[10px] py-2"><span className="font-mono text-brand-primary">v{release.version}</span>{release.latestForDecisionService && <span className="ml-1.5 bg-brand-primary-l px-1.5 py-0.5 text-[9px] text-brand-primary">最新</span>}{release.target?.type && <span className={`ml-1.5 px-1.5 py-0.5 text-[9px] ${release.target.type === 'flow' ? 'bg-[#e8f5e9] text-env-production' : 'bg-[#fff3e0] text-[#b26a00]'}`}>{release.target.type === 'flow' ? '规则集服务' : release.target.type === 'event-stream' ? '事件流服务' : '独立资产服务'}</span>}{release.name && <span className="mt-0.5 block text-[11px] text-ink-1">{release.name}</span>}{release.decisionService && <span className="block font-mono text-[9px] text-ink-3">{release.decisionService}</span>}</td>
                 <td className="px-[10px] py-2"><div className="flex flex-wrap items-center gap-1">{release.environments.map((environment) => <span key={environment} className={`rounded-[2px] px-2 py-0.5 text-[10px] ${release.state === 'stopped' ? 'bg-[#eeeeee] text-ink-3' : environmentClasses[environment]}`}>{environment}</span>)}{release.shadow && <span className="rounded-[2px] bg-[#f3e5f5] px-2 py-0.5 text-[10px] text-env-dev">Shadow</span>}<span className={`ml-1 text-[11px] ${release.state === 'active' ? 'font-semibold text-env-production' : 'text-ink-2'}`}>{stateLabels[release.state]}</span></div></td>
                 <td className="px-[10px] py-2">{release.engine === 'cep' && <span className="mr-1.5 bg-[#e8f5e9] px-1.5 py-0.5 text-[9px] text-env-production">CEP</span>}{release.assetSummary}</td>
                 <td className="px-[10px] py-2 font-mono text-[10px] text-ink-3">{release.checksum}</td>
@@ -207,7 +211,7 @@ export default function ReleasesTab() {
       <section className="mt-[14px] rounded-[3px] border border-ink-border bg-white px-4 py-3">
         <h2 className="flex items-center gap-2 text-xs font-semibold"><Server size={15} className="text-brand-primary" />{isCepProject ? 'CEP Runtime 部署目标' : 'RES 部署目标'}</h2>
         <p className="mt-2 text-[11px] text-ink-3">{serverProject ? `local 连接当前${isCepProject ? ' CEP adapter' : ' RES'} · 构建完成后手动部署 · 相同 Release 重复部署保持幂等` : 'production 连接 RES 集群 · Shadow 影子运行不写业务状态 · 部署必须由发布审核与部署角色共同批准'}</p>
-        {serverProject && activeReleases.length > 0 && <div className="mt-2 border-t border-ink-border pt-2 text-[11px]"><span className="font-semibold text-ink-2">稳定执行入口</span><div className="mt-1.5 space-y-1.5">{activeReleases.map(release => <div key={release.id} className="flex flex-wrap items-center gap-2"><code className="bg-[#f4f4f4] px-2 py-1 font-mono text-[10px] text-ink-1">POST {release.stableEndpoint}</code><span className="text-ink-3">当前路由至 v{release.version}</span></div>)}</div></div>}
+        {serverProject && activeReleases.length > 0 && <div className="mt-2 border-t border-ink-border pt-2 text-[11px]"><span className="font-semibold text-ink-2">稳定执行入口</span><div className="mt-1.5 space-y-1.5">{activeReleases.map(release => <div key={release.id} className="flex flex-wrap items-center gap-2"><code className="bg-[#f4f4f4] px-2 py-1 font-mono text-[10px] text-ink-1">POST {release.stableEndpoint}</code><span className="text-ink-3">{release.engine === 'rules' ? '生产应用直连 RES' : '通过项目服务入口调用'}，当前路由至 v{release.version}</span></div>)}</div></div>}
       </section>
     </div>
   )

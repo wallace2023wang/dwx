@@ -83,7 +83,7 @@ test('RTS-REL-05: 发布时每一步都经过 Drools 编译门禁', async () => 
   } finally { await env.stop(); }
 });
 
-test('RTS-REL-06: 规则流 Release 冻结每一步的版本和 DRL', async () => {
+test('RTS-REL-06: 规则集 Release 冻结每一步的版本和 DRL', async () => {
   const env = await startTestEnv();
   try {
     const rule = await publishOne(env, 'rules');
@@ -103,6 +103,36 @@ test('RTS-REL-06: 规则流 Release 冻结每一步的版本和 DRL', async () =
     assert.equal(release.body.steps[1].type, 'table');
     assert.equal(release.body.steps[0].assetVersion, 1);
     assert.ok(release.body.steps.every(s => s.drl.includes('package workbench')));
+  } finally { await env.stop(); }
+});
+
+test('RTS-REL-06A: 依赖规则升版后必须重新发布规则集才能构建 Release', async () => {
+  const env = await startTestEnv();
+  try {
+    let rule = await publishOne(env, 'rules');
+    const flow = (await env.request('/api/flows', 'POST')).body;
+    await env.request(`/api/flows/${flow.id}`, 'PUT', {
+      ...flow.draft, steps: [{ type: 'rule', id: rule.id }],
+    });
+    await env.request(`/api/flows/${flow.id}/publish`, 'POST');
+
+    rule = (await env.request(`/api/rules/${rule.id}/publish`, 'POST')).body;
+    assert.equal(rule.versions.at(-1).number, 2);
+
+    const rejected = await env.request('/api/releases', 'POST', {
+      decisionService: 'default/flow-stale', version: '2.1.2', name: '过期规则集发布', target: { type: 'flow', id: flow.id },
+    });
+    assert.equal(rejected.status, 409);
+    assert.equal(rejected.body.code, 'FLOW_DEPENDENCIES_OUTDATED');
+    assert.match(rejected.body.error, /重新发布规则集/);
+
+    await env.request(`/api/flows/${flow.id}/publish`, 'POST');
+    const created = await env.request('/api/releases', 'POST', {
+      decisionService: 'default/flow-stale', version: '2.1.2', name: '最新规则集发布', target: { type: 'flow', id: flow.id },
+    });
+    assert.equal(created.status, 201);
+    assert.equal(created.body.displayVersion, '2.1.2');
+    assert.equal(created.body.steps[0].assetVersion, 2);
   } finally { await env.stop(); }
 });
 
@@ -163,7 +193,7 @@ test('RTS-REL-09: BOM 升级后 Release 仍复用资产发布时的模型和 DRL
   } finally { await env.stop(); }
 });
 
-test('RTS-REL-10: 规则流拒绝组合不同 BOM 版本的资产', async () => {
+test('RTS-REL-10: 规则集拒绝组合不同 BOM 版本的资产', async () => {
   const env = await startTestEnv();
   try {
     let rule = await publishOne(env, 'rules');
@@ -193,7 +223,7 @@ test('RTS-REL-11: 同服务多版本部署、激活、稳定入口、回退和�
   const env = await startTestEnv();
   try {
     const rule = await publishOne(env, 'rules');
-    const create = name => env.request('/api/projects/default/releases', 'POST', {
+    const create = name => env.request('/api/releases', 'POST', {
       decisionService: 'default/credit-active', name, target: { type: 'rule', id: rule.id },
     });
     const v1 = await create('信用决策 v1');
@@ -219,6 +249,9 @@ test('RTS-REL-11: 同服务多版本部署、激活、稳定入口、回退和�
     assert.equal(activated.status, 200);
     assert.equal(activated.body.deployments[0].status, 'active');
     assert.equal(activated.body.rollbackAvailable, true);
+    assert.deepEqual(env.resCalls.at(-1), {
+      path: '/activate', body: { releaseId: v2.body.id, decisionService: 'default/credit-active' },
+    });
     stable = await env.request('/api/projects/default/services/credit-active/execute', 'POST', { facts: {} });
     assert.equal(stable.status, 200);
     assert.equal(env.resCalls.at(-1).body.releaseId, v2.body.id);
@@ -231,6 +264,9 @@ test('RTS-REL-11: 同服务多版本部署、激活、稳定入口、回退和�
     assert.equal(rolledBack.status, 200);
     assert.equal(rolledBack.body.id, v1.body.id);
     assert.equal(rolledBack.body.deployments[0].status, 'active');
+    assert.deepEqual(env.resCalls.at(-1), {
+      path: '/activate', body: { releaseId: v1.body.id, decisionService: 'default/credit-active' },
+    });
 
     const stopped = await env.request(`/api/projects/default/releases/${v2.body.id}/undeploy`, 'POST', { environment: 'local' });
     assert.equal(stopped.status, 200);

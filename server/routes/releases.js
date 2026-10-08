@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { buildRelease, validateReleaseRequest } from '../../shared/releases.js';
 import { validateEventPayloads } from '../../shared/event-streams.js';
+import { domainErrorResult } from '../../shared/errors.js';
 import { bodyOf, operationError, reply } from '../http-utils.js';
 
 function normalizeProjectEngine(value) {
@@ -78,6 +79,11 @@ function setActiveRelease(releases, release, environment, actor) {
   }
 }
 
+async function activateExecutionRelease(executionServer, release, project) {
+  if (normalizeProjectEngine(project.engine) !== 'rules') return { result: { ok: true } };
+  return executionServer('/activate', { releaseId: release.id, decisionService: release.decisionService }, project);
+}
+
 function failedGateCases(reports) {
   return reports.flatMap(report => (report.cases || [])
     .filter(testCase => !testCase.passed)
@@ -106,6 +112,7 @@ export function createReleaseHandler({
   readAssets,
   writeAssets,
   readBom,
+  readPackageRecords,
   actorOf,
   appendAuditEvent,
   engine,
@@ -114,7 +121,7 @@ export function createReleaseHandler({
   recordSuiteRun,
   parseFacts,
 }) {
-  return async function handleReleases(req, res, segments, projectId = 'default') {
+  return async function handleReleases(req, res, segments, projectId = 'default', projectScoped = false) {
     const project = await readProjectRecord(projectId);
     if (segments.length === 2) {
       if (req.method === 'GET') return reply(res, 200, presentReleases(await readReleases(projectId)));
@@ -127,6 +134,16 @@ export function createReleaseHandler({
             return reply(res, 400, { error: `决策服务标识必须属于当前项目，例如 ${projectId}/grain-alarm` });
           }
         }
+        if (projectScoped) {
+          const requiredTargetType = normalizeProjectEngine(project.engine) === 'cep' ? 'event-stream' : 'flow';
+          if (request?.target?.type && request.target.type !== requiredTargetType) {
+            return reply(res, 400, {
+              error: requiredTargetType === 'flow'
+                ? '项目业务 Release 必须以规则集为发布目标。单条规则发布只更新规则库；请重新发布引用它的规则集，再构建 Release。'
+                : 'CEP 项目 Release 必须以事件流为发布目标。',
+            });
+          }
+        }
         const error = validateReleaseRequest(request);
         if (error) return reply(res, 400, { error });
         const result = await mutateReleases(async releases => {
@@ -136,9 +153,12 @@ export function createReleaseHandler({
               id: crypto.randomUUID(), request, releases,
               rules: await readRules(projectId), tables: await readAssets('tables', projectId), flows: await readAssets('flows', projectId), eventStreams: await readAssets('eventStreams', projectId),
               bom: await readBom(projectId),
+              packageRecords: await readPackageRecords(projectId),
+              enforceCurrentFlowDependencies: true,
+              projectVariables: project.variables || [],
               createdBy: actorOf(req),
             });
-          } catch (buildError) { return { status: 400, error: buildError.message }; }
+          } catch (buildError) { return domainErrorResult(buildError); }
           for (const step of release.steps || []) {
             const checked = await engine('/compile', { drl: step.drl }, project);
             if (checked.error) return { status: checked.status, error: `${step.name}：${checked.error}` };
@@ -171,7 +191,7 @@ export function createReleaseHandler({
           releases.unshift(stored);
           return { item: stored, changed: true };
         }, projectId);
-        if (result.error) return reply(res, result.status, { error: result.error, gate: result.gate, reports: result.reports, failedCases: result.failedCases });
+        if (result.error) return reply(res, result.status, { error: result.error, code: result.code, details: result.details, gate: result.gate, reports: result.reports, failedCases: result.failedCases });
         await appendAuditEvent('release.created', 'release', result.item.id, `创建 Release：${result.item.name}`, {
           decisionService: result.item.decisionService, version: result.item.version, checksum: result.item.checksum,
         }, req);
@@ -234,6 +254,8 @@ export function createReleaseHandler({
         const release = releases.find(item => item.id === id);
         if (!release) return { status: 404, error: '发布包不存在' };
         if (!isLiveDeployment(deploymentFor(release, environment))) return { status: 409, error: '发布包尚未部署或已停用' };
+        const activated = await activateExecutionRelease(executionServer, release, project);
+        if (activated.error) return activated;
         setActiveRelease(releases, release, environment, actorOf(req));
         return { item: release, changed: true };
       }, projectId);
@@ -257,6 +279,8 @@ export function createReleaseHandler({
             && (Number(candidate.version) || 0) < (Number(release.version) || 0))
           .sort(compareReleaseVersion)[0];
         if (!target) return { status: 409, error: '没有可回退的已部署历史版本' };
+        const activated = await activateExecutionRelease(executionServer, target, project);
+        if (activated.error) return activated;
         setActiveRelease(releases, target, environment, actorOf(req));
         return { item: target, previous: release, changed: true };
       }, projectId);

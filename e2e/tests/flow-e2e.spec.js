@@ -87,8 +87,8 @@ test('e2e-03 构建 Release 并部署', async ({ page }) => {
   // 默认项目为真实服务（singleTarget）：第一步选择已发布目标（radio）
   await expect(page.getByRole('heading', { name: /选择 Release 的发布目标/ }).first()).toBeVisible({ timeout: 15_000 })
 
-  // step1: 选择刚批准发布的规则（radio）
-  await page.locator(`input[aria-label="选择 ${RULE_NAME}"]`).check({ timeout: 15_000 })
+  // step1: 业务 Release 只能选择已发布规则集，避免误建独立规则服务
+  await page.locator('input[aria-label^="选择 "]:not([disabled])').first().check({ timeout: 15_000 })
   shots.push(await saveShot(page, id, '选择发布目标'))
   await page.getByRole('button', { name: '下一步', exact: true }).click()
 

@@ -20,6 +20,7 @@ interface ReleaseWizardProps {
   isBuilding: boolean
   buildError?: string
   singleTarget?: boolean
+  onRepublishTarget?: (targetId: string) => void
   onCancel: () => void
   onBuild: (draft: ReleaseDraft, assetSummary: string) => Promise<void>
 }
@@ -88,21 +89,26 @@ function ValidationRow({ icon: Icon, label, result, state, detail }: {
   )
 }
 
-export default function ReleaseWizard({ packages, suggestedVersion, failedTests, isBuilding, buildError, singleTarget = false, onCancel, onBuild }: ReleaseWizardProps) {
+export default function ReleaseWizard({ packages, suggestedVersion, failedTests, isBuilding, buildError, singleTarget = false, onRepublishTarget, onCancel, onBuild }: ReleaseWizardProps) {
   const assets = useMemo(() => packages.flatMap((packageNode) => packageNode.assets.map((asset) => ({ ...asset, packageName: packageNode.name }))), [packages])
+  const defaultTargetId = useMemo(() => {
+    const available = assets.filter(asset => !asset.needsRepublish)
+    return (available.find(asset => asset.type === 'flow') || available[0] || assets.find(asset => asset.type === 'flow') || assets[0])?.id
+  }, [assets])
   const [step, setStep] = useState(1)
   const [message, setMessage] = useState('')
   const [draft, setDraft] = useState<ReleaseDraft>({
     version: suggestedVersion,
     type: 'patch',
     notes: '',
-    assetIds: singleTarget ? assets.slice(0, 1).map(asset => asset.id) : assets.map((asset) => asset.id),
+    assetIds: singleTarget ? (defaultTargetId ? [defaultTargetId] : []) : assets.filter(asset => !asset.needsRepublish).map((asset) => asset.id),
     targetEnvironments: singleTarget ? ['local'] : ['dev', 'test'],
     knownIssueAccepted: false,
     approver: '',
   })
 
   const selectedAssets = assets.filter((asset) => draft.assetIds.includes(asset.id))
+  const selectedTarget = selectedAssets[0]
   const assetSummary = packages
     .map((packageNode) => `${packageNode.name} ${packageNode.assets.filter((asset) => draft.assetIds.includes(asset.id)).length}`)
     .filter((summary) => !summary.endsWith(' 0'))
@@ -113,9 +119,11 @@ export default function ReleaseWizard({ packages, suggestedVersion, failedTests,
     setMessage('')
   }
 
-  const toggleAsset = (assetId: string) => updateDraft('assetIds', singleTarget
-    ? [assetId]
-    : draft.assetIds.includes(assetId) ? draft.assetIds.filter((id) => id !== assetId) : [...draft.assetIds, assetId])
+  const toggleAsset = (assetId: string) => {
+    updateDraft('assetIds', singleTarget
+      ? [assetId]
+      : draft.assetIds.includes(assetId) ? draft.assetIds.filter((id) => id !== assetId) : [...draft.assetIds, assetId])
+  }
 
   const toggleEnvironment = (environment: ReleaseEnvironment) => updateDraft(
     'targetEnvironments',
@@ -126,6 +134,7 @@ export default function ReleaseWizard({ packages, suggestedVersion, failedTests,
 
   const validateStep = () => {
     if (step === 1 && draft.assetIds.length === 0) return '至少选择一个资产。'
+    if (step === 1 && selectedTarget?.needsRepublish) return '该规则集依赖已有新发布版本，请先重新发布规则集。'
     if (step === 2 && !/^\d+\.\d+\.\d+$/.test(draft.version)) return '版本号必须使用 SemVer 格式，例如 2.2.0。'
     if (step === 2 && !draft.notes.trim()) return '请填写本次发布说明。'
     if (step === 3 && failedTests > 0 && !draft.knownIssueAccepted) return '测试存在失败场景，需要负责人确认后才能继续。'
@@ -166,11 +175,15 @@ export default function ReleaseWizard({ packages, suggestedVersion, failedTests,
         {step === 1 && (
           <div>
             <h2 className="mb-3 text-[13px] font-medium">{singleTarget ? '选择 Release 的发布目标' : '选择要包含在本 Release 中的资产'}</h2>
-            <div className="overflow-x-auto border border-ink-border">
+            {assets.length === 0 ? (
+              <div className="flex min-h-36 items-center justify-center border border-ink-border bg-[#fafafa] px-6 text-center text-xs text-ink-3">
+                {singleTarget ? '当前没有已发布的规则集。请先在“规则集”中完成编排、校验并发布，再构建 Release。' : '当前没有可发布资产。'}
+              </div>
+            ) : <div className="overflow-x-auto border border-ink-border">
               <table className="w-full min-w-[620px] border-collapse text-left text-xs">
                 <thead className="bg-[#fafafa] text-[11px] text-ink-2">
                   <tr>
-                    <th className="w-10 border-b border-ink-border px-[10px] py-2">{!singleTarget && <input type="checkbox" aria-label="选择全部资产" checked={draft.assetIds.length === assets.length} onChange={(event) => updateDraft('assetIds', event.target.checked ? assets.map((asset) => asset.id) : [])} />}</th>
+                    <th className="w-10 border-b border-ink-border px-[10px] py-2">{!singleTarget && <input type="checkbox" aria-label="选择全部资产" checked={draft.assetIds.length === assets.filter(asset => !asset.needsRepublish).length} onChange={(event) => updateDraft('assetIds', event.target.checked ? assets.filter(asset => !asset.needsRepublish).map((asset) => asset.id) : [])} />}</th>
                     <th className="border-b border-ink-border px-[10px] py-2 font-semibold">资产</th>
                     <th className="border-b border-ink-border px-[10px] py-2 font-semibold">规则包</th>
                     <th className="border-b border-ink-border px-[10px] py-2 font-semibold">当前版本</th>
@@ -179,16 +192,17 @@ export default function ReleaseWizard({ packages, suggestedVersion, failedTests,
                 </thead>
                 <tbody>{assets.map((asset) => (
                   <tr key={asset.id} className="border-b border-[#e8e8e8] last:border-0 hover:bg-[#f0f6fc]">
-                    <td className="px-[10px] py-2"><input type={singleTarget ? 'radio' : 'checkbox'} name={singleTarget ? 'release-target' : undefined} aria-label={`选择 ${asset.name}`} checked={draft.assetIds.includes(asset.id)} onChange={() => toggleAsset(asset.id)} /></td>
-                    <td className="px-[10px] py-2">{asset.name}<span className="ml-2 text-[10px] text-ink-3">{asset.type === 'flow' ? '规则流' : asset.type === 'decision-table' ? '决策表' : asset.type === 'event-stream' ? '事件流' : '规则'}</span></td>
+                    <td className="px-[10px] py-2"><input type={singleTarget ? 'radio' : 'checkbox'} name={singleTarget ? 'release-target' : undefined} aria-label={`选择 ${asset.name}`} checked={draft.assetIds.includes(asset.id)} disabled={asset.needsRepublish} onChange={() => toggleAsset(asset.id)} /></td>
+                    <td className="px-[10px] py-2">{asset.name}<span className="ml-2 text-[10px] text-ink-3">{asset.type === 'flow' ? '规则集' : asset.type === 'decision-table' ? '决策表' : asset.type === 'event-stream' ? '事件流' : '规则'}</span></td>
                     <td className="px-[10px] py-2 font-mono text-[11px]">{asset.packageName}</td>
                     <td className="px-[10px] py-2 font-mono text-[11px] text-brand-primary">v{asset.version}</td>
-                    <td className="px-[10px] py-2"><span className={`rounded-[2px] px-1.5 py-px text-[10px] ${asset.status === 'published' ? 'bg-[#e8f5e9] text-env-production' : 'bg-[#fff3e0] text-env-staging'}`}>{asset.status === 'published' ? '已发布' : '草稿'}</span></td>
+                    <td className="px-[10px] py-2"><span className={`rounded-[2px] px-1.5 py-px text-[10px] ${asset.needsRepublish ? 'bg-[#fff3e0] text-[#b26a00]' : asset.status === 'published' ? 'bg-[#e8f5e9] text-env-production' : 'bg-[#fff3e0] text-env-staging'}`}>{asset.needsRepublish ? '需重新发布规则集' : asset.status === 'published' ? '已发布' : '草稿'}</span></td>
                   </tr>
                 ))}</tbody>
               </table>
-            </div>
-            <p className="mt-2 text-[11px] text-ink-3">{singleTarget ? '发布目标必须已有发布版本；构建时会重新执行 Drools 编译和必需测试套件。' : '草稿资产会随 Release 一起编译；编译失败将阻断构建。'}</p>
+            </div>}
+            <p className="mt-2 text-[11px] text-ink-3">{singleTarget ? '业务 Release 以规则集为最小发布单元；构建时会冻结规则集及其依赖版本，并重新执行 Drools 编译和必需测试套件。' : '草稿资产会随 Release 一起编译；编译失败将阻断构建。'}</p>
+            {selectedTarget?.needsRepublish && <div className="mt-3 flex items-center justify-between gap-3 rounded-[3px] border border-[#ffcdd2] bg-[#fff5f5] p-3 text-[11px] text-[#9f1f1f]"><span className="flex items-start gap-2"><AlertTriangle size={14} className="mt-px shrink-0" />此规则集仍冻结旧依赖版本。请重新校验并发布规则集，再回来构建 Release。</span>{onRepublishTarget && <button type="button" className="shrink-0 rounded-[2px] border border-[#c62828] bg-white px-3 py-1.5 text-[11px] text-[#9f1f1f] hover:bg-[#fff0f0]" onClick={() => onRepublishTarget(selectedTarget.id)}>去规则集重新发布</button>}</div>}
           </div>
         )}
 
@@ -233,7 +247,7 @@ export default function ReleaseWizard({ packages, suggestedVersion, failedTests,
 
         {step === 4 && (
           <div>
-            <h2 className="mb-3 text-[13px] font-medium">部署目标环境</h2>
+            <h2 className="mb-3 text-[13px] font-medium">部署计划（构建后手动执行）</h2>
             <div className="overflow-x-auto border border-ink-border">
               <table className="w-full min-w-[650px] border-collapse text-left text-xs">
                 <thead className="bg-[#fafafa] text-[11px] text-ink-2"><tr><th className="w-10 border-b border-ink-border px-[10px] py-2" /><th className="border-b border-ink-border px-[10px] py-2 font-semibold">环境</th><th className="border-b border-ink-border px-[10px] py-2 font-semibold">部署策略</th><th className="border-b border-ink-border px-[10px] py-2 font-semibold">Shadow 对比</th></tr></thead>
@@ -255,7 +269,7 @@ export default function ReleaseWizard({ packages, suggestedVersion, failedTests,
                 </select>
               </div>
             )}
-            <p className="mt-3 text-[11px] text-ink-3">production 在审批完成前不会接收真实流量，Shadow 运行不产生业务副作用。</p>
+            <p className="mt-3 text-[11px] text-ink-3">此步骤只记录部署计划，不会自动部署。构建完成后需在发布历史中点击“部署”；若已有当前生效版本，还需点击“激活”才会切换稳定入口。</p>
           </div>
         )}
 
@@ -265,10 +279,11 @@ export default function ReleaseWizard({ packages, suggestedVersion, failedTests,
             <dl className="max-w-[760px] divide-y divide-[#e8e8e8] border border-ink-border text-xs">
               <div className="grid grid-cols-[150px_1fr] px-3 py-2.5 max-sm:grid-cols-[110px_1fr]"><dt className="text-ink-3">版本号</dt><dd className="font-mono text-brand-primary">v{draft.version}</dd></div>
               <div className="grid grid-cols-[150px_1fr] px-3 py-2.5 max-sm:grid-cols-[110px_1fr]"><dt className="text-ink-3">包含资产</dt><dd>{selectedAssets.length} 个（{assetSummary}）</dd></div>
+              <div className="grid grid-cols-[150px_1fr] px-3 py-2.5 max-sm:grid-cols-[110px_1fr]"><dt className="text-ink-3">服务类型</dt><dd>{selectedTarget?.type === 'flow' ? '规则集业务服务' : selectedTarget?.type === 'event-stream' ? '事件流服务' : '独立资产服务'}</dd></div>
               <div className="grid grid-cols-[150px_1fr] px-3 py-2.5 max-sm:grid-cols-[110px_1fr]"><dt className="text-ink-3">发布说明</dt><dd>{draft.notes}</dd></div>
               <div className="grid grid-cols-[150px_1fr] px-3 py-2.5 max-sm:grid-cols-[110px_1fr]"><dt className="text-ink-3">编译</dt><dd className="text-env-production">通过</dd></div>
               <div className="grid grid-cols-[150px_1fr] px-3 py-2.5 max-sm:grid-cols-[110px_1fr]"><dt className="text-ink-3">测试</dt><dd className={failedTests > 0 ? 'text-[#c62828]' : 'text-env-production'}>{failedTests > 0 ? `${failedTests} 个已知失败场景，负责人已确认` : '全部通过'}</dd></div>
-              <div className="grid grid-cols-[150px_1fr] px-3 py-2.5 max-sm:grid-cols-[110px_1fr]"><dt className="text-ink-3">部署到</dt><dd className="flex flex-wrap gap-1">{draft.targetEnvironments.map((environment) => <span key={environment} className="rounded-[2px] bg-brand-primary-l px-2 py-0.5 text-[10px] text-brand-primary">{environment}</span>)}</dd></div>
+              <div className="grid grid-cols-[150px_1fr] px-3 py-2.5 max-sm:grid-cols-[110px_1fr]"><dt className="text-ink-3">计划部署到</dt><dd className="flex flex-wrap gap-1">{draft.targetEnvironments.map((environment) => <span key={environment} className="rounded-[2px] bg-brand-primary-l px-2 py-0.5 text-[10px] text-brand-primary">{environment}</span>)}</dd></div>
               <div className="grid grid-cols-[150px_1fr] px-3 py-2.5 max-sm:grid-cols-[110px_1fr]"><dt className="text-ink-3">校验和</dt><dd className="font-mono text-[11px] text-ink-3">SHA-256 将在构建时生成</dd></div>
             </dl>
             {failedTests > 0 && <div className="mt-4 flex items-start gap-2 rounded-[3px] border border-[#ffe082] bg-[#fff8e1] p-3 text-[11px] text-[#734d00]"><AlertTriangle size={15} className="mt-px shrink-0" />本 Release 将携带已知测试问题，进入 staging 前仍需修复并重新执行门禁。</div>}
