@@ -162,7 +162,65 @@ function labelOf(params) {
   return String(params.label || params.description || statementName(params)).trim();
 }
 
+function interval(params) {
+  return `${positiveInteger(params.windowSize, '等待时长')} ${unit(params.windowUnit || 'seconds')}`;
+}
+
+function secondFilter(params) {
+  return `${requireIdentifier(params.secondEventType, '后续事件源')}(${requireIdentifier(params.secondGroupField || params.groupField, '后续关联字段', true)} = a.${groupField(params)}, ${field(params, 'secondField')} ${operator(params.secondOperator || '>=')} ${literal(params.secondValue)})`;
+}
+
+function consecutiveCount(params) {
+  const count = positiveInteger(params.count, '连续次数');
+  if (count < 2 || count > 100) throw new Error('连续次数必须为 2 到 100');
+  return count;
+}
+
 export const CEP_TEMPLATES = Object.freeze([
+  {
+    id: 'absence', name: '缺席检测', category: 'pattern',
+    params: ['statementName', 'eventType', 'field', 'operator', 'value', 'groupField', 'secondEventType', 'secondGroupField', 'secondField', 'secondOperator', 'secondValue', 'windowSize', 'windowUnit'],
+    build(params) {
+      const { source, watchedField, op, value } = thresholdParams(params);
+      return `insert into ${outputEvent(params)} select a.${groupField(params)} as ${groupField(params)}, current_timestamp() as detectedAt from pattern [every a=${source}(${watchedField} ${op} ${value}) -> (timer:interval(${interval(params)}) and not ${secondFilter(params)})]`;
+    },
+    describe(params) {
+      return `每次 ${eventType(params)}.${field(params)} ${operator(params.operator || '>=')} ${literal(params.value)} 后，若 ${interval(params)} 内未收到同关联键 ${groupField(params)} 的 ${secondFilter(params)}，输出 ${labelOf(params)}；没有起始事件不计时。`;
+    },
+  },
+  {
+    id: 'event-sequence', name: '双事件时序', category: 'pattern',
+    params: ['statementName', 'eventType', 'field', 'operator', 'value', 'groupField', 'secondEventType', 'secondGroupField', 'secondField', 'secondOperator', 'secondValue', 'windowSize', 'windowUnit'],
+    build(params) {
+      const { source, watchedField, op, value } = thresholdParams(params);
+      return `insert into ${outputEvent(params)} select a.${groupField(params)} as ${groupField(params)}, current_timestamp() as detectedAt from pattern [every a=${source}(${watchedField} ${op} ${value}) -> (b=${secondFilter(params)} where timer:within(${interval(params)}))]`;
+    },
+    describe(params) {
+      return `每次 ${eventType(params)}.${field(params)} ${operator(params.operator || '>=')} ${literal(params.value)} 后，在 ${interval(params)} 内收到首个同关联键 ${groupField(params)} 的 ${secondFilter(params)} 时输出 ${labelOf(params)}；超时取消本次匹配。`;
+    },
+  },
+  {
+    id: 'consecutive-count', name: '连续次数', category: 'pattern',
+    params: ['statementName', 'eventType', 'field', 'operator', 'value', 'groupField', 'count'],
+    build(params) {
+      const { source, watchedField, op, value } = thresholdParams(params);
+      const count = consecutiveCount(params);
+      return `insert into ${outputEvent(params)} select correlationKey as ${groupField(params)}, matchedCount as cnt from ${source} match_recognize (partition by ${groupField(params)} measures A[0].${groupField(params)} as correlationKey, ${count} as matchedCount after match skip past last row pattern (A{${count}}) define A as coalesce(A.${watchedField} ${op} ${value}, false))`;
+    },
+    describe(params) {
+      return `按 ${groupField(params)} 独立检测 ${eventType(params)}，连续 ${consecutiveCount(params)} 次 ${field(params)} ${operator(params.operator || '>=')} ${literal(params.value)} 输出 ${labelOf(params)}；同键不满足条件（含空值）即重置，其他键不打断；每满一组输出一次，不重叠计数。`;
+    },
+  },
+  {
+    id: 'periodic', name: '周期触发', category: 'timer',
+    params: ['statementName', 'windowSize', 'windowUnit'],
+    build(params) {
+      return `insert into ${outputEvent(params)} select current_timestamp() as triggeredAt from pattern [every timer:interval(${interval(params)})]`;
+    },
+    describe(params) {
+      return `从部署开始，每 ${interval(params)} 输出 ${labelOf(params)}；不需要输入事件，首次输出在一个完整周期之后，重新部署重新计时。`;
+    },
+  },
   {
     id: 'single-threshold',
     name: '单点阈值',

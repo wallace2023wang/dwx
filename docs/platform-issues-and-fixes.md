@@ -1,7 +1,7 @@
 # 规则平台落地问题清单与改进需求
 
 > 产品：Decision Workbench（复刻 IBM ILOG JRules / ODM）
-> 来源：粮库温控告警规则集全流程真实落地（BOM → 包 → BAL/决策表 → 规则流 → 测试套件 → Release → RES）过程中实测发现
+> 来源：粮库温控告警规则集全流程真实落地（BOM → 包 → BAL/决策表 → 规则集 → 测试套件 → Release → RES）过程中实测发现
 > 状态：2026-09-30 已完成本轮修复与回归；当前待办以 0.2 节为准，后续章节为历史追溯与回归基准
 > 关联：`bom-editor-design.md`、`decision-table-design.md`、`project-package-crud-design.md`、`report-design.md`
 
@@ -14,7 +14,7 @@
 | API 契约一致性 | 5 | 1 | 3 | 1 |
 | 决策表编辑器/引擎 | 5 | 1 | 3 | 1 |
 | BOM 模型 | 3 | 0 | 2 | 1 |
-| 规则流 | 3 | 0 | 2 | 1 |
+| 规则集 | 3 | 0 | 2 | 1 |
 | 测试套件 | 3 | 0 | 2 | 1 |
 | Release / 质量门禁 | 2 | 0 | 2 | 0 |
 | 前端遗留 | 4 | 0 | 2 | 2 |
@@ -31,33 +31,34 @@
 | 2.1 空条件通配 | 已完成 | 编辑器常驻提示、行完整条件 tooltip、全空条件保存确认和服务端 warning |
 | 2.2 / 2.3 区间与内联比较符 | 已完成 | 支持 `<0.8`、`[20,25)` 等写法，保留 `20..25` 兼容语法并补齐边界测试 |
 | 2.4 诊断分级 | 已完成 | 编辑器按错误、警告、提示分级展示重叠、冲突、不可达和缺口 |
-| 2.5 / 4.3 多步骤写同一输出 | 部分完成 | 规则流编辑器已预警“后执行覆盖前值”；可配置最大值/聚合归并策略仍需独立领域设计 |
+| 2.5 / 4.3 多步骤写同一输出 | 部分完成 | 规则集编辑器已预警“后执行覆盖前值”；可配置最大值/聚合归并策略仍需独立领域设计 |
 | 3.1 BOM 模型叙事 | 已纠正 | 持久化与领域层仍使用 flat `fields[]`；项目 API 和前端提供 `factTypes[]` 编辑视图 |
 | 3.2 / 3.3 BOM 联动 | 已完成 | 条件/动作按方向过滤，操作符和值控件按七种业务类型联动，Enum 使用 BOM 枚举值 |
 | 4.1 草稿资产编排 | 暂不调整 | 当前仍要求引用已发布资产；不自动发布依赖，避免绕过审批与发布治理 |
-| 4.2 依赖资产升版 | 已完成 | 规则流返回 `needsRepublish/outdatedDependencies`，前端显示重新发布提示 |
+| 4.2 依赖资产升版 | 已完成 | 规则集返回 `needsRepublish/outdatedDependencies`，前端显示重新发布提示 |
 | 5.1 / 8.1 / 8.2 缺失输入 | 已完成 | 报告展示 `inputFacts/omittedFields`，BOM input 可标记 `required`，缺失时 Team Server 与 RES 均拒绝执行；新发布产物用包装类型保留可选数字/Boolean 的 `null` 语义 |
 | 5.2 / 5.3 测试报告 | 已完成 | 报告按 `targetVersion` 展示并以 `assertions[]` 为准，未提供字段有明确说明 |
 | 6.1 门禁失败摘要 | 已完成 | `409` 增加最小 `failedCases` 摘要，包含版本、用例及失败断言 actual/expected |
 | 6.2 Release 最新版 | 已完成 | 创建、列表和部署响应均返回 `latestForDecisionService`，前端标记“最新” |
 | 7 前端遗留 | 已完成 | 产品名、BOM 编辑、真实项目 API 和决策表编辑入口均已落地；演示项目仍使用 mock |
 
-本轮不改变 Drools 的确定性“后写覆盖”行为，也不自动发布规则流依赖。两项都涉及审批、版本和运行语义，必须通过独立需求设计后实施。
+本轮不改变 Drools 的确定性“后写覆盖”行为，也不自动发布规则集依赖。两项都涉及审批、版本和运行语义，必须通过独立需求设计后实施。
 
 ### 0.2 当前开放待办（后续开发只看本节）
 
 | 待办 | 优先级 | 当前结论 | 下一步 |
 |---|---|---|---|
-| 大规模规则项目容量专项 | P1（规模化） | 当前全量接口、非虚拟化列表、同步组合编译适合中小规模；目标见 `docs/product-requirements.md`“容量与规模化基线” | 先完成 1k/5k/10k 基准，再按瓶颈实施服务端分页、虚拟列表、异步编译、制品外置和 RES 缓存 |
-| 同字段多步骤输出归并策略 | P1 | 仅完成覆盖预警；最大值/优先级/聚合归并仍未设计 | 独立领域设计，明确审批、版本与运行语义后开发 |
+| 大规模规则项目容量专项 | P3（最低） | 当前全量接口、非虚拟化列表、同步组合编译适合中小规模；不影响当前 CEP 交付 | 暂缓；后续再做 1k/5k/10k 基准、分页、虚拟列表、异步编译与 RES 缓存 |
+| 同字段多步骤输出归并策略 | P3（最低） | 现状是确定性的后写覆盖；归并意味着最大值/优先级/聚合等新的运行语义 | 暂缓；独立领域设计并明确审批、版本与运行语义后开发 |
 | 双引擎项目路由（rules / cep） | 已完成真实 Esper 集成 | 项目 `engine`、四路端点、EventStream、CEP TestSuite、Release v2、报告与 UI 分支已落地；`cep-build:8791` 与 `cep-res:8792` 已接入 Esper 8.8.0；CEP 容器 backlog（`/events/{releaseId}`、webhook fired/cleared、`CEP_API_KEY`、`/openapi.json`、`/metrics`）已落地；pattern/timer 时间驱动语句 P0 已落地 | 保持 rules 全链路回归；未来对外分发再补商业授权或替换引擎评估 |
-| 自动充氮控制 | P1 | 属于规则侧状态机 + 定时器 + 暂停/继续，不是 CEP v1 范围 | 已落地：见 `docs/nitrogen-auto-fill-asset-design.md`（BAL 规则版，阈值判定在规则内、阈值作为参数）。落地过程暴露的平台缺口已转为独立需求 `docs/requirements-platform-gaps-nitrogen.md`（R1–R10） |
+| 自动充氮控制 | Demo 范围 | 属于规则侧状态机 + 定时器 + 暂停/继续，不是产品运行期计划能力 | 保留历史 demo 设计，不作为产品待办；平台缺口文档仅作追溯 |
 | Rule Group 部署支持 | **P0（已完成）** | `res/ResServer.java` 允许 `rule`/`table`/`rule-group`，OpenAPI 已同步 | JUnit 覆盖部署、执行和非法 mapping；见 `requirements-platform-gaps-nitrogen.md` R1 |
 | 废弃资产语义 | **P0（已完成）** | 生命周期独立为 active/deprecated/archived；废弃资产保留包归属与历史但不再参与执行 | 已含废弃、恢复、归档、审计、包解析和 PostgreSQL 持久化测试；见 R2 / R8 |
 | 决策表条件字段引用 | P1（已完成） | 条件单元格支持同类型 input 字段比较，覆盖 UI、DRL、静态分析、BOM 引用统计和 XLSX/CSV 往返 | 见 `requirements-platform-gaps-nitrogen.md` R3 |
 | 规则间中间结果传递 | P1（已完成） | RES 支持受限 `settle` 多轮执行和显式 `output -> input` 反馈映射，返回逐轮轨迹并有 20 轮硬上限 | 见 `requirements-platform-gaps-nitrogen.md` R4 |
 | 未赋值 Boolean 的 null 语义 | P1（已完成） | 新发布产物将 Integer/Double/Boolean 生成为 Java 包装类型，未传保持 `null`；必填字段仍在 Team Server 与 RES 拒绝 | JUnit 覆盖可选 Boolean 的 null 守卫；见 `requirements-platform-gaps-nitrogen.md` R5 |
-| 规则参数化与运行期调参 | **P0（待开发）** | 规则侧参数化已完成（`valueSource:field`，实测改参数即改行为、无需重新发布）；缺口在**运行期调参**（现状只能创建任务时传，改动需重启任务并丢失环流累计/暂停点/指令流水）与**安全联锁可达性**（maxPct=95 使 safetyMaxPct=99 不可达，安全功能失效） | 见 `docs/requirements-rule-parameters.md`（P1–P3、S1）；P2 需客户先确认阈值语义 |
+| 规则参数化与运行期调参 | 已完成（规则侧）/ Demo 调参不纳入产品 | BAL、决策表和运行期变量已支持；计划实例热调参属于 demo 调度能力，不在产品范围 | 保持规则变量治理与发布校验；不实现 demo 计划实例 |
+| CEP 高级模板与 EPL 工具 | P1（当前） | 已实现缺席检测、双事件时序、连续次数、周期触发；高级 EPL 支持 Monaco、中文注释、BOM 补全和语法高亮 | 继续补真实 Esper 回归、诊断位置映射和依赖图 |
 | Esper 合规评估 | 已确认当前可接受 | 已按需求引入 Esper 8.8.0；项目方确认当前不做商用应用 | 若未来涉及对外分发，再补商业授权或替换引擎评估 |
 | BOM Event Profile | 已完成 | 采用统一 BOM Core + `eventTypes[]` 事件视图；规则侧仍用 `factType/factTypes`，CEP 侧优先用 Event Profile 生成 Esper schema | 后续可补前端 Event Profile 专用编辑 UI |
 
@@ -125,11 +126,11 @@
 
 ### 2.5 【P1】多规则/多行写同一 output 字段：COLLECT 下后执行覆盖
 - **现象**：决策表第 1 行写 `maxCandidateLevel=告警`、第 2 行写 `严重`，32℃ 双命中后**后行覆盖前行**→ 严重（本次语义正确）；但跨资产（BAL 最高温规则写 `maxCandidateLevel`，决策表恢复候选行写同一字段）出现**覆盖性错误**——最高温 34℃ 场景被决策表恢复候选行覆盖为"无"。
-- **影响**：这是平台级语义问题，不只决策表。规则流步骤顺序决定输出覆盖方向，业务上"严重>告警>恢复"的优先级必须靠**步骤顺序**或**引擎外归并**保证。
+- **影响**：这是平台级语义问题，不只决策表。规则集步骤顺序决定输出覆盖方向，业务上"严重>告警>恢复"的优先级必须靠**步骤顺序**或**引擎外归并**保证。
 - **建议**：
   - 平台文档明确"同字段多写 = 顺序覆盖"语义
   - 提供**归并策略配置**（取最大/最后/聚合），对应 JRules 多命中归并（粮库设计 §4.5）
-  - 规则流设计器在连接线上提示"此步骤将覆盖输出字段 X"
+  - 规则集设计器在连接线上提示"此步骤将覆盖输出字段 X"
 
 ---
 
@@ -152,9 +153,9 @@
 
 ---
 
-## 4. 规则流（开放待办 + 历史追溯）
+## 4. 规则集（开放待办 + 历史追溯）
 
-### 4.0 【已完成】规则流画布直编 + Rule Group
+### 4.0 【已完成】规则集画布直编 + Rule Group
 - **原现象**：画布只读，节点只能逐条绑定规则或决策表，几千条规则时无法有效编排。
 - **完成情况**：已改为 React Flow 主编辑器；规则包可作为 Rule Group 节点拖入，发布时冻结成员、版本、BOM、组合 DRL 和 fingerprint；继续保留最多 8 分支的受限拓扑。
 - **设计与容量边界**：见 `docs/ruleflow-editor-design.md`。成员预览分页、千级规则编译基准及成员级命中轨迹仍归入“大规模规则项目容量专项”，不回退 Rule Group 的快照语义。
@@ -170,15 +171,15 @@
 - **影响**：开发流程被强制"先发布资产再编排流程"，与 JRules"草稿可编排、发布时校验"不符，阻断迭代。
 - **建议**：草稿步骤允许引用草稿资产（仅 compile/publish 时校验已发布），或提供"发布前自动发布依赖资产"选项。
 
-### 4.2 【P1】发布规则流后 revision 联动自增，需重新 compile/publish
-- **现象**：发布决策表 v3 后，规则流 revision 自动从 4→5；需 PUT 相同 draft + compile + publish 才生成含新资产的规则流 v3。
+### 4.2 【P1】发布规则集后 revision 联动自增，需重新 compile/publish
+- **现象**：发布决策表 v3 后，规则集 revision 自动从 4→5；需 PUT 相同 draft + compile + publish 才生成含新资产的规则集 v3。
 - **影响**：资产升级到新版本时，依赖它的流程不感知（静态快照），需人工重发。
 - **建议**：资产发布时自动标记依赖流程"过期"（`needsRepublish: true`），Release 创建时提示；或流程步骤支持版本范围（引用 >= v3）。
 
 ### 4.3 【P1】COLLECT 命中策略下步骤顺序决定字段覆盖
-- **现象**：规则流第 10 步（决策表）写 `maxCandidateLevel`，覆盖第 5/6 步（最高温规则）的同字段值——最高温 34℃ 一度被决策表"恢复候选"覆盖为"无"。
+- **现象**：规则集第 10 步（决策表）写 `maxCandidateLevel`，覆盖第 5/6 步（最高温规则）的同字段值——最高温 34℃ 一度被决策表"恢复候选"覆盖为"无"。
 - **影响**：步骤排序是隐藏的业务逻辑，乱序=错误结果。
-- **建议**：同 2.5 归并策略；规则流设计器对"写同一输出字段的相邻步骤"给出可视化警告。
+- **建议**：同 2.5 归并策略；规则集设计器对"写同一输出字段的相邻步骤"给出可视化警告。
 
 ---
 
@@ -263,8 +264,8 @@
 
 ## 附录：验证用资产清单（回归基准）
 
-> 注意：旧基准 `project-cb74fc72` 已在 codex report 开发期间重建为 `project-c429a9a0`（旧项目已 404 消失）。**当前权威回归基准为 `project-c429a9a0`**（粮库温控告警：8 factType/40 fields BOM、9 规则 + 决策表 + 规则流 10 步 + 2 套件 + Release v1，详见 `grain-alarm-rule-design.md` 与数据文件 `data/bom-project-c429a9a0.json`）。旧基准仅保留作历史追溯。
+> 注意：旧基准 `project-cb74fc72` 已在 codex report 开发期间重建为 `project-c429a9a0`（旧项目已 404 消失）。**当前权威回归基准为 `project-c429a9a0`**（粮库温控告警：8 factType/40 fields BOM、9 规则 + 决策表 + 规则集 10 步 + 2 套件 + Release v1，详见 `grain-alarm-rule-design.md` 与数据文件 `data/bom-project-c429a9a0.json`）。旧基准仅保留作历史追溯。
 
-- 旧基准（历史）：项目 `project-cb74fc72`；决策表 `a4833e88-6fa3-47dd-a1f6-d0a64a0d21b7`（整仓均温判定决策表 v3）；规则流 `c4576dc6-0008-42d6-a514-eefa9b2c5187`（10 步 v3）；Release `e058c6f2-36c0-46b6-8c3c-738a4531439b`（v2，已部署 local，门禁 9/9）
+- 旧基准（历史）：项目 `project-cb74fc72`；决策表 `a4833e88-6fa3-47dd-a1f6-d0a64a0d21b7`（整仓均温判定决策表 v3）；规则集 `c4576dc6-0008-42d6-a514-eefa9b2c5187`（10 步 v3）；Release `e058c6f2-36c0-46b6-8c3c-738a4531439b`（v2，已部署 local，门禁 9/9）
 - 当前权威：项目 `project-c429a9a0`；Release v1 `52cec7f8-fccb-4567-b8df-94563fbc19e5`（decisionService `project-c429a9a0/grain-alarm`，gate 9/9，deploy local，sha256:d88a445a0）
 - 验收命令：`POST http://127.0.0.1:8790/execute {releaseId: 52cec7f8-fccb-4567-b8df-94563fbc19e5, facts:{averageTemp:32,coverageRate:0.95,...}}` → 期望 `state=BREACH, level=严重, fired 含"整仓均温判定决策表"`

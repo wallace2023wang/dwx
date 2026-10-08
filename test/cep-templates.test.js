@@ -39,7 +39,7 @@ const cases = [
 ];
 
 test('CEP P0 templates generate stable insert-into EPL', () => {
-  assert.equal(CEP_TEMPLATES.length, 5);
+  assert.equal(CEP_TEMPLATES.length, 9);
   for (const [templateId, params] of cases) {
     const epl = buildCepTemplate(templateId, params);
     assert.match(epl, new RegExp(`^insert into ${params.statementName}Event select `));
@@ -48,6 +48,21 @@ test('CEP P0 templates generate stable insert-into EPL', () => {
     const compiled = compileEventStreamDraft({ name: '氨气模板', statements: [{ name: params.statementName, epl }] }, bom);
     assert.equal(compiled.status, 200, `${templateId}: ${compiled.error || ''}`);
     assert.equal(compiled.result.module.statements[0].outputEventType, `${params.statementName}Event`);
+  }
+});
+
+test('advanced CEP templates generate validated EPL', () => {
+  const advanced = [
+    ['absence', { statementName: 'NoAck', eventType: 'NH3Reading', field: 'ammoniaPpm', operator: '>=', value: 25, groupField: 'warehouseId', secondEventType: 'NH3Reading', secondGroupField: 'warehouseId', secondField: 'leakagePpm', secondOperator: '>=', secondValue: 0, windowSize: 5, windowUnit: 'seconds' }],
+    ['event-sequence', { statementName: 'AckAfterAlarm', eventType: 'NH3Reading', field: 'ammoniaPpm', operator: '>=', value: 25, groupField: 'warehouseId', secondEventType: 'NH3Reading', secondGroupField: 'warehouseId', secondField: 'leakagePpm', secondOperator: '>=', secondValue: 0, windowSize: 5, windowUnit: 'seconds' }],
+    ['consecutive-count', { statementName: 'ThreeHigh', eventType: 'NH3Reading', field: 'ammoniaPpm', operator: '>=', value: 25, groupField: 'warehouseId', count: 3 }],
+    ['periodic', { statementName: 'Heartbeat', windowSize: 5, windowUnit: 'seconds' }],
+  ];
+  for (const [templateId, params] of advanced) {
+    const epl = buildCepTemplate(templateId, params);
+    assert.match(epl, new RegExp(`^insert into ${params.statementName}Event select `));
+    const compiled = compileEventStreamDraft({ name: '高级模板', statements: [{ name: params.statementName, epl }] }, bom);
+    assert.equal(compiled.status, 200, `${templateId}: ${compiled.error || ''}`);
   }
 });
 

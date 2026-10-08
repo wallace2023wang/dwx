@@ -1,7 +1,7 @@
 import type { BomField, BomModel } from '../types'
 
-export type CepTemplateId = 'single-threshold' | 'window-average' | 'window-fluctuation' | 'event-count' | 'window-sum'
-export type CepTemplateCategory = 'threshold' | 'window'
+export type CepTemplateId = 'single-threshold' | 'window-average' | 'window-fluctuation' | 'event-count' | 'window-sum' | 'absence' | 'event-sequence' | 'consecutive-count' | 'periodic'
+export type CepTemplateCategory = 'threshold' | 'window' | 'pattern' | 'timer'
 
 export interface CepTemplate {
   id: CepTemplateId
@@ -24,6 +24,11 @@ export interface CepTemplateParams {
   windowSize?: string | number
   windowUnit?: 'seconds' | 'minutes' | 'hours'
   outputFields?: CepOutputField[]
+  secondEventType?: string
+  secondGroupField?: string
+  secondField?: string
+  secondOperator?: string
+  secondValue?: string | number | boolean
 }
 
 export type CepOutputField =
@@ -37,6 +42,10 @@ const UNIT_LABEL: Record<string, string> = { seconds: '秒', minutes: '分钟', 
 const WINDOW_LABEL: Record<string, string> = { sliding: '滑动', tumbling: '跳跃' }
 
 export const CEP_TEMPLATES: CepTemplate[] = [
+  { id: 'absence', name: '缺席检测', category: 'pattern', summary: '起始事件发生后，规定时间内未收到关联事件' },
+  { id: 'event-sequence', name: '双事件时序', category: 'pattern', summary: '起始事件后在时限内收到同键后续事件' },
+  { id: 'consecutive-count', name: '连续次数', category: 'pattern', summary: '同一关联键连续满足条件达到次数' },
+  { id: 'periodic', name: '周期触发', category: 'timer', summary: '按固定周期触发，不依赖输入事件' },
   { id: 'single-threshold', name: '单点阈值', category: 'threshold', summary: '单条事件字段超过阈值即告警' },
   { id: 'window-average', name: '窗口均值', category: 'window', summary: '时间窗口内字段均值超阈值' },
   { id: 'window-fluctuation', name: '窗口波动', category: 'window', summary: '时间窗口内最大值与最小值差值超阈值' },
@@ -119,11 +128,35 @@ function windowClause(params: CepTemplateParams) {
   return `${view}(${positiveInteger(params.windowSize || 3, '窗口时长')} ${unit})`
 }
 
+function interval(params: CepTemplateParams) {
+  return `${positiveInteger(params.windowSize || 1, '等待时长')} ${params.windowUnit || 'seconds'}`
+}
+
+function secondFilter(params: CepTemplateParams) {
+  const type = requireIdentifier(params.secondEventType, '后续事件源')
+  const key = requireIdentifier(params.secondGroupField || params.groupField, '后续关联字段', true)
+  const field = requireIdentifier(params.secondField, '后续检测字段', true)
+  return `${type}(${key} = a.${requireIdentifier(params.groupField, '分组字段', true)}, ${field} ${op(params.secondOperator || '>=')} ${literal(params.secondValue)})`
+}
+
+function consecutiveCount(value: unknown) {
+  const count = positiveInteger(value, '连续次数')
+  if (count < 2 || count > 100) throw new Error('连续次数必须为 2 到 100')
+  return count
+}
+
 export function buildCepTemplate(id: CepTemplateId, params: CepTemplateParams) {
   const name = requireIdentifier(params.statementName, '语句 ID')
-  const eventType = requireIdentifier(params.eventType, '事件源')
+  const eventType = params.eventType ? requireIdentifier(params.eventType, '事件源') : ''
   const field = params.field ? requireIdentifier(params.field, '字段', true) : ''
   const groupField = params.groupField ? requireIdentifier(params.groupField, '分组字段', true) : ''
+  if (id === 'periodic') return `insert into ${name}Event select current_timestamp() as triggeredAt from pattern [every timer:interval(${interval(params)})]`
+  if (id === 'absence') return `insert into ${name}Event select a.${groupField} as ${groupField}, current_timestamp() as detectedAt from pattern [every a=${eventType}(${field} ${op(params.operator || '>=')} ${literal(params.value)}) -> (timer:interval(${interval(params)}) and not ${secondFilter(params)})]`
+  if (id === 'event-sequence') return `insert into ${name}Event select a.${groupField} as ${groupField}, current_timestamp() as detectedAt from pattern [every a=${eventType}(${field} ${op(params.operator || '>=')} ${literal(params.value)}) -> (b=${secondFilter(params)} where timer:within(${interval(params)}))]`
+  if (id === 'consecutive-count') {
+    const count = consecutiveCount(params.count)
+    return `insert into ${name}Event select correlationKey as ${groupField}, matchedCount as cnt from ${eventType} match_recognize (partition by ${groupField} measures A[0].${groupField} as correlationKey, ${count} as matchedCount after match skip past last row pattern (A{${count}}) define A as coalesce(A.${field} ${op(params.operator || '>=')} ${literal(params.value)}, false))`
+  }
   if (id === 'single-threshold') return `insert into ${name}Event select ${selectClause(params.outputFields)} from ${eventType} where ${field} ${op(params.operator || '>=')} ${literal(params.value)}`
   if (id === 'window-average') return `insert into ${name}Event select ${groupField}, avg(${field}) as avg_${field} from ${eventType}${windowClause(params)} group by ${groupField} having avg(${field}) ${op(params.operator || '>=', ['>', '>=', '<', '<=', '='])} ${literal(params.value)}`
   if (id === 'window-fluctuation') return `insert into ${name}Event select ${groupField}, max(${field}) as max_${field}, min(${field}) as min_${field} from ${eventType}${windowClause(params)} group by ${groupField} having max(${field}) - min(${field}) >= ${finiteNumber(params.delta ?? params.value, '差值阈值')}`
@@ -135,6 +168,10 @@ export function describeCepTemplate(id: CepTemplateId, params: CepTemplateParams
   const label = params.label || params.statementName
   const unit = UNIT_LABEL[params.windowUnit || 'minutes'] || params.windowUnit || '分钟'
   const windowLabel = WINDOW_LABEL[params.windowType || 'sliding'] || '滑动'
+  if (id === 'periodic') return `从部署开始，每 ${interval(params)} 输出 ${label}；不需要输入事件，首次输出在一个完整周期之后，重新部署重新计时。`
+  if (id === 'absence') return `每次 ${params.eventType}.${params.field} ${op(params.operator || '>=')} ${literal(params.value)} 后，若 ${interval(params)} 内未收到同关联键 ${params.groupField} 的 ${secondFilter(params)}，输出 ${label}；没有起始事件不计时。`
+  if (id === 'event-sequence') return `每次 ${params.eventType}.${params.field} ${op(params.operator || '>=')} ${literal(params.value)} 后，在 ${interval(params)} 内收到首个同关联键 ${params.groupField} 的 ${secondFilter(params)} 时输出 ${label}；超时取消本次匹配。`
+  if (id === 'consecutive-count') return `按 ${params.groupField} 独立检测 ${params.eventType}，连续 ${consecutiveCount(params.count)} 次 ${params.field} ${op(params.operator || '>=')} ${literal(params.value)} 输出 ${label}；同键不满足条件即重置，其他键不打断；每满一组输出一次，不重叠计数。`
   if (id === 'single-threshold') return `当 ${params.eventType}.${params.field} ${op(params.operator || '>=')} ${literal(params.value)} 时，输出检测 ${label}`
   if (id === 'window-average') return `当 ${params.eventType} 在 ${params.windowSize || 3} ${unit}${windowLabel}窗口内按 ${params.groupField} 分组的 ${params.field} 均值 ${op(params.operator || '>=')} ${literal(params.value)} 时，输出检测 ${label}`
   if (id === 'window-fluctuation') return `当 ${params.eventType} 在 ${params.windowSize || 3} ${unit}${windowLabel}窗口内按 ${params.groupField} 分组的 ${params.field} 波动 >= ${finiteNumber(params.delta ?? params.value, '差值阈值')} 时，输出检测 ${label}`
@@ -163,20 +200,25 @@ export function defaultCepParams(id: CepTemplateId, bom: BomModel | undefined, i
   const businessFields = fields.filter(field => field.group !== '信封字段')
   const valueField = numericFields(businessFields)[0]?.key || numbers[0]?.key || businessFields[0]?.key || fields.find(field => field.key !== 'eventId')?.key || 'value'
   const group = fields.find(field => ['eventKey', 'warehouseId', 'sensorId', 'source'].includes(field.key))?.key || fields[0]?.key || 'eventKey'
-  const baseName = ({ 'single-threshold': 'SingleThreshold', 'window-average': 'WindowAverage', 'window-fluctuation': 'WindowFluctuation', 'event-count': 'EventCount', 'window-sum': 'WindowSum' } as const)[id]
+  const baseName = ({ 'single-threshold': 'SingleThreshold', 'window-average': 'WindowAverage', 'window-fluctuation': 'WindowFluctuation', 'event-count': 'EventCount', 'window-sum': 'WindowSum', absence: 'Absence', 'event-sequence': 'EventSequence', 'consecutive-count': 'Consecutive', periodic: 'Periodic' } as const)[id]
   return {
     statementName: `${baseName}${index}`,
     label: CEP_TEMPLATES.find(template => template.id === id)?.name || baseName,
     eventType,
-    field: id === 'event-count' ? undefined : valueField,
-    groupField: id === 'single-threshold' ? undefined : group,
+    field: ['event-count', 'periodic'].includes(id) ? undefined : valueField,
+    groupField: ['single-threshold', 'periodic'].includes(id) ? undefined : group,
     operator: '>=',
-    value: id === 'event-count' ? undefined : 25,
+    value: ['event-count', 'periodic'].includes(id) ? undefined : 25,
     delta: id === 'window-fluctuation' ? 10 : undefined,
-    count: id === 'event-count' ? 3 : undefined,
-    windowType: id === 'single-threshold' ? undefined : 'sliding',
+    count: ['event-count', 'consecutive-count'].includes(id) ? 3 : undefined,
+    windowType: ['single-threshold', 'periodic', 'absence', 'event-sequence'].includes(id) ? undefined : 'sliding',
     windowSize: id === 'single-threshold' ? undefined : 3,
-    windowUnit: 'minutes',
+    windowUnit: ['absence', 'event-sequence', 'periodic'].includes(id) ? 'seconds' : 'minutes',
+    secondEventType: ['absence', 'event-sequence'].includes(id) ? eventType : undefined,
+    secondGroupField: ['absence', 'event-sequence'].includes(id) ? group : undefined,
+    secondField: ['absence', 'event-sequence'].includes(id) ? valueField : undefined,
+    secondOperator: ['absence', 'event-sequence'].includes(id) ? '>=' : undefined,
+    secondValue: ['absence', 'event-sequence'].includes(id) ? 0 : undefined,
   }
 }
 
@@ -222,17 +264,24 @@ function waitMsForWindow(params: CepTemplateParams) {
   return Math.min(300000, Math.max(1, size) * factor + 200)
 }
 
+function waitMsForTemplate(templateId: CepTemplateId | undefined, params: CepTemplateParams) {
+  if (['absence', 'event-sequence', 'periodic'].includes(templateId || '')) return waitMsForWindow(params)
+  if (params.windowType === 'tumbling') return waitMsForWindow(params)
+  return undefined
+}
+
 export function buildCepTestSkeleton(statement: { name: string; epl: string; label?: string; template?: string; params?: Record<string, unknown> }, bom: BomModel | undefined) {
   const templateId = statement.template as CepTemplateId | undefined
   const params = ({ ...(statement.params || {}), statementName: statement.name, label: statement.label || statement.name } as unknown) as CepTemplateParams
   const eventType = params.eventType || eventTypeFromEpl(statement.epl)
   const fields = fieldsForEventType(bom, eventType)
-  const repetitions = templateId === 'event-count' ? Number(params.count || 3) : ['window-average', 'window-fluctuation', 'window-sum'].includes(templateId || '') ? 2 : 1
-  const events = Array.from({ length: Math.max(1, repetitions) }, (_, index) => {
+  const repetitions = templateId === 'periodic' ? 0 : ['event-count', 'consecutive-count'].includes(templateId || '') ? Number(params.count || 3) : ['window-average', 'window-fluctuation', 'window-sum'].includes(templateId || '') ? 2 : 1
+  const events = Array.from({ length: Math.max(0, repetitions) }, (_, index) => {
     const ordinal = index + 1
     const data: Record<string, string | number | boolean> = {}
     for (const field of fields.filter(field => field.group !== '信封字段')) data[field.key] = sampleValueForField(field, params, ordinal)
     if (params.field) data[params.field] = passingFieldValue(templateId, params, ordinal) ?? ''
+    if (templateId === 'event-sequence' && index === 1 && params.secondField) data[params.secondField] = Number(params.secondValue || 0) + 1
     return {
       id: `${statement.name}-${ordinal}`,
       type: eventType,
@@ -250,7 +299,7 @@ export function buildCepTestSkeleton(statement: { name: string; epl: string; lab
     enabled: true,
     facts: {},
     events,
-    ...(params.windowType === 'tumbling' ? { waitMs: waitMsForWindow(params) } : {}),
+    ...(waitMsForTemplate(templateId, params) != null ? { waitMs: waitMsForTemplate(templateId, params) } : {}),
     expected: { outputs: {}, fired: [] },
     expectedEvents: [{ statement: statement.name, eventType: outputEventTypeFromEpl(statement.name, statement.epl), count: 1 }],
   }

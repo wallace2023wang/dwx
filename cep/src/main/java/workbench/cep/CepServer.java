@@ -37,6 +37,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
@@ -129,7 +131,7 @@ public final class CepServer {
     } catch (IllegalArgumentException exception) {
       send(exchange, 400, Map.of("error", exception.getMessage()));
     } catch (EPCompileException exception) {
-      send(exchange, 422, Map.of("ok", false, "errors", List.of(exception.getMessage())));
+      send(exchange, 422, compileFailure(exception, input));
     } catch (Exception exception) {
       exception.printStackTrace();
       send(exchange, 500, Map.of("error", "CEP compile failed"));
@@ -149,7 +151,7 @@ public final class CepServer {
     } catch (IllegalArgumentException exception) {
       send(exchange, 400, Map.of("error", exception.getMessage()));
     } catch (EPCompileException exception) {
-      send(exchange, 422, Map.of("ok", false, "errors", List.of(exception.getMessage())));
+      send(exchange, 422, compileFailure(exception, input));
     } catch (Exception exception) {
       exception.printStackTrace();
       send(exchange, 500, Map.of("error", "CEP test failed"));
@@ -564,6 +566,26 @@ public final class CepServer {
     EPCompiler compiler = EPCompilerProvider.getCompiler();
     EPCompiled compiled = compiler.compile(epl, new CompilerArguments(configuration));
     return new CompileResult(compiled, epl, statementSummaries(statements), schemaTypes(schemas));
+  }
+
+  private static Map<String, Object> compileFailure(EPCompileException exception, JsonNode input) {
+    String message = exception.getMessage() == null ? "CEP 编译失败" : exception.getMessage();
+    Map<String, Object> response = new LinkedHashMap<>();
+    response.put("ok", false);
+    response.put("errors", List.of(message));
+    List<Map<String, Object>> diagnostics = new ArrayList<>();
+    Matcher location = Pattern.compile("at line (\\d+) column (\\d+)", Pattern.CASE_INSENSITIVE).matcher(message);
+    Matcher statement = Pattern.compile("@name\\('([^']+)'\\)").matcher(message);
+    Map<String, Object> item = new LinkedHashMap<>();
+    item.put("message", message);
+    if (location.find()) {
+      item.put("line", Integer.parseInt(location.group(1)));
+      item.put("column", Integer.parseInt(location.group(2)));
+    }
+    if (statement.find()) item.put("statement", statement.group(1));
+    diagnostics.add(item);
+    response.put("diagnostics", diagnostics);
+    return response;
   }
 
   private static String eplOf(JsonNode schemas, JsonNode statements) {

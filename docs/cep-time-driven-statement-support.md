@@ -104,9 +104,9 @@ from pattern\[every (a=NitrogenPhaseEvent(phase='CIRCULATION') -> timer:interval
 
 * 未实现前，消费侧（测试套件断言 /demo 前端）按 `lastPhase != phase` 去重，文档标注该约定。
 
-### 缺口 C（P2）：暂停 / 恢复
+### 缺口 C（P2，历史 Demo 范围）：暂停 / 恢复
 
-Esper 无原生 "暂停实例" 语义。通用方案（v2 候选）：决策计划实例（plan）绑定 Release，支持 pause/resume 与状态持久化。demo 阶段用 "停止注入事件 + 前端阶段标志" 模拟，不进入产品。
+Esper 无原生 "暂停实例" 语义。决策计划实例（plan）绑定 Release、pause/resume 与状态持久化只保留为历史 demo 方案，不进入产品路线；demo 阶段用“停止注入事件 + 前端阶段标志”模拟。
 
 ## 四、建议落地顺序
 

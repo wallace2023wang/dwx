@@ -44,6 +44,7 @@ export interface EventStreamRecord extends EventStreamSummary {
   schemas?: Array<{ name: string; fields: Array<{ key: string; type: string }> }>
   versions?: EventStreamVersion[]
 }
+export interface EventStreamCompileResult { diagnostics?: Array<{ statement?: string; line?: number; column?: number; message: string }>; [key: string]: unknown }
 
 export async function loadEventStreams(projectId: string): Promise<EventStreamSummary[]> {
   return (await http.get<EventStreamSummary[]>(`/projects/${encodeURIComponent(projectId)}/event-streams`)).data
@@ -51,8 +52,10 @@ export async function loadEventStreams(projectId: string): Promise<EventStreamSu
 
 function requestError(error: unknown) {
   if (error && typeof error === 'object' && 'response' in error) {
-    const response = (error as { response?: { data?: { error?: string } } }).response
-    return new Error(response?.data?.error || '请求失败')
+    const response = (error as { response?: { data?: { error?: string; details?: unknown } } }).response
+    const next = new Error(response?.data?.error || '请求失败') as Error & { details?: unknown }
+    next.details = response?.data?.details
+    return next
   }
   return error instanceof Error ? error : new Error('请求失败')
 }

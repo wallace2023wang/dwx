@@ -32,7 +32,7 @@ export function createEngineClients(config) {
     let result;
     try { result = await response.json(); }
     catch { return { status: 502, error: `${target.label} 服务返回了无效响应` }; }
-    if (!response.ok) return { status: response.status === 422 ? 422 : 502, error: result.errors?.join('\n') || result.error || `${target.label} 验证失败` };
+    if (!response.ok) return { status: response.status === 422 ? 422 : 502, error: result.errors?.join('\n') || result.error || `${target.label} 验证失败`, details: result.diagnostics || (result.errors ? { errors: result.errors } : undefined) };
     return { result };
   }
 
@@ -49,7 +49,7 @@ export function createEngineClients(config) {
     let result;
     try { result = await response.json(); }
     catch { return { status: 502, error: `${target.label} 执行服务返回了无效响应` }; }
-    if (!response.ok) return { status: [400, 404, 409, 422].includes(response.status) ? response.status : 502, error: result.errors?.join('\n') || result.error || `${target.label} 执行服务处理失败` };
+    if (!response.ok) return { status: [400, 404, 409, 422].includes(response.status) ? response.status : 502, error: result.errors?.join('\n') || result.error || `${target.label} 执行服务处理失败`, details: result.diagnostics || (result.errors ? { errors: result.errors } : undefined) };
     return { result };
   }
 
