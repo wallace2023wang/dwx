@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { eventSchemasFromBom, normalizeEventStreamDraft, validateEventStreamDraft } from '../../shared/event-streams.js';
+import { eventSchemasFromBom, eventStreamDependencyImpact, normalizeEventStreamDraft, validateEventStreamDraft } from '../../shared/event-streams.js';
 import { bodyOf, operationError, reply, revisionConflict } from '../http-utils.js';
 
 export function createProjectEventStreamHandler({
@@ -16,9 +16,19 @@ export function createProjectEventStreamHandler({
   publishProjectEventStream,
   actorOf,
 }) {
+  const canEditAdvancedEpl = principal => principal?.permissions?.includes('*') || principal?.permissions?.includes('advanced-epl');
+  const isAdvancedEpl = statement => statement?.mode !== 'guided' || !statement?.template || !statement?.params;
+  const advancedEplChanged = (previous, next) => {
+    const runtime = draft => (draft?.statements || [])
+      .filter(isAdvancedEpl)
+      .map(statement => ({ name: statement.name, epl: statement.epl, enabled: statement.enabled !== false }));
+    return JSON.stringify(runtime(previous)) !== JSON.stringify(runtime(next));
+  };
   return async function handleProjectEventStreams(req, res, segments, projectId, data) {
     if (segments.length === 4 && segments[3] === 'event-streams' && req.method === 'GET') {
-      return reply(res, 200, data.eventStreams.map(projectEventStreamSummary));
+      const includeArchived = new URL(req.url, 'http://localhost').searchParams.get('archived') === 'true';
+      const items = includeArchived ? (data.allEventStreams || []).filter(item => item.archived) : data.eventStreams;
+      return reply(res, 200, items.map(projectEventStreamSummary));
     }
     if (segments.length === 4 && segments[3] === 'event-streams' && req.method === 'POST') {
       const payload = await bodyOf(req);
@@ -30,6 +40,9 @@ export function createProjectEventStreamHandler({
       }
       const validation = validateEventStreamDraft(draft, data.bom);
       if (validation) return reply(res, 400, { error: validation });
+      if (!canEditAdvancedEpl(req.principal) && draft.statements.some(isAdvancedEpl)) {
+        return reply(res, 403, { error: '当前角色缺少 advanced-epl 权限，不能创建高级 EPL 语句' });
+      }
       const result = await mutateAssets('eventStreams', assets => {
         const now = new Date().toISOString();
         const item = initializeAssetRevision({ id: crypto.randomUUID(), draft, published: null, versions: [], archived: false, updatedAt: now });
@@ -40,7 +53,7 @@ export function createProjectEventStreamHandler({
       return reply(res, 201, projectEventStreamDetail(result.item, data));
     }
     if (segments.length === 5 && segments[3] === 'event-streams' && req.method === 'GET') {
-      const item = data.eventStreams.find(stream => stream.id === segments[4]);
+      const item = (data.allEventStreams || data.eventStreams).find(stream => stream.id === segments[4]);
       return item ? reply(res, 200, projectEventStreamDetail(item, data)) : reply(res, 404, { error: '事件流不存在' });
     }
     if (segments.length === 5 && segments[3] === 'event-streams' && req.method === 'PUT') {
@@ -48,6 +61,18 @@ export function createProjectEventStreamHandler({
       const payload = await bodyOf(req);
       if (!Number.isInteger(payload?.revision) || payload.revision < 1) return reply(res, 400, { error: '修订号无效' });
       const draft = normalizeEventStreamDraft(payload?.draft);
+      const existing = data.eventStreams.find(stream => stream.id === id && !stream.archived);
+      if (!existing) return reply(res, 404, { error: '事件流不存在' });
+      const dependencyImpact = eventStreamDependencyImpact(existing.draft, draft);
+      if (dependencyImpact.length) return reply(res, 409, operationError({
+        status: 409,
+        code: 'EVENT_STREAM_DEPENDENCY_CONFLICT',
+        error: dependencyImpact.map(impact => `派生事件 ${impact.eventType} 仍被语句 ${impact.consumers.join('、')} 引用`).join('；'),
+        details: { dependencies: dependencyImpact },
+      }));
+      if (!canEditAdvancedEpl(req.principal) && advancedEplChanged(existing.draft, draft)) {
+        return reply(res, 403, { error: '当前角色缺少 advanced-epl 权限，不能新增、切换或修改高级 EPL' });
+      }
       const validation = validateEventStreamDraft(draft, data.bom);
       if (validation) return reply(res, 400, { error: validation });
       const result = await mutateAssets('eventStreams', assets => {
@@ -88,9 +113,35 @@ export function createProjectEventStreamHandler({
     if (segments.length === 6 && segments[3] === 'event-streams' && req.method === 'POST') {
       const id = segments[4];
       const action = segments[5];
-      const item = data.eventStreams.find(stream => stream.id === id);
+      const item = (data.allEventStreams || data.eventStreams).find(stream => stream.id === id);
       if (!item) return reply(res, 404, { error: '事件流不存在' });
       const payload = await bodyOf(req);
+      if (action === 'restore') {
+        authorizeAsset(req.principal, id);
+        if (!item.archived) return reply(res, 409, { error: '只有已归档事件流可以恢复' });
+        if (!Number.isInteger(payload?.revision) || payload.revision < 1) return reply(res, 400, { error: '修订号无效' });
+        const validation = validateEventStreamDraft(item.draft, data.bom);
+        if (validation) return reply(res, 409, { error: `当前 BOM 已不兼容该事件流：${validation}` });
+        if (data.eventStreams.some(stream => stream.id !== id && stream.draft.name === item.draft.name)) {
+          return reply(res, 409, { error: `已有同名活动事件流：${item.draft.name}` });
+        }
+        const result = await mutateAssets('eventStreams', assets => {
+          const target = assets.find(stream => stream.id === id && stream.archived);
+          if (!target) return { status: 404, error: '已归档事件流不存在' };
+          const conflict = revisionConflict(target, payload.revision);
+          if (conflict) return conflict;
+          target.archived = false;
+          target.lifecycleStatus = 'active';
+          target.published = null;
+          advanceAssetRevision(target, 'restored', true);
+          return { item: target };
+        }, projectId);
+        if (result.error) return reply(res, result.status, operationError(result));
+        await appendAuditEvent('asset.restored', 'event-stream', id, `恢复事件流：${result.item.draft.name}`, {
+          revision: result.item.revision, preservedVersions: result.item.versions.length,
+        }, req);
+        return reply(res, 200, projectEventStreamDetail(result.item, { ...data, eventStreams: [result.item] }));
+      }
       if (action === 'compile') {
         const result = await compileProjectEventStream(item, payload, data);
         return result.error ? reply(res, result.status, operationError(result)) : reply(res, 200, result.result);

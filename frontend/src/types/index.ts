@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'author' | 'reviewer' | 'deployer' | 'viewer'
+export type UserRole = 'admin' | 'author' | 'cep-developer' | 'reviewer' | 'deployer' | 'viewer'
 
 export interface User {
   id: string
@@ -7,6 +7,7 @@ export interface User {
   email: string
   initials: string
   roles: UserRole[]
+  permissions?: string[]
 }
 
 export interface Project {
@@ -24,8 +25,17 @@ export interface Project {
   engine: 'rules' | 'cep'
   source: 'server'
   defaultEnvironment?: string
+  variables?: RuleSetVariable[]
+  approvalPolicy?: ApprovalPolicy
   archived?: boolean
   createdAt?: string
+}
+
+export interface ApprovalPolicy {
+  requiredApprovals: 1 | 2
+  requireComment: boolean
+  preventSelfApproval: boolean
+  allowedReviewerRoles: Array<'reviewer' | 'admin'>
 }
 
 export type AssetType = 'rule' | 'decision-table' | 'flow' | 'event-stream'
@@ -41,6 +51,8 @@ export interface Asset {
   bomInvalid?: boolean
   bomIssue?: string
   lifecycleStatus?: 'active' | 'deprecated' | 'archived'
+  needsRepublish?: boolean
+  outdatedDependencies?: Ruleset['outdatedDependencies']
 }
 
 export interface RuleAttributes {
@@ -49,6 +61,17 @@ export interface RuleAttributes {
   effectiveDate: string
   createdBy: string
   reviewedAt: string
+}
+
+export type RuleSetVariableType = 'Integer' | 'Double' | 'Boolean' | 'String'
+
+export interface RuleSetVariable {
+  name: string
+  label: string
+  type: RuleSetVariableType
+  defaultValue: string | number | boolean
+  enum?: string[] | null
+  description?: string
 }
 
 export interface DecisionTableColumn {
@@ -67,6 +90,7 @@ interface RuleConditionMetadata {
   factType?: string
   quantifier?: 'one' | 'exists' | 'all' | 'none'
   connector?: 'and' | 'or'
+  fieldSource?: 'bom' | 'variable'
 }
 
 export interface RuleFieldConditionDraft extends RuleConditionMetadata {
@@ -107,6 +131,7 @@ export interface RuleActionDraft {
   value: string
   factType?: string
   actionType?: 'set' | 'add'
+  fieldSource?: 'bom' | 'variable'
 }
 
 export interface RuleDraft {
@@ -116,6 +141,7 @@ export interface RuleDraft {
   priority: number
   conditions: RuleConditionDraft[]
   actions: RuleActionDraft[]
+  variables?: RuleSetVariable[]
 }
 
 export interface DecisionTableDraft {
@@ -124,8 +150,8 @@ export interface DecisionTableDraft {
   category: string
   priority: number
   hitPolicy: 'ALL' | 'COLLECT' | 'FIRST' | 'PRIORITY'
-  conditions: Array<{ field: string; operator: string }>
-  actions: Array<{ field: string }>
+  conditions: Array<{ field: string; operator: string; fieldSource?: 'bom' | 'variable' }>
+  actions: Array<{ field: string; fieldSource?: 'bom' | 'variable' }>
   rows: Array<{
     conditions: Array<string | { valueSource: 'field'; valueField: string }>
     actions: string[]
@@ -156,6 +182,7 @@ export interface AssetDetail extends Asset {
   deprecatedBy?: string | null
   deprecationReason?: string | null
   replacedByAssetId?: string | null
+  projectVariables?: RuleSetVariable[]
 }
 
 export type ChangeSetStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED'
@@ -194,6 +221,8 @@ export interface ChangeSet {
   submittedAt: string | null
   decidedAt: string | null
   decisionComment: string
+  approvals?: Array<{ actor: string; roles: string[]; comment: string; decidedAt: string }>
+  reviewPolicySnapshot?: ApprovalPolicy | null
 }
 
 export interface DecisionTableAnalysis {
@@ -353,6 +382,7 @@ export interface FlowDraft {
   description: string
   category?: string
   priority?: number
+  variables?: RuleSetVariable[]
   steps: FlowStepDraft[]
   branches?: FlowBranchDraft[]
   editor?: FlowEditorMetadata
@@ -479,6 +509,7 @@ export interface ReleaseRecord {
   stableEndpoint?: string
   engine?: 'rules' | 'cep'
   webhook?: ReleaseWebhookConfig
+  target?: { type: 'rule' | 'table' | 'flow' | 'event-stream'; id: string; assetVersion: number }
 }
 
 export interface ReleaseDraft {

@@ -98,6 +98,11 @@ export async function startTestEnv(options = {}) {
         deployedAt: '2026-09-29T01:00:00.000Z', checksum: payload.checksum,
         steps: payload.steps?.length ?? 0, modelVersion: payload.model?.version ?? null,
       }));
+    } else if (req.url === '/activate') {
+      res.end(JSON.stringify({
+        ok: true, releaseId: payload.releaseId, decisionService: payload.decisionService,
+        activatedAt: '2026-09-29T01:30:00.000Z',
+      }));
     } else if (req.url === '/execute') {
       const facts = options.resBehavior?.executeFacts ? { ...options.resBehavior.executeFacts, ...payload.facts } : { ...payload.facts, riskLevel: '高' };
       res.end(JSON.stringify({

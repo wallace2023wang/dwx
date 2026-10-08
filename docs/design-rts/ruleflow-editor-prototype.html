@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Decision Workbench — 规则流编辑器 UI 设计稿（Dify 式画布 + RuleSet 规则集）</title>
+<title>Decision Workbench — 规则集编辑器 UI 设计稿（Dify 式画布 + RuleSet 规则集）</title>
 <style>
 :root{
   --ibm-blue:#0062ff; --ibm-blue-dark:#1d365d; --ibm-blue-light:#dfe7ee;
@@ -250,7 +250,7 @@ input,select,textarea{font-family:var(--font)}
 <!-- ============ 顶栏 ============ -->
 <header class="topbar">
   <div class="logo"><span class="mark">DW</span>Decision Workbench</div>
-  <span class="crumb">项目 / <b>粮库温控告警</b> / 规则流</span>
+  <span class="crumb">项目 / <b>粮库温控告警</b> / 规则集</span>
   <div class="spacer"></div>
   <button class="tb-btn">运行历史</button>
   <button class="tb-btn">报告</button>
@@ -266,7 +266,7 @@ input,select,textarea{font-family:var(--font)}
     <div class="nav-item"><span class="ico">▦</span>项目列表</div>
     <div class="nav-group">粮库温控告警</div>
     <div class="nav-item active"><span class="ico">▤</span>资产<span class="badge blue">10</span></div>
-    <div class="nav-item"><span class="ico">⬡</span>规则流<span class="badge">1</span></div>
+    <div class="nav-item"><span class="ico">⬡</span>规则集<span class="badge">1</span></div>
     <div class="nav-item"><span class="ico">≡</span>BOM·词汇<span class="badge">40</span></div>
     <div class="nav-item"><span class="ico">▣</span>测试套件<span class="badge blue">2</span></div>
     <div class="nav-item"><span class="ico">☰</span>审核中心</div>
@@ -284,7 +284,7 @@ input,select,textarea{font-family:var(--font)}
   <!-- 编辑器 -->
   <main class="workbench">
     <div class="editor-head">
-      <h1>粮库温控告警规则流</h1>
+      <h1>粮库温控告警规则集</h1>
       <span class="sub">分支 <b>main</b> · 基线 <b>v1.0.0</b> · 最近修改 2026/9/30 08:31</span>
       <span class="rev">修订 r3 · 已发布 v1</span>
       <span class="chip-ok">✓ Drools 校验通过</span>
@@ -309,7 +309,7 @@ input,select,textarea{font-family:var(--font)}
         <div class="warn-field"><span class="wf-name">判定状态 assessmentState</span><span class="wf-chain">均温数据不足不可判定 → 整仓均温严重超限 → 整仓均温告警 → 均温恢复候选 → 最高粮温告警 → … → 整仓均温判定决策表</span></div>
         <div class="warn-field"><span class="wf-name">规则类别 assessmentCategory</span><span class="wf-chain">均温数据不足不可判定 → 整仓均温严重超限 → … → NF稻谷封仓高温上报登记</span></div>
         <div class="warn-field"><span class="wf-name">最高候选等级 maxCandidateLevel</span><span class="wf-chain">均温数据不足不可判定 → 整仓均温严重超限 → … → 历史均温异常升高</span></div>
-        <p class="warn-foot">规则流执行按节点顺序串行，后写覆盖前值；如需归并请将多命中处理调整为"同类取最高等级"策略。</p>
+        <p class="warn-foot">规则集执行按节点顺序串行，后写覆盖前值；如需归并请将多命中处理调整为"同类取最高等级"策略。</p>
       </div>
     </div>
 
@@ -350,7 +350,7 @@ input,select,textarea{font-family:var(--font)}
         </div>
         <div class="minimap"><div class="mm-inner" id="mmInner"></div></div>
         <div class="design-note">
-          <span><b>UI 设计稿 v4</b> — 规则流编辑器 · Dify 式画布直编 + RuleSet 规则集节点 + 可折叠警告 + 顶部信息重组</span>
+          <span><b>UI 设计稿 v4</b> — 规则集编辑器 · Dify 式画布直编 + RuleSet 规则集节点 + 可折叠警告 + 顶部信息重组</span>
           <span class="chip">拖拽节点 / 连接端口 / 点击节点编辑</span>
           <span class="chip">节点绑定规则集（非逐条）</span>
           <span class="chip">右侧抽屉配置</span>
@@ -390,7 +390,7 @@ const TABLE_DT1 = { name:'整仓均温判定决策表', desc:'COLLECT · 4 行',
   ['≥0.8','≤21','true','CLEAR/21'],
   ['<0.8','—','—','NOT_EVALUABLE']]};
 
-/* 初始画布节点（模拟粮库温控告警规则流） */
+/* 初始画布节点（模拟粮库温控告警规则集） */
 let nodes = [
   { id:'n1', type:'start', x:70, y:150, title:'开始', sub:'进入流程' },
   { id:'n2', type:'task', x:210, y:118, title:'均温判定组', kind:'规则集', rset:'rs1', count:4, sub:'avg_temp' },
@@ -601,7 +601,7 @@ function openDrawer(n){
   const foot = document.getElementById('dFoot');
   if (n.type==='start'){
     document.getElementById('dKind').textContent='开始节点';
-    body.innerHTML = `<div class="form-group"><label>节点名称</label><input value="开始"></div><div class="form-group"><label>说明</label><textarea>流程入口，自动触发规则流执行</textarea></div>`;
+    body.innerHTML = `<div class="form-group"><label>节点名称</label><input value="开始"></div><div class="form-group"><label>说明</label><textarea>流程入口，自动触发规则集执行</textarea></div>`;
     foot.innerHTML = `<button class="btn ghost" onclick="delNode()">删除节点</button><button class="btn primary" onclick="toast('已保存')">保存</button>`;
   } else if (n.type==='end'){
     document.getElementById('dKind').textContent='结束节点';
@@ -693,7 +693,7 @@ document.getElementById('saveBtn').addEventListener('click', ()=>toast('草稿�
 document.getElementById('checkBtn').addEventListener('click', ()=>toast('Drools 10.2.0 校验通过 · 8 节点 8 连线（演示）'));
 document.getElementById('pubBtn').addEventListener('click', ()=>toast('已发布 v2（演示）'));
 document.getElementById('tbRun').addEventListener('click', ()=>{
-  toast('试运行：正在执行粮库温控告警规则流…');
+  toast('试运行：正在执行粮库温控告警规则集…');
   setTimeout(()=>toast('试运行完成：3 组规则集命中，输出 2 条判定（演示）'), 1600);
 });
 document.getElementById('undoBtn').addEventListener('click', ()=>toast('撤销（演示）'));

@@ -29,7 +29,7 @@
 │ 子导航: 主页 / 库 / 浏览 / 管理                            │
 ├──────────────────────────────────────────────────────────┤
 │ 项目头: 项目名 + 分支 main + 5 个子 Tab                    │
-│         [资产] [规则流] [BOM/词汇] [测试套件] [发布]        │
+│         [资产] [规则集] [BOM/词汇] [测试套件] [发布]        │
 ├──────────────┬───────────────────────────────────────────┤
 │ 左: 资产树    │  中: 资产列表      │  右: 编辑器            │
 │ (Package 树)  │  (名称/修改者/状态) │  (BAL/决策表/DRL)     │
@@ -52,7 +52,7 @@
 | Tab | 内容 |
 |---|---|
 | **资产** | 三栏工作区：Package 树 → 资产列表 → BAL 编辑器 / 决策表 |
-| **规则流** | Ruleset 配置卡片 + RuleFlow 画布 |
+| **规则集** | Ruleset 配置卡片 + RuleFlow 画布 |
 | **BOM/词汇** | 对象模型（左）+ 业务词汇表（右）+ DRL declare 预览 |
 | **测试套件** | 场景表：输入列 → 期望/实际 → 通过状态 |
 | **发布** | Release 历史 + 构建向导 |
@@ -113,8 +113,8 @@
 | Rule Project | 决策服务（Miniloan 贷款审批） | 库 → 项目卡片 |
 | Rule Package | 资产树节点（validation/eligibility/underwriting） | 左栏树 |
 | Rule / Decision Table | 规则 / 决策表 | 三栏工作区 |
-| **Ruleset** | 可执行单元配置 | 规则流 Tab 顶部卡片 |
-| RuleFlow | 流程图（Start→Gateway→RuleTask→End） | 规则流 Tab 画布 |
+| **Ruleset** | 最小发布与执行单元配置 | 规则集 Tab 顶部卡片 |
+| RuleFlow | 流程图（Start→Gateway→RuleTask→End） | 规则集 Tab 画布 |
 | BOM | 对象模型 + 业务词汇 | BOM/词汇 Tab |
 | Release | 不可变发布包 | 发布 Tab |
 | RuleApp | RES 部署归档（预留 M4） | 暂未实现 |
@@ -174,4 +174,4 @@
 
 ### 仍未实现
 
-- [ ] RuleApp 多 Ruleset 打包部署。当前 Release 以决策服务 / 规则流为单位，没有 RuleApp 级打包与部署概念。证据：`shared/releases.js`、`server/index.js` 的 Release 构建路径中不存在 RuleApp。
+- [ ] RuleApp 多 Ruleset 打包部署。当前 Release 以决策服务 / 规则集为单位，没有 RuleApp 级打包与部署概念。证据：`shared/releases.js`、`server/index.js` 的 Release 构建路径中不存在 RuleApp。

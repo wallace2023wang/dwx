@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "start": "bash scripts/start.sh",
     "dev": "npm --prefix frontend run dev",
     "dev:legacy": "vite --config archive/legacy-prototype/vite.config.js --host 127.0.0.1",
     "api": "node server/index.js",

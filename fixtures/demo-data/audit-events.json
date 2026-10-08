@@ -35,7 +35,7 @@
     "action": "asset.publish",
     "resourceType": "flow",
     "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
-    "summary": "发布规则流：自动充氮控制规则流",
+    "summary": "发布规则集：自动充氮控制规则集",
     "details": {
       "revision": 18,
       "version": 6
@@ -49,7 +49,7 @@
     "action": "asset.saved",
     "resourceType": "flow",
     "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
-    "summary": "保存规则流：自动充氮控制规则流",
+    "summary": "保存规则集：自动充氮控制规则集",
     "details": {
       "revision": 17
     },
@@ -430,7 +430,7 @@
     "action": "asset.publish",
     "resourceType": "flow",
     "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
-    "summary": "发布规则流：自动充氮控制规则流",
+    "summary": "发布规则集：自动充氮控制规则集",
     "details": {
       "revision": 16,
       "version": 5
@@ -444,7 +444,7 @@
     "action": "asset.saved",
     "resourceType": "flow",
     "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
-    "summary": "保存规则流：自动充氮控制规则流",
+    "summary": "保存规则集：自动充氮控制规则集",
     "details": {
       "revision": 15
     },
@@ -511,7 +511,7 @@
     "action": "asset.publish",
     "resourceType": "flow",
     "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
-    "summary": "发布规则流：自动充氮控制规则流",
+    "summary": "发布规则集：自动充氮控制规则集",
     "details": {
       "revision": 14,
       "version": 4
@@ -525,7 +525,7 @@
     "action": "asset.saved",
     "resourceType": "flow",
     "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
-    "summary": "保存规则流：自动充氮控制规则流",
+    "summary": "保存规则集：自动充氮控制规则集",
     "details": {
       "revision": 13
     },
@@ -564,7 +564,7 @@
     "action": "asset.saved",
     "resourceType": "flow",
     "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
-    "summary": "保存规则流：自动充氮控制规则流",
+    "summary": "保存规则集：自动充氮控制规则集",
     "details": {
       "revision": 12
     },
@@ -885,7 +885,7 @@
     "action": "asset.saved",
     "resourceType": "flow",
     "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
-    "summary": "保存规则流：自动充氮控制规则流",
+    "summary": "保存规则集：自动充氮控制规则集",
     "details": {
       "revision": 11
     },
@@ -912,7 +912,7 @@
     "action": "asset.publish",
     "resourceType": "flow",
     "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
-    "summary": "发布规则流：自动充氮控制规则流",
+    "summary": "发布规则集：自动充氮控制规则集",
     "details": {
       "revision": 10,
       "version": 3
@@ -926,7 +926,7 @@
     "action": "asset.saved",
     "resourceType": "flow",
     "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
-    "summary": "保存规则流：自动充氮控制规则流",
+    "summary": "保存规则集：自动充氮控制规则集",
     "details": {
       "revision": 9
     },
@@ -952,7 +952,7 @@
     "action": "asset.publish",
     "resourceType": "flow",
     "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
-    "summary": "发布规则流：自动充氮控制规则流",
+    "summary": "发布规则集：自动充氮控制规则集",
     "details": {
       "revision": 8,
       "version": 2
@@ -966,7 +966,7 @@
     "action": "asset.saved",
     "resourceType": "flow",
     "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
-    "summary": "保存规则流：自动充氮控制规则流",
+    "summary": "保存规则集：自动充氮控制规则集",
     "details": {
       "revision": 7
     },
@@ -1563,7 +1563,7 @@
     "action": "asset.publish",
     "resourceType": "flow",
     "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
-    "summary": "发布规则流：自动充氮控制规则流",
+    "summary": "发布规则集：自动充氮控制规则集",
     "details": {
       "revision": 6,
       "version": 1
@@ -1590,7 +1590,7 @@
     "action": "asset.saved",
     "resourceType": "flow",
     "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
-    "summary": "保存规则流：自动充氮控制规则流",
+    "summary": "保存规则集：自动充氮控制规则集",
     "details": {
       "revision": 5
     },
@@ -1687,7 +1687,7 @@
     "action": "asset.saved",
     "resourceType": "flow",
     "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
-    "summary": "保存规则流：自动充氮控制规则流",
+    "summary": "保存规则集：自动充氮控制规则集",
     "details": {
       "revision": 4
     },
@@ -1700,7 +1700,7 @@
     "action": "asset.saved",
     "resourceType": "flow",
     "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
-    "summary": "保存规则流：自动充氮控制规则流",
+    "summary": "保存规则集：自动充氮控制规则集",
     "details": {
       "revision": 3
     },
@@ -2032,7 +2032,7 @@
     "action": "asset.saved",
     "resourceType": "flow",
     "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
-    "summary": "保存规则流：自动充氮控制规则流",
+    "summary": "保存规则集：自动充氮控制规则集",
     "details": {
       "revision": 2
     },
@@ -2045,7 +2045,7 @@
     "action": "asset.created",
     "resourceType": "flow",
     "resourceId": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
-    "summary": "创建规则流：未命名规则流",
+    "summary": "创建规则集：未命名规则集",
     "details": {
       "revision": 1
     },
@@ -2340,7 +2340,7 @@
     "action": "asset.publish",
     "resourceType": "flow",
     "resourceId": "899825a4-4526-4972-9e7d-c9261fdd6a8d",
-    "summary": "发布规则流：信用风控规则流（演示）",
+    "summary": "发布规则集：信用风控规则集（演示）",
     "details": {
       "revision": 2,
       "version": 2
@@ -2407,7 +2407,7 @@
     "action": "asset.publish",
     "resourceType": "flow",
     "resourceId": "f6068fd9-9304-4afc-b0fa-76a495f0b4da",
-    "summary": "发布规则流：自动充氮控制规则流（Drools）",
+    "summary": "发布规则集：自动充氮控制规则集（Drools）",
     "details": {
       "revision": 6,
       "version": 4
@@ -2421,7 +2421,7 @@
     "action": "asset.publish",
     "resourceType": "flow",
     "resourceId": "f6068fd9-9304-4afc-b0fa-76a495f0b4da",
-    "summary": "发布规则流：自动充氮控制规则流（Drools）",
+    "summary": "发布规则集：自动充氮控制规则集（Drools）",
     "details": {
       "revision": 5,
       "version": 3
@@ -2435,7 +2435,7 @@
     "action": "asset.publish",
     "resourceType": "flow",
     "resourceId": "f6068fd9-9304-4afc-b0fa-76a495f0b4da",
-    "summary": "发布规则流：自动充氮控制规则流（Drools）",
+    "summary": "发布规则集：自动充氮控制规则集（Drools）",
     "details": {
       "revision": 4,
       "version": 2
@@ -2520,7 +2520,7 @@
     "action": "asset.publish",
     "resourceType": "flow",
     "resourceId": "f6068fd9-9304-4afc-b0fa-76a495f0b4da",
-    "summary": "发布规则流：自动充氮控制规则流（Drools）",
+    "summary": "发布规则集：自动充氮控制规则集（Drools）",
     "details": {
       "revision": 3,
       "version": 1
@@ -2534,7 +2534,7 @@
     "action": "asset.saved",
     "resourceType": "flow",
     "resourceId": "f6068fd9-9304-4afc-b0fa-76a495f0b4da",
-    "summary": "保存规则流：自动充氮控制规则流（Drools）",
+    "summary": "保存规则集：自动充氮控制规则集（Drools）",
     "details": {
       "revision": 2
     },
@@ -2631,7 +2631,7 @@
     "action": "asset.created",
     "resourceType": "flow",
     "resourceId": "f6068fd9-9304-4afc-b0fa-76a495f0b4da",
-    "summary": "创建规则流：未命名规则流",
+    "summary": "创建规则集：未命名规则集",
     "details": {
       "revision": 1
     },
@@ -4137,7 +4137,7 @@
     "action": "asset.saved",
     "resourceType": "flow",
     "resourceId": "8cf2ac76-853e-4a48-a838-b9977e97c5ca",
-    "summary": "保存规则流：粮库温控告警规则流",
+    "summary": "保存规则集：粮库温控告警规则集",
     "details": {
       "revision": 4
     },
@@ -4150,7 +4150,7 @@
     "action": "asset.created",
     "resourceType": "flow",
     "resourceId": "ae7cc2b9-8c7a-4ede-84a6-817d97b05e0e",
-    "summary": "创建规则流：未命名规则流",
+    "summary": "创建规则集：未命名规则集",
     "details": {
       "revision": 1
     },
@@ -4199,7 +4199,7 @@
     "action": "asset.created",
     "resourceType": "flow",
     "resourceId": "0a9e9ea6-796c-4b08-bfa5-84d89f8c0267",
-    "summary": "创建规则流：未命名规则流",
+    "summary": "创建规则集：未命名规则集",
     "details": {
       "revision": 1
     },
@@ -4281,7 +4281,7 @@
     "action": "asset.publish",
     "resourceType": "flow",
     "resourceId": "8cf2ac76-853e-4a48-a838-b9977e97c5ca",
-    "summary": "发布规则流：粮库温控告警规则流",
+    "summary": "发布规则集：粮库温控告警规则集",
     "details": {
       "revision": 3,
       "version": 1
@@ -4295,7 +4295,7 @@
     "action": "asset.saved",
     "resourceType": "flow",
     "resourceId": "8cf2ac76-853e-4a48-a838-b9977e97c5ca",
-    "summary": "保存规则流：粮库温控告警规则流",
+    "summary": "保存规则集：粮库温控告警规则集",
     "details": {
       "revision": 2
     },
@@ -4308,7 +4308,7 @@
     "action": "asset.created",
     "resourceType": "flow",
     "resourceId": "8cf2ac76-853e-4a48-a838-b9977e97c5ca",
-    "summary": "创建规则流：未命名规则流",
+    "summary": "创建规则集：未命名规则集",
     "details": {
       "revision": 1
     },

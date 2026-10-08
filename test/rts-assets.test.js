@@ -74,7 +74,7 @@ test('RTS-ASSET-04: 归档后资产不出现在 DRL 导出中', async () => {
   } finally { await env.stop(); }
 });
 
-test('RTS-ASSET-05: 规则流引用未发布资产被拒绝', async () => {
+test('RTS-ASSET-05: 规则集引用未发布资产被拒绝', async () => {
   const env = await startTestEnv();
   try {
     const rule = (await env.request('/api/rules', 'POST')).body; // 未发布
@@ -87,7 +87,7 @@ test('RTS-ASSET-05: 规则流引用未发布资产被拒绝', async () => {
   } finally { await env.stop(); }
 });
 
-test('RTS-ASSET-06: 规则流引用归档资产被拒绝', async () => {
+test('RTS-ASSET-06: 规则集引用归档资产被拒绝', async () => {
   const env = await startTestEnv();
   try {
     const rule = (await env.request('/api/rules', 'POST')).body;

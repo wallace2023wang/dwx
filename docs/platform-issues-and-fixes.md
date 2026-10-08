@@ -58,7 +58,7 @@
 | 规则间中间结果传递 | P1（已完成） | RES 支持受限 `settle` 多轮执行和显式 `output -> input` 反馈映射，返回逐轮轨迹并有 20 轮硬上限 | 见 `requirements-platform-gaps-nitrogen.md` R4 |
 | 未赋值 Boolean 的 null 语义 | P1（已完成） | 新发布产物将 Integer/Double/Boolean 生成为 Java 包装类型，未传保持 `null`；必填字段仍在 Team Server 与 RES 拒绝 | JUnit 覆盖可选 Boolean 的 null 守卫；见 `requirements-platform-gaps-nitrogen.md` R5 |
 | 规则参数化与运行期调参 | 已完成（规则侧）/ Demo 调参不纳入产品 | BAL、决策表和运行期变量已支持；计划实例热调参属于 demo 调度能力，不在产品范围 | 保持规则变量治理与发布校验；不实现 demo 计划实例 |
-| CEP 高级模板与 EPL 工具 | P1（当前） | 已实现缺席检测、双事件时序、连续次数、周期触发；高级 EPL 支持 Monaco、中文注释、BOM 补全和语法高亮 | 继续补真实 Esper 回归、诊断位置映射和依赖图 |
+| CEP 高级模板与 EPL 工具 | P1（已完成首批） | 已实现四类高级模板、真实 Esper 回归、Monaco、中文注释、BOM 补全、诊断位置、依赖图、独立高级 EPL 权限和归档恢复 | 后续保留状态迁移和多流关联模板 |
 | Esper 合规评估 | 已确认当前可接受 | 已按需求引入 Esper 8.8.0；项目方确认当前不做商用应用 | 若未来涉及对外分发，再补商业授权或替换引擎评估 |
 | BOM Event Profile | 已完成 | 采用统一 BOM Core + `eventTypes[]` 事件视图；规则侧仍用 `factType/factTypes`，CEP 侧优先用 Event Profile 生成 Esper schema | 后续可补前端 Event Profile 专用编辑 UI |
 

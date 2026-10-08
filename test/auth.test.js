@@ -44,6 +44,18 @@ test('AUTH-01: OIDC JWT 验签并按角色执行 API 权限门禁', async () => 
     assert.equal((await env.request('/api/change-sets/missing/approve', 'POST', {}, authorHeaders)).status, 403);
     assert.equal((await env.request('/api/projects/default/releases', 'POST', {}, authorHeaders)).status, 403);
 
+    const cepDeveloper = await token('cep-author', ['cep-developer']);
+    const cepHeaders = { authorization: `Bearer ${cepDeveloper}` };
+    const cepSession = await env.request('/api/session', 'GET', undefined, cepHeaders);
+    assert.deepEqual(cepSession.body.permissions, ['view', 'author', 'advanced-epl']);
+    const cepProject = await env.request('/api/projects', 'POST', {
+      name: 'CEP 权限项目', description: '验证高级 EPL 权限', icon: 'warehouse', engine: 'cep', bomTemplate: 'grain',
+    }, cepHeaders);
+    assert.equal(cepProject.status, 201);
+    const advancedDraft = { name: '高级检测', statements: [{ name: 'RawEpl', mode: 'advanced', epl: 'select * from GrainStore' }] };
+    assert.equal((await env.request(`/api/projects/${cepProject.body.id}/event-streams`, 'POST', advancedDraft, authorHeaders)).status, 403);
+    assert.equal((await env.request(`/api/projects/${cepProject.body.id}/event-streams`, 'POST', advancedDraft, cepHeaders)).status, 201);
+
     const reviewer = await token('rule-reviewer', [], { claims: { realm_access: { roles: ['reviewer'] } } });
     const reviewerHeaders = { authorization: `Bearer ${reviewer}` };
     assert.equal((await env.request('/api/change-sets/missing/approve', 'POST', {}, reviewerHeaders)).status, 404);

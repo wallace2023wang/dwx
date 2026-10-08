@@ -2,7 +2,7 @@
   {
     "id": "ae7cc2b9-8c7a-4ede-84a6-817d97b05e0e",
     "draft": {
-      "name": "未命名规则流",
+      "name": "未命名规则集",
       "description": "",
       "steps": [],
       "branches": [],
@@ -21,7 +21,7 @@
         "createdAt": "2026-09-30T15:02:43.444Z",
         "reason": "created",
         "draft": {
-          "name": "未命名规则流",
+          "name": "未命名规则集",
           "description": "",
           "steps": [],
           "branches": [],
@@ -36,7 +36,7 @@
   {
     "id": "0a9e9ea6-796c-4b08-bfa5-84d89f8c0267",
     "draft": {
-      "name": "未命名规则流",
+      "name": "未命名规则集",
       "description": "",
       "steps": [],
       "branches": []
@@ -52,7 +52,7 @@
         "createdAt": "2026-09-30T00:31:35.790Z",
         "reason": "created",
         "draft": {
-          "name": "未命名规则流",
+          "name": "未命名规则集",
           "description": "",
           "steps": [],
           "branches": []
@@ -64,7 +64,7 @@
   {
     "id": "8cf2ac76-853e-4a48-a838-b9977e97c5ca",
     "draft": {
-      "name": "粮库温控告警规则流",
+      "name": "粮库温控告警规则集",
       "description": "9 条 BAL 规则 + 整仓均温判定决策表",
       "steps": [
         {
@@ -129,7 +129,7 @@
       }
     },
     "published": {
-      "name": "粮库温控告警规则流",
+      "name": "粮库温控告警规则集",
       "description": "9 条 BAL 规则 + 整仓均温判定决策表",
       "bomVersion": 2,
       "bom": {
@@ -907,7 +907,7 @@
         "assetRevision": 3,
         "createdAt": "2026-09-29T14:50:22.542Z",
         "draft": {
-          "name": "粮库温控告警规则流",
+          "name": "粮库温控告警规则集",
           "description": "9 条 BAL 规则 + 整仓均温判定决策表",
           "steps": [
             {
@@ -1651,7 +1651,7 @@
         },
         "engineVersion": "10.2.0",
         "snapshot": {
-          "name": "粮库温控告警规则流",
+          "name": "粮库温控告警规则集",
           "description": "9 条 BAL 规则 + 整仓均温判定决策表",
           "bomVersion": 2,
           "bom": {
@@ -2434,7 +2434,7 @@
         "createdAt": "2026-09-29T14:50:15.146Z",
         "reason": "created",
         "draft": {
-          "name": "未命名规则流",
+          "name": "未命名规则集",
           "description": "",
           "steps": [],
           "branches": []
@@ -2445,7 +2445,7 @@
         "createdAt": "2026-09-29T14:50:15.277Z",
         "reason": "saved",
         "draft": {
-          "name": "粮库温控告警规则流",
+          "name": "粮库温控告警规则集",
           "description": "9 条 BAL 规则 + 整仓均温判定决策表",
           "steps": [
             {
@@ -2497,7 +2497,7 @@
         "createdAt": "2026-09-30T15:03:55.290Z",
         "reason": "saved",
         "draft": {
-          "name": "粮库温控告警规则流",
+          "name": "粮库温控告警规则集",
           "description": "9 条 BAL 规则 + 整仓均温判定决策表",
           "steps": [
             {
@@ -2568,7 +2568,7 @@
   {
     "id": "f6068fd9-9304-4afc-b0fa-76a495f0b4da",
     "draft": {
-      "name": "自动充氮控制规则流（Drools）",
+      "name": "自动充氮控制规则集（Drools）",
       "description": "6 条 BAL 判定规则按序执行：启动→充氮/补氮达标转环流→环流期满转保氮→到达结束时间完成；facts 在步骤间传递",
       "steps": [
         {
@@ -2613,7 +2613,7 @@
       }
     },
     "published": {
-      "name": "自动充氮控制规则流（Drools）",
+      "name": "自动充氮控制规则集（Drools）",
       "description": "6 条 BAL 判定规则按序执行：启动→充氮/补氮达标转环流→环流期满转保氮→到达结束时间完成；facts 在步骤间传递",
       "bomVersion": 2,
       "bom": {
@@ -2862,7 +2862,7 @@
         "assetRevision": 3,
         "createdAt": "2026-10-01T12:30:14.233Z",
         "draft": {
-          "name": "自动充氮控制规则流（Drools）",
+          "name": "自动充氮控制规则集（Drools）",
           "description": "6 条 BAL 判定规则按序执行：启动→充氮/补氮达标转环流→环流期满转保氮→到达结束时间完成；facts 在步骤间传递",
           "steps": [
             {
@@ -3097,7 +3097,7 @@
         },
         "engineVersion": "10.2.0",
         "snapshot": {
-          "name": "自动充氮控制规则流（Drools）",
+          "name": "自动充氮控制规则集（Drools）",
           "description": "6 条 BAL 判定规则按序执行：启动→充氮/补氮达标转环流→环流期满转保氮→到达结束时间完成；facts 在步骤间传递",
           "bomVersion": 2,
           "bom": {
@@ -3346,7 +3346,7 @@
         "assetRevision": 4,
         "createdAt": "2026-10-01T12:41:29.968Z",
         "draft": {
-          "name": "自动充氮控制规则流（Drools）",
+          "name": "自动充氮控制规则集（Drools）",
           "description": "6 条 BAL 判定规则按序执行：启动→充氮/补氮达标转环流→环流期满转保氮→到达结束时间完成；facts 在步骤间传递",
           "steps": [
             {
@@ -3581,7 +3581,7 @@
         },
         "engineVersion": "10.2.0",
         "snapshot": {
-          "name": "自动充氮控制规则流（Drools）",
+          "name": "自动充氮控制规则集（Drools）",
           "description": "6 条 BAL 判定规则按序执行：启动→充氮/补氮达标转环流→环流期满转保氮→到达结束时间完成；facts 在步骤间传递",
           "bomVersion": 2,
           "bom": {
@@ -3830,7 +3830,7 @@
         "assetRevision": 5,
         "createdAt": "2026-10-01T12:41:32.659Z",
         "draft": {
-          "name": "自动充氮控制规则流（Drools）",
+          "name": "自动充氮控制规则集（Drools）",
           "description": "6 条 BAL 判定规则按序执行：启动→充氮/补氮达标转环流→环流期满转保氮→到达结束时间完成；facts 在步骤间传递",
           "steps": [
             {
@@ -4065,7 +4065,7 @@
         },
         "engineVersion": "10.2.0",
         "snapshot": {
-          "name": "自动充氮控制规则流（Drools）",
+          "name": "自动充氮控制规则集（Drools）",
           "description": "6 条 BAL 判定规则按序执行：启动→充氮/补氮达标转环流→环流期满转保氮→到达结束时间完成；facts 在步骤间传递",
           "bomVersion": 2,
           "bom": {
@@ -4314,7 +4314,7 @@
         "assetRevision": 6,
         "createdAt": "2026-10-01T12:41:52.865Z",
         "draft": {
-          "name": "自动充氮控制规则流（Drools）",
+          "name": "自动充氮控制规则集（Drools）",
           "description": "6 条 BAL 判定规则按序执行：启动→充氮/补氮达标转环流→环流期满转保氮→到达结束时间完成；facts 在步骤间传递",
           "steps": [
             {
@@ -4549,7 +4549,7 @@
         },
         "engineVersion": "10.2.0",
         "snapshot": {
-          "name": "自动充氮控制规则流（Drools）",
+          "name": "自动充氮控制规则集（Drools）",
           "description": "6 条 BAL 判定规则按序执行：启动→充氮/补氮达标转环流→环流期满转保氮→到达结束时间完成；facts 在步骤间传递",
           "bomVersion": 2,
           "bom": {
@@ -4803,7 +4803,7 @@
         "createdAt": "2026-10-01T12:29:20.683Z",
         "reason": "created",
         "draft": {
-          "name": "未命名规则流",
+          "name": "未命名规则集",
           "description": "",
           "steps": [],
           "branches": [],
@@ -4817,7 +4817,7 @@
         "createdAt": "2026-10-01T12:30:14.051Z",
         "reason": "saved",
         "draft": {
-          "name": "自动充氮控制规则流（Drools）",
+          "name": "自动充氮控制规则集（Drools）",
           "description": "6 条 BAL 判定规则按序执行：启动→充氮/补氮达标转环流→环流期满转保氮→到达结束时间完成；facts 在步骤间传递",
           "steps": [
             {
@@ -4868,7 +4868,7 @@
   {
     "id": "899825a4-4526-4972-9e7d-c9261fdd6a8d",
     "draft": {
-      "name": "信用风控规则流（演示）",
+      "name": "信用风控规则集（演示）",
       "description": "先决策表评级，再规则补额度",
       "category": "risk_control",
       "priority": 0,
@@ -4884,7 +4884,7 @@
       ]
     },
     "published": {
-      "name": "信用风控规则流（演示）",
+      "name": "信用风控规则集（演示）",
       "description": "先决策表评级，再规则补额度",
       "bomVersion": 1,
       "bom": {
@@ -5028,7 +5028,7 @@
         "number": 1,
         "createdAt": "2026-09-28T19:42:15.289Z",
         "draft": {
-          "name": "信用风控规则流（演示）",
+          "name": "信用风控规则集（演示）",
           "description": "先决策表评级，再规则补额度",
           "category": "risk_control",
           "priority": 0,
@@ -5044,7 +5044,7 @@
           ]
         },
         "snapshot": {
-          "name": "信用风控规则流（演示）",
+          "name": "信用风控规则集（演示）",
           "description": "先决策表评级，再规则补额度",
           "steps": [
             {
@@ -5069,7 +5069,7 @@
         "assetRevision": 2,
         "createdAt": "2026-10-02T00:21:47.269Z",
         "draft": {
-          "name": "信用风控规则流（演示）",
+          "name": "信用风控规则集（演示）",
           "description": "先决策表评级，再规则补额度",
           "category": "risk_control",
           "priority": 0,
@@ -5205,7 +5205,7 @@
         },
         "engineVersion": "10.2.0",
         "snapshot": {
-          "name": "信用风控规则流（演示）",
+          "name": "信用风控规则集（演示）",
           "description": "先决策表评级，再规则补额度",
           "bomVersion": 1,
           "bom": {
@@ -5355,7 +5355,7 @@
         "createdAt": "2026-09-28T19:42:15.289Z",
         "reason": "created",
         "draft": {
-          "name": "信用风控规则流（演示）",
+          "name": "信用风控规则集（演示）",
           "description": "先决策表评级，再规则补额度",
           "category": "risk_control",
           "priority": 0,
@@ -5376,7 +5376,7 @@
   {
     "id": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",
     "draft": {
-      "name": "自动充氮控制规则流",
+      "name": "自动充氮控制规则集",
       "description": "充氮控制主链路：以 Rule Group 步骤整包执行规则包「nitrogen」的 11 条规则。 阈值判定（nitrogenPct >= maxPct / nitrogenPct < minPct）**在规则条件内完成**， maxPct/minPct 由调用方按仓传入 facts —— 因此调整阈值只需改参数， 不需要修改或重新发布规则。 优先级由 salience 决定：结束(60) > 暂停(55) > 各阶段迁移(2–10)。",
       "steps": [
         {
@@ -5399,7 +5399,7 @@
       }
     },
     "published": {
-      "name": "自动充氮控制规则流",
+      "name": "自动充氮控制规则集",
       "description": "充氮控制主链路：以 Rule Group 步骤整包执行规则包「nitrogen」的 11 条规则。 阈值判定（nitrogenPct >= maxPct / nitrogenPct < minPct）**在规则条件内完成**， maxPct/minPct 由调用方按仓传入 facts —— 因此调整阈值只需改参数， 不需要修改或重新发布规则。 优先级由 salience 决定：结束(60) > 暂停(55) > 各阶段迁移(2–10)。",
       "bomVersion": 7,
       "bom": {
@@ -5785,7 +5785,7 @@
         "assetRevision": 6,
         "createdAt": "2026-10-02T01:00:17.141Z",
         "draft": {
-          "name": "自动充氮控制规则流",
+          "name": "自动充氮控制规则集",
           "description": "充氮控制主链路（两个公共步骤，无网关）。①「充氮状态迁移表」完成迁移判定并输出 4 路设备指令；②「充氮结束处理表」仅在 endReached=true 时命中，覆盖为 COMPLETED + 全关设备；未到结束时间时该步骤不命中，第①步输出原样生效。 说明：设备指令必须由迁移表同行给出——平台不允许输出字段回填输入，后续步骤若按 phase 选行会读到迁移前的阶段。",
           "steps": [
             {
@@ -6126,7 +6126,7 @@
         },
         "engineVersion": "10.2.0",
         "snapshot": {
-          "name": "自动充氮控制规则流",
+          "name": "自动充氮控制规则集",
           "description": "充氮控制主链路（两个公共步骤，无网关）。①「充氮状态迁移表」完成迁移判定并输出 4 路设备指令；②「充氮结束处理表」仅在 endReached=true 时命中，覆盖为 COMPLETED + 全关设备；未到结束时间时该步骤不命中，第①步输出原样生效。 说明：设备指令必须由迁移表同行给出——平台不允许输出字段回填输入，后续步骤若按 phase 选行会读到迁移前的阶段。",
           "bomVersion": 6,
           "bom": {
@@ -6469,7 +6469,7 @@
         "assetRevision": 8,
         "createdAt": "2026-10-02T01:26:21.583Z",
         "draft": {
-          "name": "自动充氮控制规则流",
+          "name": "自动充氮控制规则集",
           "description": "充氮控制主链路：以 Rule Group 步骤整包执行规则包「nitrogen」的 11 条规则。 阈值判定（nitrogenPct >= maxPct / nitrogenPct < minPct）**在规则条件内完成**， maxPct/minPct 由调用方按仓传入 facts —— 因此调整阈值只需改参数， 不需要修改或重新发布规则。 优先级由 salience 决定：结束(60) > 暂停(55) > 各阶段迁移(2–10)。",
           "steps": [
             {
@@ -6808,7 +6808,7 @@
         },
         "engineVersion": "10.2.0",
         "snapshot": {
-          "name": "自动充氮控制规则流",
+          "name": "自动充氮控制规则集",
           "description": "充氮控制主链路：以 Rule Group 步骤整包执行规则包「nitrogen」的 11 条规则。 阈值判定（nitrogenPct >= maxPct / nitrogenPct < minPct）**在规则条件内完成**， maxPct/minPct 由调用方按仓传入 facts —— 因此调整阈值只需改参数， 不需要修改或重新发布规则。 优先级由 salience 决定：结束(60) > 暂停(55) > 各阶段迁移(2–10)。",
           "bomVersion": 6,
           "bom": {
@@ -7237,7 +7237,7 @@
         "assetRevision": 10,
         "createdAt": "2026-10-02T01:26:27.740Z",
         "draft": {
-          "name": "自动充氮控制规则流",
+          "name": "自动充氮控制规则集",
           "description": "充氮控制主链路：以 Rule Group 步骤整包执行规则包「nitrogen」的 11 条规则。 阈值判定（nitrogenPct >= maxPct / nitrogenPct < minPct）**在规则条件内完成**， maxPct/minPct 由调用方按仓传入 facts —— 因此调整阈值只需改参数， 不需要修改或重新发布规则。 优先级由 salience 决定：结束(60) > 暂停(55) > 各阶段迁移(2–10)。",
           "steps": [
             {
@@ -7576,7 +7576,7 @@
         },
         "engineVersion": "10.2.0",
         "snapshot": {
-          "name": "自动充氮控制规则流",
+          "name": "自动充氮控制规则集",
           "description": "充氮控制主链路：以 Rule Group 步骤整包执行规则包「nitrogen」的 11 条规则。 阈值判定（nitrogenPct >= maxPct / nitrogenPct < minPct）**在规则条件内完成**， maxPct/minPct 由调用方按仓传入 facts —— 因此调整阈值只需改参数， 不需要修改或重新发布规则。 优先级由 salience 决定：结束(60) > 暂停(55) > 各阶段迁移(2–10)。",
           "bomVersion": 6,
           "bom": {
@@ -8005,7 +8005,7 @@
         "assetRevision": 14,
         "createdAt": "2026-10-02T01:27:10.136Z",
         "draft": {
-          "name": "自动充氮控制规则流",
+          "name": "自动充氮控制规则集",
           "description": "充氮控制主链路：以 Rule Group 步骤整包执行规则包「nitrogen」的 11 条规则。 阈值判定（nitrogenPct >= maxPct / nitrogenPct < minPct）**在规则条件内完成**， maxPct/minPct 由调用方按仓传入 facts —— 因此调整阈值只需改参数， 不需要修改或重新发布规则。 优先级由 salience 决定：结束(60) > 暂停(55) > 各阶段迁移(2–10)。",
           "steps": [
             {
@@ -8315,7 +8315,7 @@
         },
         "engineVersion": "10.2.0",
         "snapshot": {
-          "name": "自动充氮控制规则流",
+          "name": "自动充氮控制规则集",
           "description": "充氮控制主链路：以 Rule Group 步骤整包执行规则包「nitrogen」的 11 条规则。 阈值判定（nitrogenPct >= maxPct / nitrogenPct < minPct）**在规则条件内完成**， maxPct/minPct 由调用方按仓传入 facts —— 因此调整阈值只需改参数， 不需要修改或重新发布规则。 优先级由 salience 决定：结束(60) > 暂停(55) > 各阶段迁移(2–10)。",
           "bomVersion": 7,
           "bom": {
@@ -8701,7 +8701,7 @@
         "assetRevision": 16,
         "createdAt": "2026-10-02T01:27:36.679Z",
         "draft": {
-          "name": "自动充氮控制规则流",
+          "name": "自动充氮控制规则集",
           "description": "充氮控制主链路：以 Rule Group 步骤整包执行规则包「nitrogen」的 11 条规则。 阈值判定（nitrogenPct >= maxPct / nitrogenPct < minPct）**在规则条件内完成**， maxPct/minPct 由调用方按仓传入 facts —— 因此调整阈值只需改参数， 不需要修改或重新发布规则。 优先级由 salience 决定：结束(60) > 暂停(55) > 各阶段迁移(2–10)。",
           "steps": [
             {
@@ -9011,7 +9011,7 @@
         },
         "engineVersion": "10.2.0",
         "snapshot": {
-          "name": "自动充氮控制规则流",
+          "name": "自动充氮控制规则集",
           "description": "充氮控制主链路：以 Rule Group 步骤整包执行规则包「nitrogen」的 11 条规则。 阈值判定（nitrogenPct >= maxPct / nitrogenPct < minPct）**在规则条件内完成**， maxPct/minPct 由调用方按仓传入 facts —— 因此调整阈值只需改参数， 不需要修改或重新发布规则。 优先级由 salience 决定：结束(60) > 暂停(55) > 各阶段迁移(2–10)。",
           "bomVersion": 7,
           "bom": {
@@ -9397,7 +9397,7 @@
         "assetRevision": 18,
         "createdAt": "2026-10-02T03:06:29.206Z",
         "draft": {
-          "name": "自动充氮控制规则流",
+          "name": "自动充氮控制规则集",
           "description": "充氮控制主链路：以 Rule Group 步骤整包执行规则包「nitrogen」的 11 条规则。 阈值判定（nitrogenPct >= maxPct / nitrogenPct < minPct）**在规则条件内完成**， maxPct/minPct 由调用方按仓传入 facts —— 因此调整阈值只需改参数， 不需要修改或重新发布规则。 优先级由 salience 决定：结束(60) > 暂停(55) > 各阶段迁移(2–10)。",
           "steps": [
             {
@@ -9707,7 +9707,7 @@
         },
         "engineVersion": "10.2.0",
         "snapshot": {
-          "name": "自动充氮控制规则流",
+          "name": "自动充氮控制规则集",
           "description": "充氮控制主链路：以 Rule Group 步骤整包执行规则包「nitrogen」的 11 条规则。 阈值判定（nitrogenPct >= maxPct / nitrogenPct < minPct）**在规则条件内完成**， maxPct/minPct 由调用方按仓传入 facts —— 因此调整阈值只需改参数， 不需要修改或重新发布规则。 优先级由 salience 决定：结束(60) > 暂停(55) > 各阶段迁移(2–10)。",
           "bomVersion": 7,
           "bom": {
@@ -10098,7 +10098,7 @@
         "createdAt": "2026-10-02T00:50:20.084Z",
         "reason": "created",
         "draft": {
-          "name": "未命名规则流",
+          "name": "未命名规则集",
           "description": "",
           "steps": [],
           "branches": [],
@@ -10112,7 +10112,7 @@
         "createdAt": "2026-10-02T00:50:20.098Z",
         "reason": "saved",
         "draft": {
-          "name": "自动充氮控制规则流",
+          "name": "自动充氮控制规则集",
           "description": "充氮控制主链路：公共步骤执行「充氮状态迁移表」判定迁移，再由 endReached 网关选择「充氮结束处理表」（到点全关）或「充氮设备态表」（按阶段给出 4 路设备指令）。表 A 只写 nextPhase/reason，设备指令由两张设备表确定，输出字段不重叠。",
           "steps": [
             {
@@ -10166,7 +10166,7 @@
         "createdAt": "2026-10-02T00:52:33.081Z",
         "reason": "saved",
         "draft": {
-          "name": "自动充氮控制规则流",
+          "name": "自动充氮控制规则集",
           "description": "充氮控制主链路（两个公共步骤，无网关）。①「充氮状态迁移表」完成迁移判定并输出 4 路设备指令；②「充氮结束处理表」仅在 endReached=true 时命中，覆盖为 COMPLETED + 全关设备；未到结束时间时该步骤不命中，第①步输出原样生效。 说明：设备指令必须由迁移表同行给出——平台不允许输出字段回填输入，后续步骤若按 phase 选行会读到迁移前的阶段。",
           "steps": [
             {
@@ -10196,7 +10196,7 @@
         "createdAt": "2026-10-02T00:52:50.019Z",
         "reason": "saved",
         "draft": {
-          "name": "自动充氮控制规则流",
+          "name": "自动充氮控制规则集",
           "description": "充氮控制主链路（两个公共步骤，无网关）。①「充氮状态迁移表」完成迁移判定并输出 4 路设备指令；②「充氮结束处理表」仅在 endReached=true 时命中，覆盖为 COMPLETED + 全关设备；未到结束时间时该步骤不命中，第①步输出原样生效。 说明：设备指令必须由迁移表同行给出——平台不允许输出字段回填输入，后续步骤若按 phase 选行会读到迁移前的阶段。",
           "steps": [
             {
@@ -10226,7 +10226,7 @@
         "createdAt": "2026-10-02T00:53:55.908Z",
         "reason": "saved",
         "draft": {
-          "name": "自动充氮控制规则流",
+          "name": "自动充氮控制规则集",
           "description": "充氮控制主链路（两个公共步骤，无网关）。①「充氮状态迁移表」完成迁移判定并输出 4 路设备指令；②「充氮结束处理表」仅在 endReached=true 时命中，覆盖为 COMPLETED + 全关设备；未到结束时间时该步骤不命中，第①步输出原样生效。 说明：设备指令必须由迁移表同行给出——平台不允许输出字段回填输入，后续步骤若按 phase 选行会读到迁移前的阶段。",
           "steps": [
             {
@@ -10256,7 +10256,7 @@
         "createdAt": "2026-10-02T01:26:21.451Z",
         "reason": "saved",
         "draft": {
-          "name": "自动充氮控制规则流",
+          "name": "自动充氮控制规则集",
           "description": "充氮控制主链路：以 Rule Group 步骤整包执行规则包「nitrogen」的 11 条规则。 阈值判定（nitrogenPct >= maxPct / nitrogenPct < minPct）**在规则条件内完成**， maxPct/minPct 由调用方按仓传入 facts —— 因此调整阈值只需改参数， 不需要修改或重新发布规则。 优先级由 salience 决定：结束(60) > 暂停(55) > 各阶段迁移(2–10)。",
           "steps": [
             {
@@ -10284,7 +10284,7 @@
         "createdAt": "2026-10-02T01:26:27.606Z",
         "reason": "saved",
         "draft": {
-          "name": "自动充氮控制规则流",
+          "name": "自动充氮控制规则集",
           "description": "充氮控制主链路：以 Rule Group 步骤整包执行规则包「nitrogen」的 11 条规则。 阈值判定（nitrogenPct >= maxPct / nitrogenPct < minPct）**在规则条件内完成**， maxPct/minPct 由调用方按仓传入 facts —— 因此调整阈值只需改参数， 不需要修改或重新发布规则。 优先级由 salience 决定：结束(60) > 暂停(55) > 各阶段迁移(2–10)。",
           "steps": [
             {
@@ -10312,7 +10312,7 @@
         "createdAt": "2026-10-02T01:26:50.362Z",
         "reason": "saved",
         "draft": {
-          "name": "自动充氮控制规则流",
+          "name": "自动充氮控制规则集",
           "description": "充氮控制主链路：以 Rule Group 步骤整包执行规则包「nitrogen」的 11 条规则。 阈值判定（nitrogenPct >= maxPct / nitrogenPct < minPct）**在规则条件内完成**， maxPct/minPct 由调用方按仓传入 facts —— 因此调整阈值只需改参数， 不需要修改或重新发布规则。 优先级由 salience 决定：结束(60) > 暂停(55) > 各阶段迁移(2–10)。",
           "steps": [
             {
@@ -10340,7 +10340,7 @@
         "createdAt": "2026-10-02T01:26:55.651Z",
         "reason": "saved",
         "draft": {
-          "name": "自动充氮控制规则流",
+          "name": "自动充氮控制规则集",
           "description": "充氮控制主链路：以 Rule Group 步骤整包执行规则包「nitrogen」的 11 条规则。 阈值判定（nitrogenPct >= maxPct / nitrogenPct < minPct）**在规则条件内完成**， maxPct/minPct 由调用方按仓传入 facts —— 因此调整阈值只需改参数， 不需要修改或重新发布规则。 优先级由 salience 决定：结束(60) > 暂停(55) > 各阶段迁移(2–10)。",
           "steps": [
             {
@@ -10368,7 +10368,7 @@
         "createdAt": "2026-10-02T01:27:10.009Z",
         "reason": "saved",
         "draft": {
-          "name": "自动充氮控制规则流",
+          "name": "自动充氮控制规则集",
           "description": "充氮控制主链路：以 Rule Group 步骤整包执行规则包「nitrogen」的 11 条规则。 阈值判定（nitrogenPct >= maxPct / nitrogenPct < minPct）**在规则条件内完成**， maxPct/minPct 由调用方按仓传入 facts —— 因此调整阈值只需改参数， 不需要修改或重新发布规则。 优先级由 salience 决定：结束(60) > 暂停(55) > 各阶段迁移(2–10)。",
           "steps": [
             {
@@ -10396,7 +10396,7 @@
         "createdAt": "2026-10-02T01:27:36.577Z",
         "reason": "saved",
         "draft": {
-          "name": "自动充氮控制规则流",
+          "name": "自动充氮控制规则集",
           "description": "充氮控制主链路：以 Rule Group 步骤整包执行规则包「nitrogen」的 11 条规则。 阈值判定（nitrogenPct >= maxPct / nitrogenPct < minPct）**在规则条件内完成**， maxPct/minPct 由调用方按仓传入 facts —— 因此调整阈值只需改参数， 不需要修改或重新发布规则。 优先级由 salience 决定：结束(60) > 暂停(55) > 各阶段迁移(2–10)。",
           "steps": [
             {
@@ -10424,7 +10424,7 @@
         "createdAt": "2026-10-02T03:06:29.098Z",
         "reason": "saved",
         "draft": {
-          "name": "自动充氮控制规则流",
+          "name": "自动充氮控制规则集",
           "description": "充氮控制主链路：以 Rule Group 步骤整包执行规则包「nitrogen」的 11 条规则。 阈值判定（nitrogenPct >= maxPct / nitrogenPct < minPct）**在规则条件内完成**， maxPct/minPct 由调用方按仓传入 facts —— 因此调整阈值只需改参数， 不需要修改或重新发布规则。 优先级由 salience 决定：结束(60) > 暂停(55) > 各阶段迁移(2–10)。",
           "steps": [
             {

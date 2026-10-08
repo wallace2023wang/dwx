@@ -123,7 +123,7 @@ interface FlowCanvasProps {
   selectedNodeId?: string | null
   onNodeSelect?: (nodeId: string | null) => void
   onNodeMove?: (nodeId: string, position: { x: number; y: number }) => void
-  onDropItem?: (item: { type: 'rule-group' | 'rule' | 'table'; id?: string; packageName?: string }, position: { x: number; y: number }) => void
+  onDropItem?: (item: { type: 'rule-group' | 'rule' | 'table' | 'gateway'; id?: string; packageName?: string }, position: { x: number; y: number }) => void
   onViewportChange?: (viewport: { x: number; y: number; zoom: number }) => void
   initialViewport?: { x: number; y: number; zoom: number }
 }

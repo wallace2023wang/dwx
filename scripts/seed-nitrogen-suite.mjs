@@ -2,10 +2,10 @@
 /**
  * 粮库自动充氮控制 —— 测试套件种子脚本
  * ------------------------------------------------------------
- * 为规则流「自动充氮控制规则流」建立发布门禁套件，覆盖 docs 的 T1–T16。
+ * 为规则集「自动充氮控制规则集」建立发布门禁套件，覆盖 docs 的 T1–T16。
  *
- * 断言方式：`expected.outputs`（规则流两个公共步骤的最终 facts）。
- * 因为规则流会依次执行「表 A → 表 B」，端到端结果就是最终设备态，
+ * 断言方式：`expected.outputs`（规则集两个公共步骤的最终 facts）。
+ * 因为规则集会依次执行「表 A → 表 B」，端到端结果就是最终设备态，
  * 所以用 outputs 断言即可同时覆盖迁移与设备指令。
  *
  * 用法：
@@ -124,10 +124,10 @@ const buildCase = ([id, name, overrides, nextPhase, dev, reason]) => ({
 async function main() {
   log(`Team Server: ${RTS_URL}`);
   const flows = await get(`/api/projects/${argProject}/flows`);
-  const flow = flows.find(f => (f.flowName || f.name) === '自动充氮控制规则流');
-  if (!flow) throw new Error('找不到规则流「自动充氮控制规则流」，请先运行 seed-nitrogen-flow.mjs');
+  const flow = flows.find(f => (f.flowName || f.name) === '自动充氮控制规则集');
+  if (!flow) throw new Error('找不到规则集「自动充氮控制规则集」，请先运行 seed-nitrogen-flow.mjs');
   const flowId = flow.id ?? flow.flowId;
-  log(`规则流: ${flowId}（目标可为草稿，门禁运行时要求已发布）\n`);
+  log(`规则集: ${flowId}（目标可为草稿，门禁运行时要求已发布）\n`);
 
   const payload = {
     name: SUITE_NAME,
@@ -153,7 +153,7 @@ async function main() {
 
   log(`
 ▸ 套件已就绪（required=true，参与 Release 门禁）。
-▸ 运行需要规则流已发布：发布后在「测试套件」页运行，或创建 Release 时由门禁自动重跑。
+▸ 运行需要规则集已发布：发布后在「测试套件」页运行，或创建 Release 时由门禁自动重跑。
 `);
   log(`SUITE_RESULT=${JSON.stringify({ projectId: argProject, flowId, suiteName: SUITE_NAME, caseCount: CASES.length })}`);
 }

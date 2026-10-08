@@ -4,6 +4,8 @@ import { flowDefinitionFromDetail } from '../../api/flows'
 import type { BomField, FlowAssetOption, FlowBranchDraft, FlowDetail, FlowDraft, FlowMapping, FlowPackageOption, FlowStepDraft } from '../../types'
 import FlowCanvas from './FlowCanvas'
 
+type FlowPalettePayload = { type: 'rule-group' | 'rule' | 'table' | 'gateway'; id?: string; packageName?: string }
+
 interface FlowEditorProps {
   detail: FlowDetail
   fields: BomField[]
@@ -109,9 +111,13 @@ function StepEditor({ step, index, count, assets, packages, fields, onChange, on
   )
 }
 
-function newStep(assets: FlowAssetOption[]): FlowStepDraft | null {
+function newStep(assets: FlowAssetOption[], packages: FlowPackageOption[] = []): FlowStepDraft | null {
   const asset = assets[0]
-  return asset ? { nodeId: crypto.randomUUID(), type: asset.type, id: asset.id } : null
+  if (asset) return { nodeId: crypto.randomUUID(), type: asset.type, id: asset.id }
+  const executablePackage = packages.find(entry => entry.publishedRuleCount + entry.publishedTableCount > 0)
+  return executablePackage
+    ? { nodeId: crypto.randomUUID(), type: 'rule-group', selector: { packageName: executablePackage.name, includeChildren: false } }
+    : null
 }
 
 function moveStep(steps: FlowStepDraft[], index: number, direction: -1 | 1) {
@@ -150,7 +156,7 @@ function PaletteItem({ icon: Icon, title, detail, payload }: {
   icon: typeof Layers3
   title: string
   detail: string
-  payload: { type: 'rule-group' | 'rule' | 'table'; id?: string; packageName?: string }
+  payload: FlowPalettePayload
 }) {
   return (
     <button
@@ -169,11 +175,33 @@ function PaletteItem({ icon: Icon, title, detail, payload }: {
   )
 }
 
+function GatewayPaletteItem({ disabled, onActivate }: { disabled: boolean; onActivate: () => void }) {
+  const payload: FlowPalettePayload = { type: 'gateway' }
+  return (
+    <button
+      type="button"
+      draggable={!disabled}
+      disabled={disabled}
+      onClick={onActivate}
+      onDragStart={event => {
+        event.dataTransfer.setData('application/decision-workbench-flow', JSON.stringify(payload))
+        event.dataTransfer.effectAllowed = 'copy'
+      }}
+      className="flex min-h-[54px] w-full cursor-grab items-center gap-2 border-b border-[#e8e8e8] bg-white px-2.5 py-2 text-left hover:bg-[#fff8e1] active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-45"
+      title={disabled ? '需要至少一个 BOM 输入字段和一个已发布规则、决策表或可执行规则包' : '点击或拖入画布：排他网关'}
+    >
+      <GitBranch size={15} className="text-[#b84600]" />
+      <span className="min-w-0"><b className="block truncate text-[11px] font-semibold text-ink-1">排他网关</b><span className="block truncate text-[9px] text-ink-3">按业务条件选择一条执行路径</span></span>
+    </button>
+  )
+}
+
 export default function FlowEditor({ detail, fields, busy, onSave, onCompile, onPublish }: FlowEditorProps) {
   const source = detail.draft
   const [draft, setDraftState] = useState<FlowDraft>(() => normalizeFlowDraft(source))
   const undoStack = useRef<FlowDraft[]>([])
   const redoStack = useRef<FlowDraft[]>([])
+  const previousDetailId = useRef(detail.id)
   const setDraft = useCallback((action: SetStateAction<FlowDraft>) => {
     setDraftState(current => {
       const next = typeof action === 'function' ? action(current) : action
@@ -205,11 +233,13 @@ export default function FlowEditor({ detail, fields, busy, onSave, onCompile, on
   }, [detail.availableAssets, detail.availablePackages, draft])
 
   useEffect(() => {
+    const changedFlow = previousDetailId.current !== detail.id
     setDraftState(normalizeFlowDraft(source))
     undoStack.current = []
     redoStack.current = []
-    setNotice(null)
+    if (changedFlow) setNotice(null)
     setSelectedNodeId(null)
+    previousDetailId.current = detail.id
   }, [detail.id, detail.revision, source])
 
   const undo = () => {
@@ -264,6 +294,8 @@ export default function FlowEditor({ detail, fields, busy, onSave, onCompile, on
   }, [detail.availablePackages, selectedStep])
   const palettePackages = detail.availablePackages.filter(entry => `${entry.label} ${entry.name}`.toLowerCase().includes(paletteSearch.toLowerCase()))
   const paletteAssets = detail.availableAssets.filter(asset => `${asset.name} ${asset.category}`.toLowerCase().includes(paletteSearch.toLowerCase()))
+  const hasBranchStepSource = detail.availableAssets.length > 0 || detail.availablePackages.some(entry => entry.publishedRuleCount + entry.publishedTableCount > 0)
+  const canAddConditionalBranch = hasBranchStepSource && inputFields.length > 0 && (draft.branches?.length ?? 0) < 8
 
   const run = async (action: () => Promise<unknown>, success: string) => {
     setNotice(null)
@@ -289,10 +321,13 @@ export default function FlowEditor({ detail, fields, busy, onSave, onCompile, on
     ;[branches[index], branches[target]] = [branches[target], branches[index]]
     return { ...current, branches }
   })
-  const addBranch = (isDefault: boolean) => {
+  const addBranch = (isDefault: boolean, gatewayPosition?: { x: number; y: number }) => {
     if ((draft.branches?.length ?? 0) >= 8 || (isDefault && (draft.branches ?? []).some(branch => branch.default))) return
-    const step = newStep(detail.availableAssets)
-    if (!step) return
+    const step = newStep(detail.availableAssets, detail.availablePackages)
+    if (!step || (!isDefault && !inputFields.length)) {
+      setNotice({ error: true, text: !inputFields.length ? '请先在 BOM 中定义输入字段' : '请先发布规则、决策表或包含可执行资产的规则包' })
+      return
+    }
     const firstInput = inputFields[0]
     const branch: FlowBranchDraft = {
       id: crypto.randomUUID(), name: isDefault ? '默认路径' : `条件路径 ${(draft.branches?.length ?? 0) + 1}`,
@@ -300,8 +335,22 @@ export default function FlowEditor({ detail, fields, busy, onSave, onCompile, on
       condition: isDefault ? undefined : { field: firstInput?.key || '', operator: '==', value: '' },
       steps: [step],
     }
-    setDraft(current => ({ ...current, branches: [...(current.branches ?? []), branch] }))
+    setDraft(current => ({
+      ...current,
+      branches: [...(current.branches ?? []), branch],
+      editor: gatewayPosition
+        ? { ...current.editor, positions: { ...(current.editor?.positions ?? {}), gateway: gatewayPosition } }
+        : current.editor,
+    }))
     setSelectedNodeId('gateway')
+  }
+  const addOrSelectGateway = (position?: { x: number; y: number }) => {
+    if ((draft.branches?.length ?? 0) > 0) {
+      if (position) moveNode('gateway', position)
+      setSelectedNodeId('gateway')
+      return
+    }
+    addBranch(false, position)
   }
   const updateSelectedStep = (next: FlowStepDraft) => {
     if (!selectedStep) return
@@ -330,9 +379,13 @@ export default function FlowEditor({ detail, fields, busy, onSave, onCompile, on
     ...current,
     editor: { ...current.editor, positions: { ...(current.editor?.positions ?? {}), [nodeId]: position } },
   }))
-  const dropItem = (item: { type: 'rule-group' | 'rule' | 'table'; id?: string; packageName?: string }, position: { x: number; y: number }) => {
+  const dropItem = (item: FlowPalettePayload, position: { x: number; y: number }) => {
+    if (item.type === 'gateway') {
+      addOrSelectGateway(position)
+      return
+    }
     if (draft.steps.length + (draft.branches ?? []).reduce((total, branch) => total + branch.steps.length, 0) >= 20) {
-      setNotice({ error: true, text: '规则流最多支持 20 个步骤' })
+      setNotice({ error: true, text: '规则集最多支持 20 个步骤' })
       return
     }
     const nodeId = crypto.randomUUID()
@@ -370,22 +423,24 @@ export default function FlowEditor({ detail, fields, busy, onSave, onCompile, on
           <button type="button" className="inline-flex size-7 items-center justify-center border border-ink-border bg-white text-ink-2 hover:bg-ink-bg disabled:opacity-35" disabled={!undoStack.current.length} onClick={undo} title="撤销"><Undo2 size={13} /></button>
           <button type="button" className="inline-flex size-7 items-center justify-center border border-ink-border bg-white text-ink-2 hover:bg-ink-bg disabled:opacity-35" disabled={!redoStack.current.length} onClick={redo} title="重做"><Redo2 size={13} /></button>
           <button type="button" className="inline-flex size-7 items-center justify-center border border-ink-border bg-white text-ink-2 hover:bg-ink-bg" onClick={() => setDraft(current => ({ ...current, editor: { positions: {} } }))} title="自动布局"><LayoutGrid size={13} /></button>
-          <button type="button" className="inline-flex h-7 items-center gap-1 border border-ink-border bg-white px-2 text-[10px] text-ink-2 hover:bg-ink-bg disabled:opacity-35" disabled={!detail.availableAssets.length || (draft.branches?.length ?? 0) >= 8} onClick={() => addBranch(false)} title="添加条件分支"><GitBranch size={12} />分支</button>
+          <button type="button" className="inline-flex h-7 items-center gap-1 border border-[#e65100] bg-white px-2 text-[10px] text-[#b84600] hover:bg-[#fff8e1] disabled:opacity-35" disabled={!canAddConditionalBranch && !(draft.branches?.length ?? 0)} onClick={() => addOrSelectGateway()} title={(draft.branches?.length ?? 0) ? '配置排他网关' : '添加条件网关'}><GitBranch size={12} />条件网关</button>
           {notice && <span className={`ml-auto max-w-[360px] truncate text-[11px] ${notice.error ? 'text-[#c62828]' : 'text-env-production'}`}>{notice.text}</span>}
-          <button type="button" className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-[2px] border border-ink-border bg-white px-2 text-[11px] text-ink-2 hover:bg-ink-bg disabled:opacity-50" disabled={busy || !dirty} onClick={() => run(() => onSave(draft), '规则流草稿已保存')}><Save size={13} />保存</button>
+          <button type="button" className="ml-auto inline-flex h-7 items-center gap-1.5 rounded-[2px] border border-ink-border bg-white px-2 text-[11px] text-ink-2 hover:bg-ink-bg disabled:opacity-50" disabled={busy || !dirty} onClick={() => run(() => onSave(draft), '规则集草稿已保存')}><Save size={13} />保存</button>
           <button type="button" className="inline-flex h-7 items-center gap-1.5 rounded-[2px] border border-ink-border bg-white px-2 text-[11px] text-ink-2 hover:bg-ink-bg disabled:opacity-50" disabled={busy} onClick={() => run(async () => { const result = await onCompile(draft); setNotice({ error: false, text: `Drools ${result.engineVersion} 校验通过 · ${result.stepCount} 步` }) }, 'Drools 校验通过')}><CheckCircle2 size={13} />校验</button>
-          <button type="button" className="inline-flex h-7 items-center gap-1.5 rounded-[2px] border border-brand-primary bg-brand-primary px-2 text-[11px] text-white hover:bg-brand-primary-d disabled:opacity-50" disabled={busy || dirty} onClick={() => run(onPublish, '规则流发布成功')} title={dirty ? '请先保存草稿' : '编译并发布当前规则流'}><Rocket size={13} />发布</button>
+          <button type="button" className="inline-flex h-7 items-center gap-1.5 rounded-[2px] border border-brand-primary bg-brand-primary px-2 text-[11px] text-white hover:bg-brand-primary-d disabled:opacity-50" disabled={busy || dirty} onClick={() => run(onPublish, '规则集发布成功')} title={dirty ? '请先保存草稿' : '编译并发布当前规则集'}><Rocket size={13} />发布</button>
         </div>
-        {detail.needsRepublish && <div className="flex items-start gap-2 border-b border-[#f3c65f] bg-[#fff8e1] px-4 py-2 text-[11px] text-[#734d00]"><AlertTriangle size={14} className="mt-px shrink-0" />依赖资产已有新发布版本，请重新校验并发布此规则流。</div>}
+        {detail.needsRepublish && <div className="flex items-start gap-2 border-b border-[#f3c65f] bg-[#fff8e1] px-4 py-2 text-[11px] text-[#734d00]"><AlertTriangle size={14} className="mt-px shrink-0" />依赖资产已有新发布版本，请重新校验并发布此规则集。</div>}
         {duplicateOutputs.length > 0 && <div className="flex items-start gap-2 border-b border-[#f3c65f] bg-[#fff8e1] px-4 py-2 text-[11px] text-[#734d00]"><AlertTriangle size={14} className="mt-px shrink-0" /><span>多个步骤会写入同一输出字段，后执行步骤将覆盖前值：{duplicateOutputs.map(item => `${fields.find(field => field.key === item.field)?.label || item.field}（${item.names.join(' → ')}）`).join('；')}</span></div>}
         <div className="grid grid-cols-[minmax(220px,1fr)_180px] gap-3 border-b border-ink-border px-4 py-3 max-sm:grid-cols-1">
-          <label className="text-[10px] font-semibold text-ink-3">规则流名称<input className="control-input mt-1 h-8 text-xs" value={draft.name} onChange={event => setDraft({ ...draft, name: event.target.value })} /></label>
+          <label className="text-[10px] font-semibold text-ink-3">规则集名称<input className="control-input mt-1 h-8 text-xs" value={draft.name} onChange={event => setDraft({ ...draft, name: event.target.value })} /></label>
           <label className="text-[10px] font-semibold text-ink-3">业务分类<input className="control-input mt-1 h-8 text-xs" value={draft.category ?? ''} onChange={event => setDraft({ ...draft, category: event.target.value })} /></label>
           <label className="col-span-full text-[10px] font-semibold text-ink-3">说明<textarea className="mt-1 min-h-16 w-full resize-y rounded-[3px] border border-ink-border px-[10px] py-2 text-xs font-normal text-ink-1 outline-none focus:border-brand-primary" value={draft.description} onChange={event => setDraft({ ...draft, description: event.target.value })} /></label>
         </div>
+        <div className="border-b border-ink-border bg-[#f5f8ff] px-4 py-2 text-[10px] text-ink-3">规则集变量由 Rule Project 属性统一维护。当前规则集中的规则可在条件和动作中读取、写入项目变量；旧规则集 variables 仅作兼容读取。</div>
         <div className="grid grid-cols-[220px_minmax(420px,1fr)_300px] max-xl:grid-cols-[minmax(420px,1fr)_280px] max-lg:grid-cols-1">
           <div className="col-span-2 hidden h-12 items-center gap-2 overflow-x-auto border-b border-ink-border bg-[#fafafa] px-2 max-xl:flex max-lg:col-span-1">
             <span className="shrink-0 text-[10px] font-semibold text-ink-3">节点</span>
+            <button type="button" draggable={canAddConditionalBranch || (draft.branches?.length ?? 0) > 0} disabled={!canAddConditionalBranch && !(draft.branches?.length ?? 0)} onClick={() => addOrSelectGateway()} onDragStart={event => { event.dataTransfer.setData('application/decision-workbench-flow', JSON.stringify({ type: 'gateway' })); event.dataTransfer.effectAllowed = 'copy' }} className="inline-flex h-8 shrink-0 cursor-grab items-center gap-1.5 border border-[#e65100] bg-white px-2 text-[10px] text-[#b84600] hover:bg-[#fff8e1] disabled:cursor-not-allowed disabled:opacity-45"><GitBranch size={13} />排他网关</button>
             {detail.availablePackages.map(entry => <button key={entry.name} type="button" draggable onDragStart={event => { event.dataTransfer.setData('application/decision-workbench-flow', JSON.stringify({ type: 'rule-group', packageName: entry.name })); event.dataTransfer.effectAllowed = 'copy' }} className="inline-flex h-8 shrink-0 cursor-grab items-center gap-1.5 border border-ink-border bg-white px-2 text-[10px] text-ink-1 hover:border-brand-primary hover:bg-brand-primary-l" title={`拖入规则包：${entry.label}`}><Layers3 size={13} className="text-brand-primary" />{entry.label}</button>)}
           </div>
           <aside className="border-r border-ink-border bg-[#fafafa] max-xl:hidden">
@@ -398,6 +453,8 @@ export default function FlowEditor({ detail, fields, busy, onSave, onCompile, on
               {!palettePackages.length && <p className="px-3 py-3 text-[10px] text-ink-3">没有匹配的规则包</p>}
               <div className="border-y border-ink-border bg-[#f4f4f4] px-2.5 py-1.5 text-[10px] font-semibold text-ink-2">单个资产</div>
               {paletteAssets.map(asset => <PaletteItem key={`${asset.type}:${asset.id}`} icon={asset.type === 'table' ? Table2 : FileText} title={asset.name} detail={`${asset.category} · v${asset.version}`} payload={{ type: asset.type, id: asset.id }} />)}
+              <div className="border-y border-ink-border bg-[#f4f4f4] px-2.5 py-1.5 text-[10px] font-semibold text-ink-2">流程控制</div>
+              <GatewayPaletteItem disabled={!canAddConditionalBranch && !(draft.branches?.length ?? 0)} onActivate={() => addOrSelectGateway()} />
             </div>
           </aside>
           <FlowCanvas
@@ -424,11 +481,11 @@ export default function FlowEditor({ detail, fields, busy, onSave, onCompile, on
                   <button type="button" className="inline-flex size-6 items-center justify-center text-ink-3 hover:bg-[#ffebee] hover:text-[#c62828]" onClick={() => deleteBranch(branchIndex)} title="删除分支"><Trash2 size={12} /></button>
                 </div>
                 {branch.default ? <p className="text-[10px] text-ink-3">默认分支</p> : <>
-                  <select className="control-input h-7 text-[10px]" value={branch.condition?.field ?? ''} onChange={event => updateBranch(branchIndex, current => ({ ...current, condition: { field: event.target.value, operator: current.condition?.operator || '==', value: '' } }))}>{inputFields.map(field => <option key={field.key} value={field.key}>{field.label}</option>)}</select>
-                  <div className="grid grid-cols-[105px_minmax(0,1fr)] gap-2"><select className="control-input h-7 text-[10px]" value={branch.condition?.operator ?? '=='} onChange={event => updateBranch(branchIndex, current => ({ ...current, condition: { field: current.condition?.field || inputFields[0]?.key || '', operator: event.target.value, value: current.condition?.value || '' } }))}>{operators.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><input className="control-input h-7 font-mono text-[10px]" value={branch.condition?.value ?? ''} onChange={event => updateBranch(branchIndex, current => ({ ...current, condition: { field: current.condition?.field || inputFields[0]?.key || '', operator: current.condition?.operator || '==', value: event.target.value } }))} placeholder="比较值" /></div>
+                  <select aria-label={`第 ${branchIndex + 1} 个分支条件字段`} className="control-input h-7 text-[10px]" value={branch.condition?.field ?? ''} onChange={event => updateBranch(branchIndex, current => ({ ...current, condition: { field: event.target.value, operator: current.condition?.operator || '==', value: '' } }))}>{inputFields.map(field => <option key={field.key} value={field.key}>{field.label}</option>)}</select>
+                  <div className="grid grid-cols-[105px_minmax(0,1fr)] gap-2"><select aria-label={`第 ${branchIndex + 1} 个分支运算符`} className="control-input h-7 text-[10px]" value={branch.condition?.operator ?? '=='} onChange={event => updateBranch(branchIndex, current => ({ ...current, condition: { field: current.condition?.field || inputFields[0]?.key || '', operator: event.target.value, value: current.condition?.value || '' } }))}>{operators.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><input aria-label={`第 ${branchIndex + 1} 个分支比较值`} className="control-input h-7 font-mono text-[10px]" value={branch.condition?.value ?? ''} onChange={event => updateBranch(branchIndex, current => ({ ...current, condition: { field: current.condition?.field || inputFields[0]?.key || '', operator: current.condition?.operator || '==', value: event.target.value } }))} placeholder="比较值" /></div>
                 </>}
               </div>)}
-              <div className="flex gap-2 p-3"><button type="button" className="inline-flex h-7 items-center gap-1 bg-brand-primary px-2 text-[10px] text-white disabled:opacity-35" disabled={!detail.availableAssets.length || (draft.branches?.length ?? 0) >= 8} onClick={() => addBranch(false)}><Plus size={11} />条件分支</button><button type="button" className="inline-flex h-7 items-center gap-1 border border-ink-border bg-white px-2 text-[10px] text-ink-2 disabled:opacity-35" disabled={!detail.availableAssets.length || (draft.branches ?? []).some(branch => branch.default) || (draft.branches?.length ?? 0) >= 8} onClick={() => addBranch(true)}><Plus size={11} />默认分支</button></div>
+              <div className="flex gap-2 p-3"><button type="button" className="inline-flex h-7 items-center gap-1 bg-brand-primary px-2 text-[10px] text-white disabled:opacity-35" disabled={!canAddConditionalBranch} onClick={() => addBranch(false)}><Plus size={11} />条件分支</button><button type="button" className="inline-flex h-7 items-center gap-1 border border-ink-border bg-white px-2 text-[10px] text-ink-2 disabled:opacity-35" disabled={!hasBranchStepSource || (draft.branches ?? []).some(branch => branch.default) || (draft.branches?.length ?? 0) >= 8} onClick={() => addBranch(true)}><Plus size={11} />默认分支</button></div>
             </div>}
             {selectedStep && <div className="h-[518px] overflow-y-auto">
               <div className="space-y-3 p-3">
@@ -454,7 +511,7 @@ export default function FlowEditor({ detail, fields, busy, onSave, onCompile, on
         <div className="flex items-center border-b border-ink-border bg-[#fafafa] px-4 py-2.5">
           <h2 className="text-xs font-semibold">公共步骤</h2>
           <span className="ml-2 text-[10px] text-ink-3">进入网关前按顺序执行</span>
-          <button type="button" className="ml-auto inline-flex h-7 items-center gap-1 rounded-[2px] px-2 text-[11px] text-brand-primary hover:bg-brand-primary-l disabled:opacity-40" disabled={!detail.availableAssets.length} onClick={() => { const step = newStep(detail.availableAssets); if (step) setDraft(current => ({ ...current, steps: [...current.steps, step] })) }}><Plus size={13} />添加步骤</button>
+          <button type="button" className="ml-auto inline-flex h-7 items-center gap-1 rounded-[2px] px-2 text-[11px] text-brand-primary hover:bg-brand-primary-l disabled:opacity-40" disabled={!hasBranchStepSource} onClick={() => { const step = newStep(detail.availableAssets, detail.availablePackages); if (step) setDraft(current => ({ ...current, steps: [...current.steps, step] })) }}><Plus size={13} />添加步骤</button>
         </div>
         {draft.steps.length === 0 && <p className="px-4 py-4 text-[11px] text-ink-3">当前没有公共步骤，可直接从排他网关进入分支。</p>}
         {draft.steps.map((step, index) => <StepEditor key={step.nodeId} step={step} index={index} count={draft.steps.length} assets={detail.availableAssets} packages={detail.availablePackages} fields={fields} onChange={next => setDraft(current => ({ ...current, steps: current.steps.map((item, position) => position === index ? next : item) }))} onDelete={() => setDraft(current => ({ ...current, steps: current.steps.filter((_, position) => position !== index) }))} onMove={direction => setDraft(current => ({ ...current, steps: moveStep(current.steps, index, direction) }))} />)}
@@ -464,8 +521,8 @@ export default function FlowEditor({ detail, fields, busy, onSave, onCompile, on
         <div className="flex flex-wrap items-center gap-2 border-b border-ink-border bg-[#fafafa] px-4 py-2.5">
           <GitBranch size={14} className="text-brand-primary" />
           <h2 className="text-xs font-semibold">排他分支</h2>
-          <button type="button" className="ml-auto inline-flex h-7 items-center gap-1 rounded-[2px] px-2 text-[11px] text-brand-primary hover:bg-brand-primary-l disabled:opacity-40" disabled={!detail.availableAssets.length} onClick={() => addBranch(false)}><Plus size={13} />条件分支</button>
-          <button type="button" className="inline-flex h-7 items-center gap-1 rounded-[2px] border border-ink-border bg-white px-2 text-[11px] text-ink-2 hover:bg-ink-bg disabled:opacity-40" disabled={!detail.availableAssets.length || (draft.branches ?? []).some(branch => branch.default)} onClick={() => addBranch(true)}><Plus size={13} />默认分支</button>
+          <button type="button" className="ml-auto inline-flex h-7 items-center gap-1 rounded-[2px] px-2 text-[11px] text-brand-primary hover:bg-brand-primary-l disabled:opacity-40" disabled={!canAddConditionalBranch} onClick={() => addBranch(false)}><Plus size={13} />条件分支</button>
+          <button type="button" className="inline-flex h-7 items-center gap-1 rounded-[2px] border border-ink-border bg-white px-2 text-[11px] text-ink-2 hover:bg-ink-bg disabled:opacity-40" disabled={!hasBranchStepSource || (draft.branches ?? []).some(branch => branch.default) || (draft.branches?.length ?? 0) >= 8} onClick={() => addBranch(true)}><Plus size={13} />默认分支</button>
         </div>
         {(draft.branches ?? []).length === 0 && <p className="px-4 py-4 text-[11px] text-ink-3">未配置分支，公共步骤执行后直接结束。</p>}
         {(draft.branches ?? []).map((branch, branchIndex) => (
@@ -481,7 +538,7 @@ export default function FlowEditor({ detail, fields, busy, onSave, onCompile, on
                   </>}
               <button type="button" className="mb-0.5 inline-flex size-7 items-center justify-center rounded-[2px] text-ink-3 hover:bg-[#ffebee] hover:text-[#c62828]" onClick={() => setDraft(current => ({ ...current, branches: (current.branches ?? []).filter((_, position) => position !== branchIndex) }))} title="删除分支"><Trash2 size={14} /></button>
             </div>
-            <div className="flex items-center border-y border-[#e8e8e8] bg-white px-3 py-1.5"><span className="text-[10px] font-semibold text-ink-3">分支步骤</span><button type="button" className="ml-auto inline-flex h-6 items-center gap-1 rounded-[2px] px-2 text-[10px] text-brand-primary hover:bg-brand-primary-l" onClick={() => { const step = newStep(detail.availableAssets); if (step) updateBranch(branchIndex, current => ({ ...current, steps: [...current.steps, step] })) }}><Plus size={12} />添加</button></div>
+            <div className="flex items-center border-y border-[#e8e8e8] bg-white px-3 py-1.5"><span className="text-[10px] font-semibold text-ink-3">分支步骤</span><button type="button" className="ml-auto inline-flex h-6 items-center gap-1 rounded-[2px] px-2 text-[10px] text-brand-primary hover:bg-brand-primary-l disabled:opacity-40" disabled={!hasBranchStepSource} onClick={() => { const step = newStep(detail.availableAssets, detail.availablePackages); if (step) updateBranch(branchIndex, current => ({ ...current, steps: [...current.steps, step] })) }}><Plus size={12} />添加</button></div>
             {branch.steps.map((step, stepIndex) => <StepEditor key={step.nodeId} step={step} index={stepIndex} count={branch.steps.length} assets={detail.availableAssets} packages={detail.availablePackages} fields={fields} onChange={next => updateBranch(branchIndex, current => ({ ...current, steps: current.steps.map((item, position) => position === stepIndex ? next : item) }))} onDelete={() => updateBranch(branchIndex, current => ({ ...current, steps: current.steps.filter((_, position) => position !== stepIndex) }))} onMove={direction => updateBranch(branchIndex, current => ({ ...current, steps: moveStep(current.steps, stepIndex, direction) }))} />)}
           </div>
         ))}

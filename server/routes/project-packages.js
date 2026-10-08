@@ -87,7 +87,7 @@ export function createProjectPackageHandler({
       const name = decodeURIComponent(segments[4]);
       const payload = await bodyOf(req);
       const referencedBy = data.flows.filter(flow => flowReferencesPackage(flow.draft, name));
-      if (referencedBy.length) return reply(res, 409, { error: `规则包被 ${referencedBy.length} 个规则流引用，请先移除或替换 Rule Group 节点` });
+      if (referencedBy.length) return reply(res, 409, { error: `规则包被 ${referencedBy.length} 个规则集引用，请先移除或替换 Rule Group 节点` });
       const affected = [...data.rules, ...data.tables].filter(asset => asset.draft.category === name || asset.draft.category.startsWith(`${name}.`));
       const locked = affected.map(asset => reviewLock(data.changeSets, asset.id)).find(Boolean);
       if (locked) return reply(res, locked.status, { error: locked.error, changeSetId: locked.changeSetId });

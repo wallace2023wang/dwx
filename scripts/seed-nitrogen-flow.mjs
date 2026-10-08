@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * 粮库自动充氮控制 —— 规则流种子脚本
+ * 粮库自动充氮控制 —— 规则集种子脚本
  * ------------------------------------------------------------
- * 前置：三张决策表必须已发布（规则流的步骤只接受已发布资产）。
+ * 前置：三张决策表必须已发布（规则集的步骤只接受已发布资产）。
  *       若未发布，先运行 seed-nitrogen-control.mjs。
  *
- * 规则流拓扑（依据 docs/nitrogen-auto-fill-asset-design.md §4）：
+ * 规则集拓扑（依据 docs/nitrogen-auto-fill-asset-design.md §4）：
  *
  *   [公共步骤] 充氮状态迁移表  ──► [排他网关 endReached] ──true──► [充氮结束处理表]
  *                                                    └──false─► [充氮设备态表]（默认分支）
@@ -25,7 +25,7 @@ const argProject = (() => {
 })();
 
 const PACKAGE = 'nitrogen';
-const FLOW_NAME = '自动充氮控制规则流';
+const FLOW_NAME = '自动充氮控制规则集';
 
 async function call(method, path, body) {
   const response = await fetch(`${RTS_URL}${path}`, {
@@ -62,14 +62,14 @@ async function main() {
   log(`主状态迁移表 ${tableA.id}`);
   log(`结束处理表   ${tableB.id}\n`);
 
-  // ---- 找到或创建规则流 ----
+  // ---- 找到或创建规则集 ----
   const flows = await get(`/api/projects/${argProject}/flows`);
   let flow = flows.find(f => f.name === FLOW_NAME || f.flowName === FLOW_NAME);
   if (flow) {
-    log(`规则流已存在：${flow.id ?? flow.flowId}`);
+    log(`规则集已存在：${flow.id ?? flow.flowId}`);
   } else {
     flow = await post(`/api/projects/${argProject}/flows`);
-    log(`创建规则流：${flow.id ?? flow.flowId}`);
+    log(`创建规则集：${flow.id ?? flow.flowId}`);
   }
   const flowId = flow.id ?? flow.flowId;
 
@@ -101,13 +101,13 @@ async function main() {
   log(`
 ▸ 下一步（必须人工在页面完成）：
     ① 打开 http://127.0.0.1:5173/projects/${argProject}/assets
-    ② 选中规则流「${FLOW_NAME}」→ 提交审核 → 审核页「批准并发布」
+    ② 选中规则集「${FLOW_NAME}」→ 提交审核 → 审核页「批准并发布」
     ③ 到「发布」页创建 Release（会触发真实编译门禁），再部署到 local/RES
 `);
   log(`FLOW_RESULT=${JSON.stringify({ projectId: argProject, flowId, revision: savedRevision, assets: { a: tableA.id, b: tableB.id } })}`);
 }
 
 main().catch(error => {
-  console.error(`\n✗ 规则流种子失败：${error.message}`);
+  console.error(`\n✗ 规则集种子失败：${error.message}`);
   process.exit(1);
 });

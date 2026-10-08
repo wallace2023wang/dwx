@@ -7,6 +7,7 @@ interface ServerRelease {
   id: string
   decisionService: string
   version: number
+  displayVersion?: string
   name: string
   description: string
   checksum: string
@@ -26,6 +27,7 @@ export interface ReleaseTarget {
   id: string
   name: string
   type: AssetType
+  decisionService?: string
 }
 
 function transformRelease(release: ServerRelease, projectId: string): ReleaseRecord {
@@ -46,7 +48,7 @@ function transformRelease(release: ServerRelease, projectId: string): ReleaseRec
     id: release.id,
     name: release.name,
     decisionService: release.decisionService,
-    version: `${release.version}.0.0`,
+    version: release.displayVersion || `${release.version}.0.0`,
     state,
     environments: release.deployments.map(deployment => deployment.environment === 'local' ? 'local' : deployment.environment).filter((environment): environment is ReleaseRecord['environments'][number] => ['local', 'dev', 'test', 'staging', 'production'].includes(environment)),
     shadow: false,
@@ -58,9 +60,12 @@ function transformRelease(release: ServerRelease, projectId: string): ReleaseRec
     notes: release.description,
     latestForDecisionService: release.latestForDecisionService,
     rollbackAvailable: release.rollbackAvailable,
-    stableEndpoint: `/api/projects/${encodeURIComponent(projectId)}/services/${encodeURIComponent(serviceKey)}/execute`,
+    stableEndpoint: engine === 'rules'
+      ? `/services/${release.decisionService}/execute`
+      : `/api/projects/${encodeURIComponent(projectId)}/services/${encodeURIComponent(serviceKey)}/execute`,
     engine,
     webhook: release.webhook,
+    target: release.target,
   }
 }
 
@@ -90,7 +95,8 @@ export function useCreateRelease(projectId: string | undefined) {
       if (!target) throw new Error('请选择一个发布目标')
       try {
         const { data } = await http.post<ServerRelease>(`/projects/${encodeURIComponent(projectId)}/releases`, {
-          decisionService: `${projectId}/${target.id.toLowerCase().replace(/[^a-z0-9._-]/g, '-')}`,
+          decisionService: target.decisionService || `${projectId}/${target.id.toLowerCase().replace(/[^a-z0-9._-]/g, '-')}`,
+          version: draft.version,
           name: `v${draft.version} ${target.name}`,
           description: draft.notes,
           target: { type: target.type === 'decision-table' ? 'table' : target.type, id: target.id },

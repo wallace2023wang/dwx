@@ -133,7 +133,7 @@ test('RTS-BOM-08: PUT 接受纯 fields 数组作为请求体', async () => {
   } finally { await env.stop(); }
 });
 
-test('RTS-BOM-09: 字段引用接口返回规则、决策表和规则流资产', async () => {
+test('RTS-BOM-09: 字段引用接口返回规则、决策表和规则集资产', async () => {
   const env = await startTestEnv();
   try {
     const rule = (await env.request('/api/rules', 'POST')).body;

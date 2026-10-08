@@ -1,5 +1,6 @@
 import { defaultBom, findField, inferSemanticType } from './bom.js';
 import { canonicalPackageName, DEFAULT_PACKAGE_NAME, PACKAGE_NAME_RE } from './packages.js';
+import { findRuleSetVariable, normalizeRuleSetVariables, runtimeVariableType, validateRuleSetVariables, variableDrlValue } from './ruleset-variables.js';
 
 // 向后兼容：现有测试和代码可能 import { fields }。
 // 真实运行时由 server/index.js 从 data/bom.json 加载并传入 generateDrl/validateRule。
@@ -49,6 +50,7 @@ export const newRule = () => ({
   priority: 0,
   conditions: [{ field: 'customerAge', operator: '>=', value: '18' }],
   actions: [{ field: 'riskLevel', value: '低' }],
+  variables: [],
 });
 
 /**
@@ -81,7 +83,8 @@ export function parseValue(field, raw) {
   const n = Number(trimmed);
   if (field.min != null && n < field.min) return null;
   if (field.max != null && n > field.max) return null;
-  return `${n}d`;
+  // 零值必须带小数点（Drools 不认 "0d"，实测 "0.0d" 通过）
+  return n === 0 ? '0.0d' : `${n}d`;
 }
 
 export function formatDrlValue(field, raw) { return parseValue(field, raw); }
@@ -160,10 +163,11 @@ function literalConstraint(item, field) {
   return `${item.field} ${item.operator} ${value}`;
 }
 
-/**
- * 校验规则。bom 缺省用内置默认 BOM。
- */
-export function validateRule(rule, bom = DEFAULT_BOM) {
+function variableAction(item, variable) {
+  return `set${item.field[0].toUpperCase()}${item.field.slice(1)}(${variableDrlValue(variable, item.value)})`;
+}
+
+export function validateRule(rule, bom = DEFAULT_BOM, variables = rule?.variables || []) {
   if (!rule || typeof rule !== 'object') return '规则内容无效';
   if (typeof rule.name !== 'string' || !rule.name.trim() || rule.name.length > 80) return '规则名称需为 1–80 个字符';
   if (typeof rule.description !== 'string' || rule.description.length > 500) return '规则说明不能超过 500 个字符';
@@ -173,8 +177,21 @@ export function validateRule(rule, bom = DEFAULT_BOM) {
   if (rule.activationGroup != null && (typeof rule.activationGroup !== 'string' || !rule.activationGroup || rule.activationGroup.length > 200)) return '内部互斥分组无效';
   if (!Array.isArray(rule.conditions) || rule.conditions.length < 1 || rule.conditions.length > 20) return '至少需要一个条件，最多 20 个';
   if (!Array.isArray(rule.actions) || rule.actions.length < 1 || rule.actions.length > 20) return '至少需要一个动作，最多 20 个';
+  const variableError = validateRuleSetVariables(variables);
+  if (variableError) return variableError;
+  const declaredVariables = normalizeRuleSetVariables(variables);
+  const bomKeys = new Set((bom?.fields || []).map(field => field.key));
+  if (declaredVariables.some(variable => bomKeys.has(variable.name))) return '规则集变量名称不能与 BOM 字段重复';
   for (const [index, item] of rule.conditions.entries()) {
     if (item.raw || item.pattern) continue; // 决策表生成的内联 DRL 片段，跳过字段校验
+    if (item.fieldSource === 'variable') {
+      const variable = findRuleSetVariable(declaredVariables, item.field);
+      if (!variable || !['==', '!=', '>', '<', '>=', '<='].includes(item.operator)) return '条件变量或运算符无效';
+      if (item.quantifier != null && item.quantifier !== 'one') return '规则集变量条件不支持量词';
+      if (variable.type === 'Boolean' && !['==', '!='].includes(item.operator)) return '布尔变量只支持等于或不等于';
+      if (variableDrlValue(variable, item.value) === null) return `变量 ${item.field} 的条件值无效`;
+      continue;
+    }
     const field = findField(bom, item.field);
     const semanticType = field ? inferSemanticType(field) : null;
     if (!field || field.kind !== 'input' || !BAL_OPERATORS_BY_TYPE[semanticType]?.includes(item.operator)) return '条件字段或运算符无效';
@@ -184,7 +201,8 @@ export function validateRule(rule, bom = DEFAULT_BOM) {
     if (item.valueSource === 'field') {
       if (!FIELD_VALUE_OPERATORS_BY_TYPE[semanticType]?.includes(item.operator)) return `${field.label}的${item.operator}操作不支持业务字段值`;
       const valueField = findField(bom, item.valueField);
-      if (!valueField || valueField.kind !== 'input') return `${field.label}用于比较的业务字段不存在或不是输入字段`;
+      // 允许引用 input 或 output 字段：决策表输出（动态阈值）写回 RuleInput 后可同事实内比较
+      if (!valueField || (valueField.kind !== 'input' && valueField.kind !== 'output')) return `${field.label}用于比较的业务字段不存在或不是输入字段`;
       if (valueField.key === field.key) return `${field.label}不能与自身比较`;
       if (inferSemanticType(valueField) !== inferSemanticType(field)) return `${field.label}只能与同类型业务字段比较`;
     } else {
@@ -194,6 +212,13 @@ export function validateRule(rule, bom = DEFAULT_BOM) {
   }
   const actionKeys = new Set();
   for (const item of rule.actions) {
+    if (item.fieldSource === 'variable') {
+      const variable = findRuleSetVariable(declaredVariables, item.field);
+      if (!variable || actionKeys.has(`variable:${item.field}`)) return '动作变量无效或重复';
+      if (variableDrlValue(variable, item.value) === null) return `变量 ${item.field} 的动作值无效`;
+      actionKeys.add(`variable:${item.field}`);
+      continue;
+    }
     const field = findField(bom, item.field);
     if (!field || field.kind !== 'output' || actionKeys.has(item.field)) return '动作字段无效或重复';
     actionKeys.add(item.field);
@@ -227,9 +252,18 @@ function collectHitLines(rule, ruleName) {
   return lines;
 }
 
-export function generateDrl(rules, bom = DEFAULT_BOM) {
+export function generateDrl(rules, bom = DEFAULT_BOM, declaredVariables = null) {
+  const variableMap = new Map();
+  for (const variable of normalizeRuleSetVariables(declaredVariables || rules.flatMap(rule => rule?.variables || []))) {
+    const previous = variableMap.get(variable.name);
+    if (previous && JSON.stringify(previous) !== JSON.stringify(variable)) throw new Error(`规则集变量 "${variable.name}" 定义冲突`);
+    variableMap.set(variable.name, variable);
+  }
+  const variables = [...variableMap.values()];
+  const variableError = validateRuleSetVariables(variables);
+  if (variableError) throw new Error(variableError);
   for (const rule of rules) {
-    const error = validateRule(rule, bom);
+    const error = validateRule(rule, bom, variables);
     if (error) throw new Error(`${rule?.name || '规则'}：${error}`);
   }
   const hasDecisionHits = rules.some(rule => rule.collectHit);
@@ -241,6 +275,11 @@ export function generateDrl(rules, bom = DEFAULT_BOM) {
     ...bom.fields.map(f => `    ${f.key} : ${({ Integer: 'java.lang.Integer', Double: 'java.lang.Double', Boolean: 'java.lang.Boolean' })[f.type] || f.type}`),
     'end',
   ];
+  if (variables.length) {
+    lines.push('', '// 规则集内部变量；由 RES 为本次执行创建，调用方无需传入。', 'declare RuleContext',
+      ...variables.map(variable => `    ${variable.name} : ${runtimeVariableType(variable.type)}`),
+      'end');
+  }
   if (hasDecisionHits) {
     lines.push('', '// COLLECT 命中策略输出的独立命中结果集合。', 'declare DecisionHit', '    tableName : String', '    ruleName : String', '    rowIndex : Integer', '    defaultRow : Boolean', '    outputs : java.util.Map', 'end');
   }
@@ -252,9 +291,15 @@ export function generateDrl(rules, bom = DEFAULT_BOM) {
     //   2) { pattern: "not"|"exists", condition: "..." } —— 独立 when pattern
     const inlinePatterns = [];
     const fieldConditions = [];
+    const variableConditions = [];
     for (const item of rule.conditions) {
       if (item.pattern) { inlinePatterns.push(item); continue; }
       if (item.raw) { fieldConditions.push({ item, constraint: item.raw }); continue; }
+      if (item.fieldSource === 'variable') {
+        const variable = findRuleSetVariable(variables, item.field);
+        variableConditions.push({ item, constraint: `${item.field} ${item.operator} ${variableDrlValue(variable, item.value)}` });
+        continue;
+      }
       const field = findField(bom, item.field);
       const constraint = item.valueSource === 'field' ? fieldConstraint(item, field) : literalConstraint(item, field);
       fieldConditions.push({ item, constraint });
@@ -281,12 +326,28 @@ export function generateDrl(rules, bom = DEFAULT_BOM) {
       });
       lines.push('    )');
     }
-    lines.push('then', ...collectHitLines(rule, ruleName), '    modify($input) {');
-    lines.push(...rule.actions.map((item, i) => {
-      const field = findField(bom, item.field);
-      return `        set${item.field[0].toUpperCase()}${item.field.slice(1)}(${parseValue(field, item.value)})${i < rule.actions.length - 1 ? ',' : ''}`;
-    }));
-    lines.push('    }', 'end');
+    const inputActions = rule.actions.filter(item => item.fieldSource !== 'variable');
+    const variableActions = rule.actions.filter(item => item.fieldSource === 'variable');
+    if (variableConditions.length) lines.push(`    $ctx : RuleContext( ${variableConditions.map(entry => entry.constraint).join(', ')} )`);
+    else if (variableActions.length) lines.push('    $ctx : RuleContext()');
+    lines.push('then', ...collectHitLines(rule, ruleName));
+    if (inputActions.length) {
+      lines.push('    modify($input) {');
+      lines.push(...inputActions.map((item, i) => {
+        const field = findField(bom, item.field);
+        return `        set${item.field[0].toUpperCase()}${item.field.slice(1)}(${parseValue(field, item.value)})${i < inputActions.length - 1 ? ',' : ''}`;
+      }));
+      lines.push('    }');
+    }
+    if (variableActions.length) {
+      lines.push('    modify($ctx) {');
+      lines.push(...variableActions.map((item, i) => {
+        const variable = findRuleSetVariable(variables, item.field);
+        return `        ${variableAction(item, variable)}${i < variableActions.length - 1 ? ',' : ''}`;
+      }));
+      lines.push('    }');
+    }
+    lines.push('end');
   }
   return `${lines.join('\n')}\n`;
 }

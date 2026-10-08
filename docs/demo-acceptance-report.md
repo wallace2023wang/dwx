@@ -62,7 +62,7 @@ Decision Workbench 是复刻 IBM iLOG JRules RTS/RES 的规则与决策管理平
 2. **顶层 `fields[]` 硬校验**：要求 ≥2 且同时含 `input` 与 `output` kind；输出字段（如 `phase` 枚举）必须显式建模，否则无法写入。
 3. **两套数据模型并存**：氨气项目（`project-6f50ddcf`）BOM 为 `factTypes[]+eventTypes[]` 结构；氮气项目实际存储为**扁平 `fields[]+eventTypes[]`**。核心领域层仍校验 `bom.fields[]`，与 `bom-editor-design.md` 的 `factTypes[]` 可编辑目标存在 gap（文档已记录，仍建议统一）。
 
-**建议**：见 §4 P0-2。
+**建议**：见 §4 P1-4。
 
 ### 3.3 EventStream 创作（含时间驱动语句）
 
@@ -77,15 +77,15 @@ Decision Workbench 是复刻 IBM iLOG JRules RTS/RES 的规则与决策管理平
 
 ### 3.4 向导式创作（本轮新增）
 
-**操作**：阈值迁移语句带 `mode='guided', template='single-threshold', params={statementName,eventType,field,operator,value}`；环流→保氮为 `mode='advanced'`。
+**操作**：阈值迁移语句带 `mode='guided', template='single-threshold', params={statementName,eventType,field,operator,value,outputFields}`；环流→保氮为 `mode='advanced'`。
 
 **平台能力确认**：
 - ✅ 5 类模板已实现（单点阈值/窗口均值/窗口波动/事件计数/窗口求和），参数校验（标识符/操作符/数值/单位）完整，操作符支持中文符号映射（≥/≤/≠）。
 - ✅ 服务端保存/编译接受 `template+params`，前端可据此恢复向导。
-- ❌ **模板生成的 EPL 无法表达派生输出**：`single-threshold` 生成 `insert into <Name>Event select * from <src> where …`（无自定义输出列）。本 demo 需要 `select 'CIRCULATION' as phase, warehouseId`（下游 timer 语句按 `phase` 关联），只能**保留向导元数据 + 手动微调 epl**（服务端暂不校验 epl↔template 一致性，文档 P1 项）。
+- ✅ **模板已支持通用派生输出**：`single-threshold.outputFields` 可配置固定值和源字段重命名，生成 `select 'X' as phase, warehouseId as warehouseId`；服务端共享生成器会校验 `template + params + epl` 一致性。
 - ❌ **状态迁移/时间驱动模板为 P2 未落地**：`Hold_FromCirc`（timer 20 秒）只能以高级 EPL 承载。`cep-visual-editor-design.md` §5.2 已列 P1/P2 优先级，本轮不改。
 
-**体验**：业务人员可完成 90% 的阈值规则创作；涉及"输出派生字段/跨语句状态依赖"时必须懂 EPL。
+**体验**：阈值判断和派生输出都可由向导完成；跨语句时间模式与状态迁移模板尚未覆盖时仍需高级 EPL。
 
 ### 3.5 编译
 
@@ -147,8 +147,8 @@ Decision Workbench 是复刻 IBM iLOG JRules RTS/RES 的规则与决策管理平
 
 | 编号 | 建议 | 现状 | 影响 |
 |------|------|------|------|
-| P0-1 | **EventStream 语句级分组/目录**：`statements[]` 增加 `group` 字段（或有序数组），前端按组展示"阶段/业务模块"目录 | 只有 asset 级 `category`，语句目录靠命名约定（`Circ_*`/`Hold_*`/`Repl_*`）与 label | 规则资产规模变大后（几十条语句）无法按业务阶段治理与审阅 |
-| P0-2 | **向导模板支持派生输出字段**：模板参数增加 `outputFields`（如 `phase='CIRCULATION'` 常量列、字段重命名），生成 `select 'X' as phase, ...` | `single-threshold` 只能 `select *`；跨语句状态依赖（timer 语句按 phase 关联）必须高级微调 EPL | 状态机/阶段迁移类规则无法 100% 向导化，业务人员仍需懂 EPL |
+| P0-1 | **EventStream 语句级分组/目录**：`statements[]` 增加 `group` 字段，前端按组展示并支持排序 | 已完成；分组属于作者元数据，数组顺序仍是运行顺序 | 已关闭 |
+| P0-2 | **向导模板支持派生输出字段**：模板参数增加通用 `outputFields`，支持固定值与源字段重命名 | 已完成；当前先对 `single-threshold` 开放，空映射继续生成 `select *` | 已关闭 |
 | P0-3 | **服务端 `template+params+epl` 一致性校验落地** | 已完成；共享模板生成器会在创建、保存与编译时重算并拒绝不一致 EPL | 已关闭绕过前端造成向导与运行语义漂移的入口 |
 
 ### P1（建议排期）
@@ -156,7 +156,7 @@ Decision Workbench 是复刻 IBM iLOG JRules RTS/RES 的规则与决策管理平
 | 编号 | 建议 | 说明 |
 |------|------|------|
 | P1-1 | **状态迁移/时间驱动模板**（`cep-visual-editor-design.md` §5.2 P1/P2 项提前） | `Hold_FromCirc` 类"事件 A 后 timer N 输出"场景当前只能高级 EPL；缺口 A 已提供运行时支持，模板层补齐后业务人员可配置 |
-| P1-2 | **语句排序/拖动重排**（文档后续范围） | 与 P0-1 目录联动 |
+| P1-2 | **语句排序/拖动重排**（文档后续范围） | 已完成；同时提供上下按钮，支持无鼠标操作 |
 | P1-3 | **重复 detections 消费约定文档化** | 明确"引擎按事件评估、同语句可多次命中"，输出消费侧幂等/去重规范 |
 | P1-4 | **BOM 模型统一**：`fields[]` 与 `factTypes[]` 收敛为单一 canonical 模型 | 两套叙事并存已造成 409 与迁移成本（§3.2） |
 
@@ -165,6 +165,8 @@ Decision Workbench 是复刻 IBM iLOG JRules RTS/RES 的规则与决策管理平
 - 语义型 `alert.cleared`（webhook fired/cleared 已支持，恢复判断需 clearCondition/hysteresis）
 - Event Profile 前端专用编辑 UI（后端契约已支持统一 BOM Core + eventTypes[]）
 - 缺席检测（断流告警下沉平台，替代前端判定）
+
+客户项目中的具体阈值、设备联锁和工艺状态迁移属于应用资产，不进入平台产品待办；平台只提供通用字段比较、输出映射、CEP 模板与治理能力。
 
 ---
 

@@ -35,8 +35,9 @@ const buildHttp = axios.create({ baseURL: '/build-api', timeout: 5_000 })
 const resHttp = axios.create({ baseURL: '/res-api', timeout: 5_000 })
 
 const roles: AdminRole[] = [
-  { id: 'admin', label: '管理员', permissions: ['view', 'author', 'review', 'release', 'manage'] },
+  { id: 'admin', label: '管理员', permissions: ['view', 'author', 'advanced-epl', 'review', 'release', 'manage'] },
   { id: 'author', label: '规则作者', permissions: ['view', 'author'] },
+  { id: 'cep-developer', label: 'CEP 开发人员', permissions: ['view', 'author', 'advanced-epl'] },
   { id: 'reviewer', label: '发布审核', permissions: ['view', 'review'] },
   { id: 'release-manager', label: '发布与部署', permissions: ['view', 'release'] },
   { id: 'viewer', label: '只读', permissions: ['view'] },

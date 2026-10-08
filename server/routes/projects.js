@@ -1,4 +1,16 @@
 import { bodyOf, reply } from '../http-utils.js';
+import { canonicalRuleSetVariables, validateRuleSetVariables } from '../../shared/ruleset-variables.js';
+import { normalizeApprovalPolicy, validateApprovalPolicy } from '../../shared/approval-policy.js';
+
+function validateProjectVariables(variables, bom) {
+  const normalized = Array.isArray(variables) ? canonicalRuleSetVariables(variables) : [];
+  const error = validateRuleSetVariables(normalized);
+  if (error) return { error: `Rule Project 变量无效：${error}` };
+  const bomKeys = new Set((bom?.fields || []).map(field => field.key));
+  const conflict = normalized.find(variable => bomKeys.has(variable.name));
+  if (conflict) return { error: `Rule Project 变量“${conflict.name}”不能与 BOM 字段同名` };
+  return { variables: normalized };
+}
 
 export function createProjectHandlers({
   createProjectRecord,
@@ -47,7 +59,23 @@ export function createProjectHandlers({
       const description = typeof payload?.description === 'string' ? payload.description.trim() : '';
       if (!name || name.length > 80 || description.length > 500) return reply(res, 400, { error: '项目名称或描述无效' });
       if (payload?.engine != null && payload.engine !== normalizeProjectEngine(project.engine)) return reply(res, 400, { error: '项目引擎创建后不可修改' });
-      const updates = { ...project, name, description, icon: ['loan', 'warehouse', 'shield'].includes(payload.icon) ? payload.icon : project.icon, defaultEnvironment: payload.defaultEnvironment || project.defaultEnvironment || 'local', updatedAt: new Date().toISOString(), updatedBy: actorOf(req) };
+      const data = await projectData(projectId);
+      const variableResult = validateProjectVariables(payload?.variables == null ? project.variables || [] : payload.variables, data.bom);
+      if (variableResult.error) return reply(res, 400, { error: variableResult.error });
+      const approvalPolicy = payload?.approvalPolicy == null ? normalizeApprovalPolicy(project.approvalPolicy) : payload.approvalPolicy;
+      const approvalPolicyError = validateApprovalPolicy(approvalPolicy);
+      if (approvalPolicyError) return reply(res, 400, { error: approvalPolicyError });
+      const updates = {
+        ...project,
+        name,
+        description,
+        icon: ['loan', 'warehouse', 'shield'].includes(payload.icon) ? payload.icon : project.icon,
+        defaultEnvironment: payload.defaultEnvironment || project.defaultEnvironment || 'local',
+        variables: variableResult.variables,
+        approvalPolicy: normalizeApprovalPolicy(approvalPolicy),
+        updatedAt: new Date().toISOString(),
+        updatedBy: actorOf(req),
+      };
       const saved = postgresStore ? await postgresStore.updateProject(projectId, updates) : (await writeProjectRecords(projects.map(item => item.id === projectId ? updates : item)), updates);
       return reply(res, 200, { ...saved, source: 'server' });
     }

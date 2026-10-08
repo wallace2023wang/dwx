@@ -4908,7 +4908,7 @@
         "name": "充氮结束处理表",
         "before": {
           "name": "充氮结束处理表",
-          "description": "到达结束时间时统一收口：写 COMPLETED 并关闭全部设备。由规则流 endReached 网关的 true 分支调用；因为该分支不执行主状态迁移表，所以本表必须自己写 nextPhase。",
+          "description": "到达结束时间时统一收口：写 COMPLETED 并关闭全部设备。由规则集 endReached 网关的 true 分支调用；因为该分支不执行主状态迁移表，所以本表必须自己写 nextPhase。",
           "category": "nitrogen",
           "priority": 60,
           "hitPolicy": "FIRST",
@@ -4958,7 +4958,7 @@
         },
         "after": {
           "name": "充氮结束处理表",
-          "description": "到达结束时间时统一收口：写 COMPLETED 并关闭全部设备。由规则流 endReached 网关的 true 分支调用；因为该分支不执行主状态迁移表，所以本表必须自己写 nextPhase。",
+          "description": "到达结束时间时统一收口：写 COMPLETED 并关闭全部设备。由规则集 endReached 网关的 true 分支调用；因为该分支不执行主状态迁移表，所以本表必须自己写 nextPhase。",
           "category": "nitrogen",
           "priority": 60,
           "hitPolicy": "FIRST",
@@ -5352,7 +5352,7 @@
         "name": "充氮结束处理表",
         "before": {
           "name": "充氮结束处理表",
-          "description": "到达结束时间时统一收口：写 COMPLETED 并关闭全部设备。由规则流 endReached 网关的 true 分支调用；因为该分支不执行主状态迁移表，所以本表必须自己写 nextPhase。",
+          "description": "到达结束时间时统一收口：写 COMPLETED 并关闭全部设备。由规则集 endReached 网关的 true 分支调用；因为该分支不执行主状态迁移表，所以本表必须自己写 nextPhase。",
           "category": "nitrogen",
           "priority": 60,
           "hitPolicy": "FIRST",
@@ -5402,7 +5402,7 @@
         },
         "after": {
           "name": "充氮结束处理表",
-          "description": "到达结束时间时统一收口：写 COMPLETED 并关闭全部设备。由规则流 endReached 网关的 true 分支调用；因为该分支不执行主状态迁移表，所以本表必须自己写 nextPhase。",
+          "description": "到达结束时间时统一收口：写 COMPLETED 并关闭全部设备。由规则集 endReached 网关的 true 分支调用；因为该分支不执行主状态迁移表，所以本表必须自己写 nextPhase。",
           "category": "nitrogen",
           "priority": 60,
           "hitPolicy": "FIRST",
@@ -5796,7 +5796,7 @@
         "name": "充氮结束处理表",
         "before": {
           "name": "充氮结束处理表",
-          "description": "到达结束时间时统一收口：写 COMPLETED 并关闭全部设备。由规则流 endReached 网关的 true 分支调用；因为该分支不执行主状态迁移表，所以本表必须自己写 nextPhase。",
+          "description": "到达结束时间时统一收口：写 COMPLETED 并关闭全部设备。由规则集 endReached 网关的 true 分支调用；因为该分支不执行主状态迁移表，所以本表必须自己写 nextPhase。",
           "category": "nitrogen",
           "priority": 60,
           "hitPolicy": "FIRST",
@@ -5846,7 +5846,7 @@
         },
         "after": {
           "name": "充氮结束处理表",
-          "description": "到达结束时间时统一收口：写 COMPLETED 并关闭全部设备。由规则流 endReached 网关的 true 分支调用；因为该分支不执行主状态迁移表，所以本表必须自己写 nextPhase。",
+          "description": "到达结束时间时统一收口：写 COMPLETED 并关闭全部设备。由规则集 endReached 网关的 true 分支调用；因为该分支不执行主状态迁移表，所以本表必须自己写 nextPhase。",
           "category": "nitrogen",
           "priority": 60,
           "hitPolicy": "FIRST",
@@ -6240,7 +6240,7 @@
         "name": "充氮结束处理表",
         "before": {
           "name": "充氮结束处理表",
-          "description": "到达结束时间时统一收口：写 COMPLETED 并关闭全部设备。由规则流 endReached 网关的 true 分支调用；因为该分支不执行主状态迁移表，所以本表必须自己写 nextPhase。",
+          "description": "到达结束时间时统一收口：写 COMPLETED 并关闭全部设备。由规则集 endReached 网关的 true 分支调用；因为该分支不执行主状态迁移表，所以本表必须自己写 nextPhase。",
           "category": "nitrogen",
           "priority": 60,
           "hitPolicy": "FIRST",
@@ -6290,7 +6290,7 @@
         },
         "after": {
           "name": "充氮结束处理表",
-          "description": "到达结束时间时统一收口：写 COMPLETED 并关闭全部设备。由规则流 endReached 网关的 true 分支调用；因为该分支不执行主状态迁移表，所以本表必须自己写 nextPhase。",
+          "description": "到达结束时间时统一收口：写 COMPLETED 并关闭全部设备。由规则集 endReached 网关的 true 分支调用；因为该分支不执行主状态迁移表，所以本表必须自己写 nextPhase。",
           "category": "nitrogen",
           "priority": 60,
           "hitPolicy": "FIRST",
@@ -6684,7 +6684,7 @@
         "name": "充氮结束处理表",
         "before": {
           "name": "充氮结束处理表",
-          "description": "到达结束时间时统一收口：写 COMPLETED 并关闭全部设备。由规则流 endReached 网关的 true 分支调用；因为该分支不执行主状态迁移表，所以本表必须自己写 nextPhase。",
+          "description": "到达结束时间时统一收口：写 COMPLETED 并关闭全部设备。由规则集 endReached 网关的 true 分支调用；因为该分支不执行主状态迁移表，所以本表必须自己写 nextPhase。",
           "category": "nitrogen",
           "priority": 60,
           "hitPolicy": "FIRST",
@@ -6734,7 +6734,7 @@
         },
         "after": {
           "name": "充氮结束处理表",
-          "description": "到达结束时间时统一收口：写 COMPLETED 并关闭全部设备。由规则流 endReached 网关的 true 分支调用；因为该分支不执行主状态迁移表，所以本表必须自己写 nextPhase。",
+          "description": "到达结束时间时统一收口：写 COMPLETED 并关闭全部设备。由规则集 endReached 网关的 true 分支调用；因为该分支不执行主状态迁移表，所以本表必须自己写 nextPhase。",
           "category": "nitrogen",
           "priority": 60,
           "hitPolicy": "FIRST",
@@ -10432,7 +10432,7 @@
         "name": "充氮结束处理表",
         "before": {
           "name": "充氮结束处理表",
-          "description": "到达结束时间时确定设备态（全关）。由规则流的 endReached 网关在 true 分支调用。",
+          "description": "到达结束时间时确定设备态（全关）。由规则集的 endReached 网关在 true 分支调用。",
           "category": "nitrogen",
           "priority": 40,
           "hitPolicy": "FIRST",
@@ -10478,7 +10478,7 @@
         },
         "after": {
           "name": "充氮结束处理表",
-          "description": "到达结束时间时统一收口：写 COMPLETED 并关闭全部设备。由规则流 endReached 网关的 true 分支调用；因为该分支不执行主状态迁移表，所以本表必须自己写 nextPhase。",
+          "description": "到达结束时间时统一收口：写 COMPLETED 并关闭全部设备。由规则集 endReached 网关的 true 分支调用；因为该分支不执行主状态迁移表，所以本表必须自己写 nextPhase。",
           "category": "nitrogen",
           "priority": 60,
           "hitPolicy": "FIRST",
@@ -10567,8 +10567,8 @@
           {
             "path": "description",
             "kind": "changed",
-            "before": "到达结束时间时确定设备态（全关）。由规则流的 endReached 网关在 true 分支调用。",
-            "after": "到达结束时间时统一收口：写 COMPLETED 并关闭全部设备。由规则流 endReached 网关的 true 分支调用；因为该分支不执行主状态迁移表，所以本表必须自己写 nextPhase。"
+            "before": "到达结束时间时确定设备态（全关）。由规则集的 endReached 网关在 true 分支调用。",
+            "after": "到达结束时间时统一收口：写 COMPLETED 并关闭全部设备。由规则集 endReached 网关的 true 分支调用；因为该分支不执行主状态迁移表，所以本表必须自己写 nextPhase。"
           },
           {
             "path": "priority",
@@ -12230,7 +12230,7 @@
         "name": "充氮结束处理表",
         "before": {
           "name": "充氮结束处理表",
-          "description": "到达结束时间时确定设备态（全关）。由规则流的 endReached 网关在 true 分支调用。",
+          "description": "到达结束时间时确定设备态（全关）。由规则集的 endReached 网关在 true 分支调用。",
           "category": "nitrogen",
           "priority": 40,
           "hitPolicy": "FIRST",
@@ -12276,7 +12276,7 @@
         },
         "after": {
           "name": "充氮结束处理表",
-          "description": "到达结束时间时统一收口：写 COMPLETED 并关闭全部设备。由规则流 endReached 网关的 true 分支调用；因为该分支不执行主状态迁移表，所以本表必须自己写 nextPhase。",
+          "description": "到达结束时间时统一收口：写 COMPLETED 并关闭全部设备。由规则集 endReached 网关的 true 分支调用；因为该分支不执行主状态迁移表，所以本表必须自己写 nextPhase。",
           "category": "nitrogen",
           "priority": 60,
           "hitPolicy": "FIRST",
@@ -12365,8 +12365,8 @@
           {
             "path": "description",
             "kind": "changed",
-            "before": "到达结束时间时确定设备态（全关）。由规则流的 endReached 网关在 true 分支调用。",
-            "after": "到达结束时间时统一收口：写 COMPLETED 并关闭全部设备。由规则流 endReached 网关的 true 分支调用；因为该分支不执行主状态迁移表，所以本表必须自己写 nextPhase。"
+            "before": "到达结束时间时确定设备态（全关）。由规则集的 endReached 网关在 true 分支调用。",
+            "after": "到达结束时间时统一收口：写 COMPLETED 并关闭全部设备。由规则集 endReached 网关的 true 分支调用；因为该分支不执行主状态迁移表，所以本表必须自己写 nextPhase。"
           },
           {
             "path": "priority",
@@ -14029,7 +14029,7 @@
         "before": null,
         "after": {
           "name": "充氮设备态表",
-          "description": "按当前阶段确定 4 路设备指令（全覆盖，保证任何阶段都有设备态）。由规则流的 endReached 网关在 false 分支调用。",
+          "description": "按当前阶段确定 4 路设备指令（全覆盖，保证任何阶段都有设备态）。由规则集的 endReached 网关在 false 分支调用。",
           "category": "nitrogen",
           "priority": 40,
           "hitPolicy": "FIRST",
@@ -14149,7 +14149,7 @@
             "kind": "added",
             "after": {
               "name": "充氮设备态表",
-              "description": "按当前阶段确定 4 路设备指令（全覆盖，保证任何阶段都有设备态）。由规则流的 endReached 网关在 false 分支调用。",
+              "description": "按当前阶段确定 4 路设备指令（全覆盖，保证任何阶段都有设备态）。由规则集的 endReached 网关在 false 分支调用。",
               "category": "nitrogen",
               "priority": 40,
               "hitPolicy": "FIRST",
@@ -14611,7 +14611,7 @@
         "before": null,
         "after": {
           "name": "充氮结束处理表",
-          "description": "到达结束时间时确定设备态（全关）。由规则流的 endReached 网关在 true 分支调用。",
+          "description": "到达结束时间时确定设备态（全关）。由规则集的 endReached 网关在 true 分支调用。",
           "category": "nitrogen",
           "priority": 40,
           "hitPolicy": "FIRST",
@@ -14661,7 +14661,7 @@
             "kind": "added",
             "after": {
               "name": "充氮结束处理表",
-              "description": "到达结束时间时确定设备态（全关）。由规则流的 endReached 网关在 true 分支调用。",
+              "description": "到达结束时间时确定设备态（全关）。由规则集的 endReached 网关在 true 分支调用。",
               "category": "nitrogen",
               "priority": 40,
               "hitPolicy": "FIRST",

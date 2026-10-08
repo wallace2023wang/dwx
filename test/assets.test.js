@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyFlowMappings, flowSnapshot, newFlow, newTable, parseConditionCell, resolveRuleGroupMembers, ruleGroupFingerprint, selectFlowBranch, tableCollectedHits, tableDrl, tableExecutionTrace, tableRules, validateFlow, validateTable } from '../shared/assets.js';
+import { applyFlowMappings, flowSnapshot, newFlow, newTable, parseConditionCell, resolveFlowVariables, resolveRuleGroupMembers, ruleGroupFingerprint, selectFlowBranch, tableCollectedHits, tableDrl, tableExecutionTrace, tableRules, validateFlow, validateTable } from '../shared/assets.js';
 import { defaultBom } from '../shared/bom.js';
 
 // 语法测试用的宽松 BOM：customerType 不预设枚举值域，以便验证任意 a,b,c 语法。
@@ -373,6 +373,24 @@ test('default row must have empty conditions', () => {
   assert.match(validateTable(table).error, /默认行/);
 });
 
+test('decision tables can read and write Rule Project variables', () => {
+  const variables = [
+    { name: 'approved', label: '已批准', type: 'Boolean', defaultValue: false },
+  ];
+  const table = {
+    ...newTable(),
+    name: '变量决策表',
+    conditions: [{ field: 'approved', fieldSource: 'variable', operator: '==' }],
+    actions: [{ field: 'approved', fieldSource: 'variable' }],
+    rows: [{ enabled: true, conditions: ['true'], actions: ['true'] }],
+  };
+  assert.equal(validateTable(table, undefined, variables).error, null);
+  const drl = tableDrl(table, undefined, 'variable-table', variables);
+  assert.match(drl, /declare RuleContext/);
+  assert.match(drl, /RuleContext\( approved == true \)/);
+  assert.match(drl, /setApproved\(true\)/);
+});
+
 test('published rule flow freezes source versions and generated DRL', () => {
   const table = cleanTable();
   table.hitPolicy = 'FIRST';
@@ -385,6 +403,68 @@ test('published rule flow freezes source versions and generated DRL', () => {
   assert.match(snapshot.steps[0].drl, /已发布规则/);
   assert.match(snapshot.steps[1].drl, /未命名决策表 第1行/);
   assert.match(snapshot.steps[1].drl, /activation-group "decision-table:table-1"/);
+});
+
+test('rule flow variables provide one shared scope across member rules', () => {
+  const variable = { name: 'approved', label: '已批准', type: 'Boolean', defaultValue: false, enum: null, description: '规则间共享的中间结果' };
+  const first = {
+    name: '规则 A', description: '', category: 'common', priority: 0, variables: [variable],
+    conditions: [{ field: 'customerAge', operator: '>=', value: '18' }],
+    actions: [{ fieldSource: 'variable', field: 'approved', value: 'true' }],
+  };
+  const second = {
+    name: '规则 B', description: '', category: 'common', priority: 0, variables: [variable],
+    conditions: [{ fieldSource: 'variable', field: 'approved', operator: '==', value: 'true' }],
+    actions: [{ field: 'riskLevel', value: '低' }],
+  };
+  const rules = [
+    { id: 'rule-a', archived: false, published: first, versions: [{ number: 1 }] },
+    { id: 'rule-b', archived: false, published: second, versions: [{ number: 1 }] },
+  ];
+  const flow = {
+    ...newFlow(),
+    name: '共享变量流程',
+    variables: [variable],
+    steps: [{ type: 'rule', id: 'rule-a' }, { type: 'rule', id: 'rule-b' }],
+  };
+
+  assert.equal(validateFlow(flow, rules, []), null);
+  assert.deepEqual(resolveFlowVariables(flow, rules, []), [variable]);
+  const snapshot = flowSnapshot(flow, rules, []);
+  assert.deepEqual(snapshot.variables, [variable]);
+  assert.match(snapshot.steps[0].drl, /setApproved\(true\)/);
+  assert.match(snapshot.steps[1].drl, /RuleContext\( approved == true \)/);
+  assert.match(snapshot.steps[0].drl, /declare RuleContext/);
+  assert.match(snapshot.steps[1].drl, /declare RuleContext/);
+});
+
+test('legacy member declarations are compatible, but flow definitions are authoritative', () => {
+  const variable = { name: 'approved', label: '已批准', type: 'Boolean', defaultValue: false, enum: null, description: '' };
+  const rule = {
+    name: '兼容规则', description: '', category: 'common', priority: 0, variables: [variable],
+    conditions: [{ fieldSource: 'variable', field: 'approved', operator: '==', value: 'true' }],
+    actions: [{ field: 'riskLevel', value: '低' }],
+  };
+  const asset = { id: 'legacy-variable-rule', archived: false, published: rule, versions: [{ number: 1 }] };
+  const legacyFlow = { ...newFlow(), name: '旧变量流程', steps: [{ type: 'rule', id: asset.id }] };
+  assert.equal(validateFlow(legacyFlow, [asset], []), null);
+  assert.deepEqual(flowSnapshot(legacyFlow, [asset], []).variables, [variable]);
+
+  const mismatched = {
+    ...newFlow(),
+    name: '变量冲突流程',
+    variables: [{ ...variable, defaultValue: true }],
+    steps: [{ type: 'rule', id: asset.id }],
+  };
+  assert.match(validateFlow(mismatched, [asset], []), /定义冲突/);
+
+  const undeclared = {
+    ...newFlow(),
+    name: '未声明变量流程',
+    variables: [{ name: 'other', label: '其他', type: 'Boolean', defaultValue: false, enum: null, description: '' }],
+    steps: [{ type: 'rule', id: asset.id }],
+  };
+  assert.match(validateFlow(undeclared, [asset], []), /未在规则集中定义/);
 });
 
 test('rule flow validates, freezes and applies typed step mappings', () => {

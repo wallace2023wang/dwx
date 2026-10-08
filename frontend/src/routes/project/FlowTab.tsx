@@ -42,21 +42,21 @@ export default function FlowTab() {
     <div className="h-full overflow-auto bg-ink-bg px-6 py-5 max-sm:px-3">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="flex items-center gap-2 text-base font-medium"><GitBranch size={17} />规则流</h1>
+          <h1 className="flex items-center gap-2 text-base font-medium"><GitBranch size={17} />规则集</h1>
           <p className="mt-0.5 text-[11px] text-ink-3">通过规则包、决策表和条件分支编排可执行决策流程</p>
         </div>
-        {editable && <button type="button" className="primary-button" disabled={createFlow.isPending} onClick={() => void create()}>{createFlow.isPending ? <LoaderCircle size={14} className="animate-spin" /> : <Plus size={14} />}新建规则流</button>}
+        {editable && <button type="button" className="primary-button" disabled={createFlow.isPending} onClick={() => void create()}>{createFlow.isPending ? <LoaderCircle size={14} className="animate-spin" /> : <Plus size={14} />}新建规则集</button>}
       </div>
 
       {createFlow.error && <div className="mb-3 rounded-[3px] border border-[#ffcdd2] bg-[#fff5f5] px-3 py-2 text-[11px] text-[#c62828]">{createFlow.error.message}</div>}
       {isRulesetsPending
-          ? <div className="p-6 text-xs text-ink-3">正在加载规则流...</div>
+          ? <div className="p-6 text-xs text-ink-3">正在加载规则集...</div>
         : !rulesets?.length
-          ? <div className="flex h-[280px] items-center justify-center rounded-[3px] border border-ink-border bg-white text-xs text-ink-3">当前项目没有规则流。</div>
+          ? <div className="flex h-[280px] items-center justify-center rounded-[3px] border border-ink-border bg-white text-xs text-ink-3">当前项目没有规则集。</div>
           : <div className="space-y-[14px]">
               <RulesetConfig rulesets={rulesets} selectedId={selectedRuleset?.id ?? ''} onSelect={setCurrentRuleset} />
               {isFlowPending || !flow
-                ? <div className="flex h-[460px] items-center justify-center rounded-[3px] border border-ink-border bg-white text-xs text-ink-3">正在加载规则流...</div>
+                ? <div className="flex h-[460px] items-center justify-center rounded-[3px] border border-ink-border bg-white text-xs text-ink-3">正在加载规则集...</div>
                 : editable && realFlow
                   ? <FlowEditor
                       detail={realFlow}

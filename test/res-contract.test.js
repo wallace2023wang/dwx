@@ -124,3 +124,24 @@ test('RES-CONTRACT-08: 非生效版本卸载转发 releaseId 并保留停用历�
     assert.deepEqual(env.resCalls.at(-1), { path: '/undeploy', body: { releaseId: second.id } });
   } finally { await env.stop(); }
 });
+
+test('RES-CONTRACT-09: 激活和回退同步 RES 的 decisionService 路由', async () => {
+  const env = await startTestEnv();
+  try {
+    const first = await publishAndRelease(env);
+    const second = (await env.request('/api/releases', 'POST', {
+      decisionService: 'default/res-contract', name: '契约测试 v2', target: { type: 'rule', id: first.target.id },
+    })).body;
+    await env.request(`/api/releases/${first.id}/deploy`, 'POST', { environment: 'local' });
+    await env.request(`/api/releases/${second.id}/deploy`, 'POST', { environment: 'local' });
+
+    assert.equal((await env.request(`/api/releases/${second.id}/activate`, 'POST', { environment: 'local' })).status, 200);
+    assert.deepEqual(env.resCalls.at(-1), {
+      path: '/activate', body: { releaseId: second.id, decisionService: 'default/res-contract' },
+    });
+    assert.equal((await env.request(`/api/releases/${second.id}/rollback`, 'POST', { environment: 'local' })).status, 200);
+    assert.deepEqual(env.resCalls.at(-1), {
+      path: '/activate', body: { releaseId: first.id, decisionService: 'default/res-contract' },
+    });
+  } finally { await env.stop(); }
+});

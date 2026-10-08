@@ -23,7 +23,7 @@ const SMOKE_PAGES = [
   { id: 'smoke-admin', url: '/admin', marker: '用户' },
   { id: 'smoke-project-index', url: '/projects/default', expectUrl: /assets$/, marker: '新建规则' },
   { id: 'smoke-project-assets', url: '/projects/default/assets', marker: '新建规则' },
-  { id: 'smoke-project-flow', url: '/projects/default/flow', marker: '新建规则流' },
+  { id: 'smoke-project-flow', url: '/projects/default/flow', marker: '新建规则集' },
   { id: 'smoke-project-bom', url: '/projects/default/bom', marker: '编辑模型' },
   { id: 'smoke-project-tests', url: '/projects/default/tests', marker: '新建套件' },
   { id: 'smoke-project-reviews', url: '/projects/default/reviews', marker: '审核' },

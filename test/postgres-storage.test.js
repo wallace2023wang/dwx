@@ -108,9 +108,19 @@ test('PG-STORE-01: JSON 导入、持久化和数据库级乐观锁', { skip: !po
       const isolatedProject = {
         id: `project-${crypto.randomBytes(4).toString('hex')}`, name: '数据库隔离项目', description: '',
         icon: 'shield', version: 'v1.0.0', branch: 'main', defaultEnvironment: 'local', archived: false,
+        variables: [{
+          name: 'approved', label: '已批准', type: 'Boolean', defaultValue: false,
+          enum: null, description: 'PostgreSQL 变量持久化验证',
+        }],
         createdAt: now, updatedAt: now, updatedBy: 'integration-test',
       };
       await first.createProject(isolatedProject, { ...structuredClone(currentBom), version: 1 }, []);
+      const persistedProject = await first.getProject(isolatedProject.id);
+      assert.deepEqual(persistedProject.variables.map(variable => variable.name), ['approved']);
+      persistedProject.variables[0].defaultValue = true;
+      persistedProject.updatedAt = new Date().toISOString();
+      await first.updateProject(isolatedProject.id, persistedProject);
+      assert.equal((await second.getProject(isolatedProject.id)).variables[0].defaultValue, true);
       const isolatedChangeSet = {
         ...changeSet, id: crypto.randomUUID(), name: '隔离项目变更集', revision: 1,
         createdAt: now, updatedAt: now,

@@ -25,22 +25,34 @@ function ConfigItem({ label, children }: { label: string; children: React.ReactN
 export default function RulesetConfig({ rulesets, selectedId, onSelect }: RulesetConfigProps) {
   const selected = rulesets.find((ruleset) => ruleset.id === selectedId) ?? rulesets[0]
   if (!selected) return null
+  const nameCounts = new Map<string, number>()
+  for (const ruleset of rulesets) {
+    const key = ruleset.name.trim().toLocaleLowerCase()
+    nameCounts.set(key, (nameCounts.get(key) ?? 0) + 1)
+  }
+  const optionLabel = (ruleset: Ruleset) => {
+    if ((nameCounts.get(ruleset.name.trim().toLocaleLowerCase()) ?? 0) < 2) return ruleset.name
+    const state = ruleset.status === 'published'
+      ? `已发布 v${ruleset.version}`
+      : ruleset.version ? `草稿（线上 v${ruleset.version}）` : '草稿'
+    return `${ruleset.name} · ${state} · ${ruleset.id.slice(0, 8)}`
+  }
 
   return (
     <section className="rounded-[3px] border border-ink-border bg-white px-4 py-[14px]" aria-labelledby="ruleset-config-title">
       <div className="mb-3 flex items-center gap-2 border-b border-ink-border pb-2">
         <Layers3 size={15} className="text-brand-primary" />
-        <h2 id="ruleset-config-title" className="text-xs font-medium">规则流配置</h2>
+        <h2 id="ruleset-config-title" className="text-xs font-medium">规则集配置</h2>
       </div>
       <dl className="grid grid-cols-4 gap-x-5 gap-y-4 max-lg:grid-cols-2 max-sm:grid-cols-1">
-        <ConfigItem label="规则流名称">
+        <ConfigItem label="规则集名称">
           <select
             className="h-7 max-w-full rounded-[2px] border border-ink-border bg-white px-2 font-mono text-[11px] outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary"
             value={selected.id}
             onChange={(event) => onSelect(event.target.value)}
-            aria-label="选择规则流"
+            aria-label="选择规则集"
           >
-            {rulesets.map((ruleset) => <option key={ruleset.id} value={ruleset.id}>{ruleset.name}</option>)}
+            {rulesets.map((ruleset) => <option key={ruleset.id} value={ruleset.id}>{optionLabel(ruleset)}</option>)}
           </select>
         </ConfigItem>
         <ConfigItem label="执行模型">{selected.flowName}</ConfigItem>

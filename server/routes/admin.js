@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import { bodyOf, reply } from '../http-utils.js';
 
-const ADMIN_ROLES = ['admin', 'author', 'reviewer', 'release-manager', 'viewer'];
+const ADMIN_ROLES = ['admin', 'author', 'cep-developer', 'reviewer', 'release-manager', 'viewer'];
 
 function defaultAdminUsers() {
   return [

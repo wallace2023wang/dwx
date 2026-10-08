@@ -232,7 +232,7 @@ async function main() {
   log(`\nBAL_RESULT=${JSON.stringify({ projectId: argProject, ruleCount: RULES.length, failed })}`);
   if (failed) process.exit(1);
   log(`
-▸ 下一步：把规则流「自动充氮控制规则流」的公共步骤改为规则包「${PACKAGE}」，
+▸ 下一步：把规则集「自动充氮控制规则集」的公共步骤改为规则包「${PACKAGE}」，
   然后重新发布 Release —— 这样阈值判定就完全在规则里了。
 `);
 }

@@ -69,13 +69,13 @@ export function createProjectRuleHandler({
         ? await mutateAssets('tables', assets => { assets.unshift(initial); return { item: initial }; }, projectId)
         : await mutate(rules => { rules.unshift(initial); return { item: initial }; }, projectId);
       await appendAuditEvent('asset.created', type, result.item.id, `创建${type === 'table' ? '决策表' : '规则'}：${draft.name}`, { revision: 1 }, req);
-      return reply(res, 201, projectAssetDetail(result.item, type, data.bom, data.changeSets));
+      return reply(res, 201, projectAssetDetail(result.item, type, data.bom, data.changeSets, data.project?.variables));
     }
     if (segments.length === 5 && segments[3] === 'rules' && req.method === 'GET') {
       const rule = (data.allRules || data.rules).find(item => item.id === segments[4]);
-      if (rule) { authorizeAsset(req.principal, rule.id); return reply(res, 200, projectAssetDetail(rule, 'rule', data.bom, data.changeSets)); }
+      if (rule) { authorizeAsset(req.principal, rule.id); return reply(res, 200, projectAssetDetail(rule, 'rule', data.bom, data.changeSets, data.project?.variables)); }
       const table = (data.allTables || data.tables).find(item => item.id === segments[4]);
-      if (table) { authorizeAsset(req.principal, table.id); return reply(res, 200, projectAssetDetail(table, 'table', data.bom, data.changeSets)); }
+      if (table) { authorizeAsset(req.principal, table.id); return reply(res, 200, projectAssetDetail(table, 'table', data.bom, data.changeSets, data.project?.variables)); }
       return reply(res, 404, { error: '资产不存在' });
     }
     if (segments.length === 5 && segments[3] === 'rules' && req.method === 'PUT') {
@@ -87,10 +87,10 @@ export function createProjectRuleHandler({
       if (current?.lifecycleStatus === 'deprecated') return reply(res, 409, { error: '已废弃资产不可编辑，请先恢复为草稿' });
       const locked = reviewLock(data.changeSets, id);
       if (locked) return reply(res, locked.status, { error: locked.error, changeSetId: locked.changeSetId });
-      const result = await saveProjectAsset(id, type, await bodyOf(req), projectId, data.bom);
+      const result = await saveProjectAsset(id, type, await bodyOf(req), projectId, data.bom, data.project);
       if (result.error) return reply(res, result.status, operationError(result));
       await appendAuditEvent('asset.saved', type, id, `保存${type === 'rule' ? '规则' : '决策表'}：${result.item.draft.name}`, { revision: result.item.revision }, req);
-      return reply(res, 200, projectAssetDetail(result.item, type, data.bom, data.changeSets));
+      return reply(res, 200, projectAssetDetail(result.item, type, data.bom, data.changeSets, data.project?.variables));
     }
     if (segments.length === 5 && segments[3] === 'rules' && req.method === 'DELETE') {
       const id = segments[4];
@@ -111,7 +111,7 @@ export function createProjectRuleHandler({
       await appendAuditEvent('asset.archived', type, id, `归档${type === 'rule' ? '规则' : '决策表'}：${result.item.draft.name}`, {
         revision: result.item.revision, category: result.item.draft.category,
       }, req);
-      return reply(res, 200, projectAssetDetail(result.item, type, data.bom, data.changeSets));
+      return reply(res, 200, projectAssetDetail(result.item, type, data.bom, data.changeSets, data.project?.variables));
     }
     if (segments.length === 6 && segments[3] === 'rules' && req.method === 'POST') {
       const id = segments[4];
@@ -149,7 +149,7 @@ export function createProjectRuleHandler({
           await appendAuditEvent('asset.deprecated', type, id, `标记废弃：${result.item.draft.name}`, {
             revision: result.item.revision, reason, replacedByAssetId: replacementId,
           }, req);
-          return reply(res, 200, projectAssetDetail(result.item, type, data.bom, data.changeSets));
+          return reply(res, 200, projectAssetDetail(result.item, type, data.bom, data.changeSets, data.project?.variables));
         }
         if (item.lifecycleStatus !== 'deprecated') return reply(res, 409, { error: '只有已废弃资产可以恢复' });
         const apply = assets => {
@@ -166,7 +166,7 @@ export function createProjectRuleHandler({
         await appendAuditEvent('asset.reactivated', type, id, `恢复废弃资产：${result.item.draft.name}`, {
           revision: result.item.revision,
         }, req);
-        return reply(res, 200, projectAssetDetail(result.item, type, data.bom, data.changeSets));
+        return reply(res, 200, projectAssetDetail(result.item, type, data.bom, data.changeSets, data.project?.variables));
       }
       if (item.lifecycleStatus === 'deprecated' && action !== 'duplicate') return reply(res, 409, { error: '已废弃资产不可编辑、提交或发布，请先恢复为草稿' });
       if (action === 'submit') {
@@ -195,6 +195,7 @@ export function createProjectRuleHandler({
             bomVersion: data.bom.version, bom: structuredClone(data.bom),
             createdBy: actorOf(req), createdAt: now, updatedAt: now,
             submittedAt: now, decidedAt: null, decisionComment: '',
+            approvals: [], reviewPolicySnapshot: structuredClone(data.project.approvalPolicy),
           };
           changeSets.unshift(changeSet);
           return { item: changeSet, asset: current, changed: true };
@@ -204,13 +205,13 @@ export function createProjectRuleHandler({
           revision: result.item.revision, itemCount: 1, assetId: id,
         }, req);
         const changeSets = await readChangeSets(projectId);
-        return reply(res, 201, { ...projectAssetDetail(result.asset, type, data.bom, changeSets), changeSetId: result.item.id });
+        return reply(res, 201, { ...projectAssetDetail(result.asset, type, data.bom, changeSets, data.project?.variables), changeSetId: result.item.id });
       }
       if (action === 'analyze' && type === 'table') {
         const draft = normalizePackageReferences(structuredClone(payload?.draft || item.draft));
-        const validation = validateTable(draft, data.bom);
+        const validation = validateTable(draft, data.bom, data.project?.variables || []);
         let drl = null;
-        if (!validation.error) drl = tableDrl(draft, data.bom, item.id);
+        if (!validation.error) drl = tableDrl(draft, data.bom, item.id, data.project?.variables || []);
         return reply(res, 200, { error: validation.error, warnings: validation.warnings, drl });
       }
       if (action === 'duplicate') {
@@ -221,7 +222,7 @@ export function createProjectRuleHandler({
         const result = type === 'rule'
           ? await mutate(assets => { assets.unshift(duplicate); return { item: duplicate }; }, projectId)
           : await mutateAssets('tables', assets => { assets.unshift(duplicate); return { item: duplicate }; }, projectId);
-        return reply(res, 201, projectAssetDetail(result.item, type, data.bom, data.changeSets));
+        return reply(res, 201, projectAssetDetail(result.item, type, data.bom, data.changeSets, data.project?.variables));
       }
       if (action === 'rename') {
         const locked = reviewLock(data.changeSets, id);
@@ -240,7 +241,7 @@ export function createProjectRuleHandler({
         const result = type === 'rule' ? await mutate(rename, projectId) : await mutateAssets('tables', rename, projectId);
         if (result.error) return reply(res, result.status, operationError(result));
         await appendAuditEvent('asset.renamed', type, id, `重命名${type === 'rule' ? '规则' : '决策表'}：${newName}`, { revision: result.item.revision }, req);
-        return reply(res, 200, projectAssetDetail(result.item, type, data.bom, data.changeSets));
+        return reply(res, 200, projectAssetDetail(result.item, type, data.bom, data.changeSets, data.project?.variables));
       }
       if (action === 'move') {
         const locked = reviewLock(data.changeSets, id);
@@ -254,7 +255,7 @@ export function createProjectRuleHandler({
           return { item: target };
         };
         const result = type === 'rule' ? await mutate(move, projectId) : await mutateAssets('tables', move, projectId);
-        return reply(res, 200, projectAssetDetail(result.item, type, data.bom, data.changeSets));
+        return reply(res, 200, projectAssetDetail(result.item, type, data.bom, data.changeSets, data.project?.variables));
       }
       if (action === 'compile') {
         const result = await compileProjectAsset(item, type, payload, data.bom, data.project);
@@ -268,7 +269,7 @@ export function createProjectRuleHandler({
         await appendAuditEvent('asset.publish', type, id, `发布${type === 'rule' ? '规则' : '决策表'}：${result.item.draft.name}`, {
           revision: result.item.revision, version: result.item.versions.at(-1)?.number || null,
         }, req);
-        return reply(res, 200, projectAssetDetail(result.item, type, data.bom, data.changeSets));
+        return reply(res, 200, projectAssetDetail(result.item, type, data.bom, data.changeSets, data.project?.variables));
       }
       return reply(res, 404, { error: '未找到操作' });
     }

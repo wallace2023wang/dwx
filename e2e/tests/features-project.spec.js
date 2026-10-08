@@ -1,4 +1,4 @@
-// 默认项目各页功能测试：资产、规则流、BOM、测试、审核、发布、报告
+// 默认项目各页功能测试：资产、规则集、BOM、测试、审核、发布、报告
 const { test, expect } = require('@playwright/test')
 const { beforeEachAuth, saveShot, finishCase, installFailureRecorder, createCollector } = require('./common')
 
@@ -125,12 +125,35 @@ test('feature-decision-table-field 决策表条件支持同类型业务字段', 
   await dialog.getByRole('button', { name: /决策表/ }).click()
   await dialog.getByLabel('名称').fill(`e2e字段比较表_${Date.now().toString(36).slice(-6)}`)
   await dialog.getByLabel('所属包').selectOption({ index: 1 })
-  await dialog.getByRole('group', { name: '条件列' }).getByLabel(/客户年龄/).check()
-  await dialog.getByRole('group', { name: '动作列' }).getByLabel(/风险等级/).check()
+  const fieldPicker = dialog.getByLabel('BOM 字段选择器')
+  await expect(fieldPicker.getByLabel('搜索 BOM 字段')).toBeVisible()
+  await fieldPicker.getByLabel('搜索 BOM 字段').fill('客户年龄')
+  await fieldPicker.getByLabel(/客户年龄/).check()
+  await dialog.getByRole('button', { name: /动作列 0/ }).click()
+  await fieldPicker.getByLabel('搜索 BOM 字段').fill('风险等级')
+  await fieldPicker.getByLabel(/风险等级/).check()
+  await expect(dialog.getByText('已选 1 个条件列、1 个动作列')).toBeVisible()
   await dialog.getByRole('button', { name: '创建并打开' }).click()
 
   const editor = page.getByLabel('可编辑决策表')
   await expect(editor).toBeVisible({ timeout: 15_000 })
+
+  // 已有决策表可按 Fact/字段搜索并一次追加多个列，现有行同步扩展单元格。
+  await editor.getByRole('button', { name: '条件列', exact: true }).click()
+  const addColumnsDialog = page.getByRole('dialog', { name: '添加条件列' })
+  const addColumnsPicker = addColumnsDialog.getByLabel('BOM 字段选择器')
+  await addColumnsPicker.getByLabel('搜索 BOM 字段').fill('年收入')
+  await addColumnsPicker.getByLabel(/年收入/).check()
+  await addColumnsPicker.getByLabel('搜索 BOM 字段').fill('信用评分')
+  await addColumnsPicker.getByLabel(/信用评分/).check()
+  await expect(addColumnsDialog.getByText('已选择 2 列')).toBeVisible()
+  await addColumnsDialog.getByRole('button', { name: '添加所选列' }).click()
+  await expect(editor.locator('thead').getByText('年收入', { exact: true })).toBeVisible()
+  await expect(editor.locator('thead').getByText('信用评分', { exact: true })).toBeVisible()
+  await expect(editor.locator('[data-cell="0:conditions:0"]')).toHaveCount(1)
+  await expect(editor.locator('[data-cell="0:conditions:1"]')).toHaveCount(1)
+  await expect(editor.locator('[data-cell="0:conditions:2"]')).toHaveCount(1)
+
   await editor.locator('thead select').first().selectOption('>=')
   const conditionCell = editor.locator('[data-cell="0:conditions:0"]')
   await conditionCell.getByLabel('比较值来源').selectOption('field')
@@ -183,14 +206,18 @@ test('feature-structured-bal 充氮动态阈值以结构化 BAL 显示并可编�
   finishCase({ id, title: 'BAL动态阈值-结构化显示与编译', status: 'passed', issues, screenshots: shots })
 })
 
-test('feature-flow 规则流页-画布与编辑器操作', async ({ page }) => {
+test('feature-flow 规则集页-画布与编辑器操作', async ({ page }) => {
   const col = createCollector(page)
   const id = 'feature-flow'
   await page.goto('/projects/default/flow', { waitUntil: 'networkidle' })
   const shots = []
 
   // 流程选择器存在（RulesetConfig 下拉）
-  await expect(page.getByLabel('选择规则流')).toBeVisible()
+  await expect(page.getByLabel('选择规则集')).toBeVisible()
+  const previousFlowCount = await page.getByLabel('选择规则集').locator('option').count()
+  await page.getByRole('button', { name: '新建规则集' }).click()
+  await expect(page.getByLabel('选择规则集').locator('option')).toHaveCount(previousFlowCount + 1)
+  await expect(page.getByLabel('规则集名称')).toHaveValue('未命名规则集')
   // 画布渲染（ReactFlow 节点可能因布局动画短暂不可见，用尺寸检测等待）
   await page.waitForFunction(() => {
     const nodes = document.querySelectorAll('.react-flow__node')
@@ -200,37 +227,38 @@ test('feature-flow 规则流页-画布与编辑器操作', async ({ page }) => {
     })
   }, null, { timeout: 30_000 })
   await page.waitForTimeout(1000)
-  shots.push(await saveShot(page, id, '规则流画布全景'))
+  shots.push(await saveShot(page, id, '规则集画布全景'))
 
-  // 展开"结构化备用编辑"面板（添加步骤/条件分支/默认分支在折叠区内）
-  await page.getByText('结构化备用编辑').click()
-  await page.waitForTimeout(500)
+  // 条件判断必须是主画布一级入口，不依赖展开备用编辑器。
+  const gatewayPaletteItem = page.getByTitle('点击或拖入画布：排他网关')
+  await expect(gatewayPaletteItem).toBeVisible()
+  await gatewayPaletteItem.click()
+  await expect(page.locator('.react-flow__node-gateway')).toBeVisible()
+  await expect(page.getByText('排他网关', { exact: true }).last()).toBeVisible()
+  await page.getByLabel('第 1 个分支条件字段').selectOption('customerAge')
+  await page.getByLabel('第 1 个分支运算符').selectOption('>=')
+  await page.getByLabel('第 1 个分支比较值').fill('18')
+  await page.getByRole('button', { name: '默认分支', exact: true }).first().click()
+  await expect(page.getByText('默认分支', { exact: true }).first()).toBeVisible()
+  shots.push(await saveShot(page, id, '主画布条件网关编辑'))
 
-  // 添加步骤
-  await page.getByRole('button', { name: '添加步骤', exact: true }).click()
-  await page.waitForTimeout(600)
-  shots.push(await saveShot(page, id, '添加步骤面板'))
-
-  // 条件分支 / 默认分支按钮存在
-  await expect(page.getByRole('button', { name: '条件分支', exact: true }).first()).toBeVisible()
-  await expect(page.getByRole('button', { name: '默认分支', exact: true }).first()).toBeVisible()
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.getByText('规则集草稿已保存')).toBeVisible({ timeout: 15_000 })
+  await page.reload({ waitUntil: 'networkidle' })
+  await page.getByRole('button', { name: '条件网关', exact: true }).click()
+  await expect(page.getByLabel('第 1 个分支条件字段')).toHaveValue('customerAge')
+  await expect(page.getByLabel('第 1 个分支运算符')).toHaveValue('>=')
+  await expect(page.getByLabel('第 1 个分支比较值')).toHaveValue('18')
+  await expect(page.getByText('默认分支', { exact: true }).first()).toBeVisible()
 
   // 校验（工具栏常驻按钮）
   await page.getByRole('button', { name: '校验', exact: true }).click()
   await expect(page.getByText(/Drools .*校验通过/)).toBeVisible({ timeout: 120_000 })
   shots.push(await saveShot(page, id, '校验结果'))
 
-  // 若有多个规则流则切换（默认项目可能仅一个）
-  const rulesetCount = await page.getByLabel('选择规则流').locator('option').count()
-  if (rulesetCount > 1) {
-    await page.getByLabel('选择规则流').selectOption({ index: 1 })
-    await page.waitForTimeout(1200)
-    shots.push(await saveShot(page, id, '切换流程'))
-  }
-
-  // 不保存，避免破坏既有流程
+  // 全局 teardown 会恢复 data/，临时规则集不会污染验收基线。
   const issues = col.stop()
-  finishCase({ id, title: '规则流页-画布校验添加步骤', status: 'passed', issues, screenshots: shots })
+  finishCase({ id, title: '规则集页-主画布条件网关编辑', status: 'passed', issues, screenshots: shots })
 })
 
 test('feature-bom BOM页-编辑模型', async ({ page }) => {
@@ -341,7 +369,7 @@ test('feature-report 报告页-下载', async ({ page }) => {
   await page.goto('/projects/default/report', { waitUntil: 'networkidle' })
 
   // 报告六章节目录应渲染
-  await expect(page.getByText(/项目概览|BOM 资产总览|规则资产清单|规则流拓扑|测试矩阵|发布部署历史/).first()).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByText(/项目概览|BOM 资产总览|规则资产清单|规则集拓扑|测试矩阵|发布部署历史/).first()).toBeVisible({ timeout: 20_000 })
   const shots = [await saveShot(page, id, '报告页面')]
 
   // 下载 HTML

@@ -6,7 +6,7 @@
  *
  * 职责边界（决策 D5）：
  *   本脚本用 Team Server API **一次性种子化**：
- *     项目 → BOM → 决策表 A/B → 规则流草稿 → 测试套件
+ *     项目 → BOM → 决策表 A/B → 规则集草稿 → 测试套件
  *   并调用真实 Drools Build Service 做编译校验。
  *
  *   本脚本**不做**：创建 Release、部署到 RES。
@@ -182,11 +182,11 @@ const TABLE_A = {
   ],
 };
 
-// 表 B：结束兜底（endReached == true）。由规则流的 endReached 网关调用。
+// 表 B：结束兜底（endReached == true）。由规则集的 endReached 网关调用。
 // 必须补写 nextPhase=COMPLETED：进入该分支时表 A 不会执行。
 const TABLE_B = {
   name: '充氮结束处理表',
-  description: '到达结束时间时统一收口：写 COMPLETED 并关闭全部设备。由规则流 endReached 网关的 true 分支调用；因为该分支不执行主状态迁移表，所以本表必须自己写 nextPhase。',
+  description: '到达结束时间时统一收口：写 COMPLETED 并关闭全部设备。由规则集 endReached 网关的 true 分支调用；因为该分支不执行主状态迁移表，所以本表必须自己写 nextPhase。',
   category: PACKAGE,
   priority: 60,
   hitPolicy: 'FIRST',
@@ -227,7 +227,7 @@ async function ensureProject() {
   }
   const created = await post('/api/projects', {
     name: PROJECT_NAME,
-    description: '自动充氮控制状态机（路线 A′）：决策表 A/B + 规则流；阈值比较由仓端中控预处理为布尔信号；运行时由业务应用直连 RES 执行。BOM 独立，与 CEP 告警项目无共享。',
+    description: '自动充氮控制状态机（路线 A′）：决策表 A/B + 规则集；阈值比较由仓端中控预处理为布尔信号；运行时由业务应用直连 RES 执行。BOM 独立，与 CEP 告警项目无共享。',
     icon: 'warehouse',
     engine: 'rules',
   });
@@ -350,7 +350,7 @@ async function publishAsset(projectId, assetId, revision, label) {
  * 让资产处于「已发布 + 产物 BOM 与当前 BOM 一致」状态。
  * 三种情况：
  *   a) 未发布 → 直接发布当前草稿
- *   b) 已发布但产物冻结的是旧 BOM → 复位修订号后重新发布（平台要求，否则规则流拒绝编译）
+ *   b) 已发布但产物冻结的是旧 BOM → 复位修订号后重新发布（平台要求，否则规则集拒绝编译）
  *   c) 已发布且 BOM 对齐 → 什么都不做（幂等）
  */
 async function ensurePublished(projectId, asset, label) {
@@ -525,7 +525,7 @@ async function main() {
   if (allPublished) {
     log(`
   ▸ 下一步：node scripts/seed-nitrogen-flow.mjs
-  ▸ 最后仍需人工在页面：发布规则流 → 创建 Release（门禁）→ 部署到 RES
+  ▸ 最后仍需人工在页面：发布规则集 → 创建 Release（门禁）→ 部署到 RES
 `);
   }
 }

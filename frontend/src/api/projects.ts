@@ -219,7 +219,7 @@ export function useCreateProject() {
 export function useUpdateProject(projectId: string | undefined) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async (payload: Pick<Project, 'name' | 'description' | 'icon'> & { defaultEnvironment?: string }) => {
+    mutationFn: async (payload: Pick<Project, 'name' | 'description' | 'icon'> & { defaultEnvironment?: string; variables?: Project['variables']; approvalPolicy?: Project['approvalPolicy'] }) => {
       if (!projectId) throw new Error('项目不存在')
       try { return (await http.put<Project>(`/projects/${encodeURIComponent(projectId)}`, payload)).data }
       catch (error) { throw requestError(error) }

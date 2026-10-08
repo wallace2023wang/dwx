@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { CheckCircle2, ChevronDown, FileCode2, Languages, Rocket, Save } from 'lucide-react'
-import type { AssetDetail, BomField, RuleDraft } from '../../types'
+import type { AssetDetail, BomField, RuleDraft, RuleSetVariable } from '../../types'
 import BalRuleView, { normalizeBalDraft, validateBalDraft } from './BalRuleView'
 import BomVersionNotice from './BomVersionNotice'
 
@@ -9,6 +9,7 @@ const MonacoTextEditor = lazy(() => import('./MonacoTextEditor'))
 interface RuleFormEditorProps {
   detail: AssetDetail
   fields: BomField[]
+  projectVariables?: RuleSetVariable[]
   busy: boolean
   onSave: (draft: RuleDraft) => Promise<void>
   onCompile: (draft: RuleDraft) => Promise<{ engineVersion: string; drl: string }>
@@ -29,14 +30,14 @@ const statusMeta = {
   archived: ['已归档', 'bg-[#eeeeee] text-ink-3'],
 } as const
 
-export default function RuleFormEditor({ detail, fields, busy, onSave, onCompile, onSubmit, onOpenBom }: RuleFormEditorProps) {
+export default function RuleFormEditor({ detail, fields, projectVariables, busy, onSave, onCompile, onSubmit, onOpenBom }: RuleFormEditorProps) {
   const source = detail.draft as RuleDraft
   const [draft, setDraft] = useState<RuleDraft>(() => structuredClone(source))
   const [view, setView] = useState<'bal' | 'drl'>('bal')
   const [drl, setDrl] = useState(detail.content ?? '')
   const [notice, setNotice] = useState<{ error: boolean; text: string } | null>(null)
   const dirty = JSON.stringify(draft) !== JSON.stringify(source)
-  const issues = validateBalDraft(draft, fields)
+  const issues = validateBalDraft(draft, fields, projectVariables)
   const invalid = issues.length > 0
 
   useEffect(() => {
@@ -87,7 +88,7 @@ export default function RuleFormEditor({ detail, fields, busy, onSave, onCompile
         {view === 'bal'
           ? <>
               {invalid && <div className="border-b border-[#ef9a9a] bg-[#fff1f1] px-4 py-2 text-[11px] text-[#a31515]" role="alert">{issues[0]}{issues.length > 1 ? `，另有 ${issues.length - 1} 项问题` : ''}。修复后才能保存或编译。</div>}
-              <BalRuleView draft={draft} fields={fields} editable onChange={setDraft} onOpenBom={onOpenBom} />
+              <BalRuleView draft={draft} fields={fields} projectVariables={projectVariables} editable onChange={setDraft} onOpenBom={onOpenBom} />
               <div className="grid grid-cols-[100px_150px_minmax(150px,1fr)] gap-3 border-t border-ink-border bg-[#fafafa] px-5 py-3">
                 <label className="text-[10px] font-semibold text-ink-3">优先级<input className="control-input mt-1 h-8 bg-white text-xs" type="number" min={-1000} max={1000} value={draft.priority} onChange={event => setDraft({ ...draft, priority: Number(event.target.value) })} /></label>
                 <label className="text-[10px] font-semibold text-ink-3">命中策略<input className="control-input mt-1 h-8 bg-[#f1f1f1] text-xs" value={detail.attributes.hitPolicy} readOnly /></label>

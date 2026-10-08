@@ -290,7 +290,7 @@ function renderTree(){
   });
   html+=`<div style="border-top:1px solid var(--gray-20);margin:8px 0"></div>`;
   html+=`<div class="node" onclick="showView('bom')"><span class="twist"></span><span class="ico">◧</span>字段模型 BOM</div>`;
-  html+=`<div class="node" onclick="showView('flow')"><span class="twist"></span><span class="ico">⬡</span>规则流</div>`;
+  html+=`<div class="node" onclick="showView('flow')"><span class="twist"></span><span class="ico">⬡</span>规则集</div>`;
   html+=`<div class="node" onclick="showView('releases')"><span class="twist"></span><span class="ico">⬆</span>发布中心</div>`;
   html+=`<div class="node" onclick="showView('res')"><span class="twist"></span><span class="ico">▶</span>RES 控制台</div>`;
   tree.innerHTML=html;
@@ -490,8 +490,8 @@ function renderBom(c){
 
 function renderFlow(c){
   c.innerHTML=`
-    <div class="crumb">设置 / <b>规则流</b></div>
-    <div class="page-head"><div><h1>粮温告警规则流</h1><div class="sub">6 个节点 · 条件网关跳过不可判定分支</div></div>
+    <div class="crumb">设置 / <b>规则集</b></div>
+    <div class="page-head"><div><h1>粮温告警规则集</h1><div class="sub">6 个节点 · 条件网关跳过不可判定分支</div></div>
     <button class="btn primary">试运行影子模式</button></div>
     <div class="flow-canvas">
       <div class="flow-node" style="left:40px;top:40px"><div class="n-title">1. 适用性检查</div><div class="n-sub">配置/策略/粮批匹配</div></div>

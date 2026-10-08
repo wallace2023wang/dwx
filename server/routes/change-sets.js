@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { normalizeChangeSetReferences, snapshotChangeItem, validateChangeSet } from '../../shared/changes.js';
+import { normalizeApprovalPolicy } from '../../shared/approval-policy.js';
 import { bodyOf, expectedRevision, operationError, reply } from '../http-utils.js';
 
 export function createChangeSetHandler({
@@ -112,6 +113,7 @@ export function createChangeSetHandler({
             bomVersion: bom.version, bom: structuredClone(bom),
             createdBy: actorOf(req), createdAt: now, updatedAt: now,
             submittedAt: null, decidedAt: null, decisionComment: '',
+            approvals: [], reviewPolicySnapshot: null,
           };
           changeSets.unshift(item);
           return { item, changed: true };
@@ -167,14 +169,29 @@ export function createChangeSetHandler({
         if (currentConflict) return reply(res, currentConflict.status, operationError(currentConflict));
         if (action === 'approve' && current.status !== 'SUBMITTED') return reply(res, 409, { error: '当前状态不能执行approve操作' });
         if (action === 'submit' && current.status !== 'DRAFT') return reply(res, 409, { error: '当前状态不能执行submit操作' });
-        if (action === 'approve' && req.principal.mode === 'oidc' && current.createdBy === actorOf(req)) {
-          return reply(res, 403, { error: '提交人不能审批自己的变更' });
+        const project = await readProjectRecord(projectId);
+        const reviewPolicy = normalizeApprovalPolicy(current.reviewPolicySnapshot || project.approvalPolicy);
+        const actor = actorOf(req);
+        if (['approve', 'reject'].includes(action)) {
+          const eligible = req.principal.roles?.some(role => reviewPolicy.allowedReviewerRoles.includes(role));
+          if (!eligible) return reply(res, 403, { error: '当前角色不在该变更集允许的审核角色中' });
+          if (reviewPolicy.preventSelfApproval && req.principal.mode !== 'local' && current.createdBy === actor) {
+            return reply(res, 403, { error: '提交人不能审核自己的变更' });
+          }
+        }
+        if (action === 'approve' && current.approvals?.some(approval => approval.actor === actor)) {
+          return reply(res, 409, { error: '同一审核人不能重复批准' });
+        }
+        if (action === 'approve' && reviewPolicy.requireComment && (typeof input.comment !== 'string' || !input.comment.trim())) {
+          return reply(res, 400, { error: '批准时必须填写意见' });
         }
         if (action === 'submit' && publishOnApprove) {
           const checked = await validateProjectChangeSetSubmission(current, projectId);
           if (checked.error) return reply(res, checked.status, { error: checked.error });
         }
-        if (action === 'approve' && publishOnApprove) {
+        const finalApproval = action === 'approve'
+          && (current.approvals?.length || 0) + 1 >= reviewPolicy.requiredApprovals;
+        if (finalApproval && publishOnApprove) {
           const published = await publishReviewedChangeSet(current, projectId);
           if (published.error) return reply(res, published.status, { error: published.error });
         }
@@ -184,7 +201,7 @@ export function createChangeSetHandler({
           const conflict = changeSetConflict(item, expected);
           if (conflict) return conflict;
           const transitions = {
-            submit: ['DRAFT', 'SUBMITTED'], approve: ['SUBMITTED', 'APPROVED'],
+            submit: ['DRAFT', 'SUBMITTED'], approve: ['SUBMITTED', finalApproval ? 'APPROVED' : 'SUBMITTED'],
             reject: ['SUBMITTED', 'REJECTED'], reopen: ['REJECTED', 'DRAFT'],
           };
           const [from, to] = transitions[action];
@@ -196,8 +213,17 @@ export function createChangeSetHandler({
           item.status = to;
           item.revision += 1;
           item.updatedAt = now;
-          if (action === 'submit') item.submittedAt = now;
-          if (['approve', 'reject'].includes(action)) {
+          if (action === 'submit') {
+            item.submittedAt = now;
+            item.approvals = [];
+            item.reviewPolicySnapshot = normalizeApprovalPolicy(project.approvalPolicy);
+          }
+          if (action === 'approve') {
+            item.approvals = [...(item.approvals || []), {
+              actor, roles: [...(req.principal.roles || [])], comment: input.comment?.trim() || '', decidedAt: now,
+            }];
+          }
+          if (action === 'reject' || finalApproval) {
             item.decidedAt = now;
             item.decisionComment = input.comment?.trim() || '';
           }
@@ -205,12 +231,19 @@ export function createChangeSetHandler({
             item.submittedAt = null;
             item.decidedAt = null;
             item.decisionComment = '';
+            item.approvals = [];
+            item.reviewPolicySnapshot = null;
           }
           return { item, changed: true };
         }, projectId);
         if (result.error) return reply(res, result.status, operationError(result));
         const labels = { submit: '提交评审', approve: '批准', reject: '驳回', reopen: '重新打开' };
-        await appendAuditEvent(`change-set.${action}`, 'change-set', id, `${labels[action]}：${result.item.name}`, { revision: result.item.revision, comment: input.comment?.trim() || '' }, req);
+        await appendAuditEvent(`change-set.${action}`, 'change-set', id, `${labels[action]}：${result.item.name}`, {
+          revision: result.item.revision, comment: input.comment?.trim() || '',
+          approvalCount: result.item.approvals?.length || 0,
+          requiredApprovals: result.item.reviewPolicySnapshot?.requiredApprovals || 1,
+          final: action === 'approve' ? result.item.status === 'APPROVED' : undefined,
+        }, req);
         return reply(res, 200, result.item);
       });
     }

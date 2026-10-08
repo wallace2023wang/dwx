@@ -62,7 +62,7 @@ test('RULE-GROUP-API-01: package nodes save, compile, publish, and follow packag
 
     const blockedDelete = await env.request('/api/projects/default/packages/shared_rules', 'DELETE', { deleteAssets: true });
     assert.equal(blockedDelete.status, 409);
-    assert.match(blockedDelete.body.error, /规则流引用/);
+    assert.match(blockedDelete.body.error, /规则集引用/);
   } finally {
     await env.stop();
   }

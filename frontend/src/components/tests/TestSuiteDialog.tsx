@@ -146,7 +146,7 @@ export default function TestSuiteDialog({ projectId, bom, targets, initial, savi
       <div className="max-h-[75vh] space-y-4 overflow-y-auto p-4">
         <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
           <label className="text-[11px] font-semibold text-ink-2">名称<input className="control-input mt-1" value={name} maxLength={80} onChange={event => setName(event.target.value)} autoFocus /></label>
-          <label className="text-[11px] font-semibold text-ink-2">测试目标<select className="control-input mt-1" value={targetKey} onChange={event => { setTargetKey(event.target.value); setCases(current => current.map(testCase => ({ ...testCase, path: unsetPath }))) }}><option value="">请选择已发布资产</option>{targets.map(option => <option key={`${option.type}:${option.id}`} value={`${option.type}:${option.id}`}>{option.type === 'rule' ? '规则' : option.type === 'table' ? '决策表' : '规则流'} · {option.name} · v{option.version}</option>)}</select></label>
+          <label className="text-[11px] font-semibold text-ink-2">测试目标<select className="control-input mt-1" value={targetKey} onChange={event => { setTargetKey(event.target.value); setCases(current => current.map(testCase => ({ ...testCase, path: unsetPath }))) }}><option value="">请选择已发布资产</option>{targets.map(option => <option key={`${option.type}:${option.id}`} value={`${option.type}:${option.id}`}>{option.type === 'rule' ? '规则' : option.type === 'table' ? '决策表' : '规则集'} · {option.name} · v{option.version}</option>)}</select></label>
         </div>
         <label className="block text-[11px] font-semibold text-ink-2">说明<textarea className="mt-1 min-h-16 w-full resize-y border border-ink-border bg-white px-[10px] py-2 text-xs outline-none focus:border-brand-primary" value={description} maxLength={500} onChange={event => setDescription(event.target.value)} /></label>
         <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={required} onChange={event => setRequired(event.target.checked)} />作为 Release 发布门禁</label>
@@ -171,7 +171,7 @@ export default function TestSuiteDialog({ projectId, bom, targets, initial, savi
           <button type="button" className="inline-flex h-8 items-center gap-1 border border-dashed border-brand-primary bg-white px-3 text-[11px] text-brand-primary hover:bg-brand-primary-l" onClick={() => setCases(current => [...current, toFormCase()])}><Plus size={13} />新增场景</button>
         </div>
         {invalidCase && <p className="text-[11px] text-[#a15c00]">场景和参数行需要名称；每个场景还需至少设置一项期望输出、命中规则或流程路径。</p>}
-        {!targets.length && <p className="border border-[#f3c65f] bg-[#fff8e1] p-2 text-[11px] text-[#734d00]">当前项目没有已发布资产，请先发布规则、决策表或规则流。</p>}
+        {!targets.length && <p className="border border-[#f3c65f] bg-[#fff8e1] p-2 text-[11px] text-[#734d00]">当前项目没有已发布资产，请先发布规则、决策表或规则集。</p>}
         {error && <p className="text-[11px] text-[#c62828]">{error}</p>}
       </div>
       <footer className="flex justify-end gap-2 border-t border-ink-border bg-[#fafafa] p-3"><button type="button" className="h-8 border border-ink-border bg-white px-3 text-[11px]" onClick={onClose}>取消</button><button type="button" className="h-8 bg-brand-primary px-3 text-[11px] text-white disabled:opacity-40" disabled={!canSave} onClick={submit}>{saving ? '保存中...' : '保存套件'}</button></footer>

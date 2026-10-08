@@ -1,4 +1,4 @@
-# 规则流编辑器（RuleFlow Editor v2）需求与设计
+# 规则集编辑器（RuleFlow Editor v2）需求与设计
 
 > 产品：Decision Workbench（复刻 IBM ILOG JRules / ODM Rule Team Server）
 > 版本：v2.1
@@ -27,11 +27,11 @@
 
 ### 1.1 本次调整解决什么问题
 
-当前规则流画布只能查看，实际编辑依赖下方 “公共步骤 / 排他分支” 表单。规则较多时还必须逐条选择资产，无法满足真实 Rule Team Server 项目的编排效率。
+当前规则集画布只能查看，实际编辑依赖下方 “公共步骤 / 排他分支” 表单。规则较多时还必须逐条选择资产，无法满足真实 Rule Team Server 项目的编排效率。
 
 本次改造有两个核心目标：
 
-1. 参考 Dify Workflow，把画布升级为规则流的主要编辑界面，支持拖拽、连接、选中和右侧属性抽屉。
+1. 参考 Dify Workflow，把画布升级为规则集的主要编辑界面，支持拖拽、连接、选中和右侧属性抽屉。
 
 2. 增加 Rule Group（规则组）步骤。用户可直接把现有 Rule Package 拖入画布，以一个节点执行包内的一组已发布规则资产。
 
@@ -39,11 +39,11 @@
 
 * **Rule Package**：项目现有的规则包，负责组织规则和决策表，继续沿用既有包 CRUD、审批和资产生命周期。
 
-* **Rule Group**：规则流内部的一种步骤节点，不是一等资产，没有独立 CRUD、版本、Change Set 或发布流程。
+* **Rule Group**：规则集内部的一种步骤节点，不是一等资产，没有独立 CRUD、版本、Change Set 或发布流程。
 
 * **Rule Group selector**：节点对 Rule Package 的引用，可选择是否包含子包。
 
-* **Rule Group snapshot**：规则流发布时解析 selector，冻结具体成员资产版本、BOM 和生成后的 DRL。
+* **Rule Group snapshot**：规则集发布时解析 selector，冻结具体成员资产版本、BOM 和生成后的 DRL。
 
 Rule Group 的作用是批量选择规则，不取代 Rule Package，也不引入新的 `/rulesets` 资源。
 
@@ -72,7 +72,7 @@ Rule Group 的作用是批量选择规则，不取代 Rule Package，也不引�
 | 步骤 | `type` 当前支持 `rule`、`table`，每步绑定单个已发布资产 |
 | 拓扑 | 公共步骤 + 单个排他网关 + 最多 8 个分支       |
 | 映射 | 每个步骤支持 input/output mappings   |
-| 发布 | 规则流版本冻结步骤资产版本、DRL、BOM、分支条件和映射  |
+| 发布 | 规则集版本冻结步骤资产版本、DRL、BOM、分支条件和映射  |
 | 调试 | 支持运行到指定节点、路径断言、失败节点和轨迹         |
 
 ### 2.2 不得破坏的行为
@@ -87,7 +87,7 @@ Rule Group 的作用是批量选择规则，不取代 Rule Package，也不引�
 
 * 保留 revision 乐观锁、审核锁、Change Set、测试套件和 Release 质量门禁。
 
-* 旧规则流没有 `nodeId` 和布局信息时必须自动兼容，不能要求人工迁移。
+* 旧规则集没有 `nodeId` 和布局信息时必须自动兼容，不能要求人工迁移。
 
 ***
 
@@ -149,7 +149,7 @@ Rule Group 默认只选择 `packageName` 对应包中的资产，创建节点时
 
 * 已发布决策表。
 
-* 不包含草稿、已归档资产和规则流。
+* 不包含草稿、已归档资产和规则集。
 
 节点抽屉必须同时显示：
 
@@ -167,7 +167,7 @@ Rule Group 默认只选择 `packageName` 对应包中的资产，创建节点时
 
 编辑器可以实时解析当前包成员，用于成员预览、输出字段分析和 Drools 校验；生产执行绝不能动态读取包内容。
 
-规则流发布时，每个 Rule Group 冻结为：
+规则集发布时，每个 Rule Group 冻结为：
 
 ```ts
 interface FrozenRuleGroupStep {
@@ -189,7 +189,7 @@ interface FrozenRuleGroupStep {
 }
 ```
 
-`memberFingerprint` 对按稳定顺序排列的 `type/id/version` 计算 SHA-256。以下变化会让已发布规则流返回 `needsRepublish=true`：
+`memberFingerprint` 对按稳定顺序排列的 `type/id/version` 计算 SHA-256。以下变化会让已发布规则集返回 `needsRepublish=true`：
 
 * 包内新增或移除已发布资产。
 
@@ -199,7 +199,7 @@ interface FrozenRuleGroupStep {
 
 * Rule Group 使用的 BOM 版本与当前项目 BOM 不一致。
 
-已经发布的规则流版本和 Release 继续使用原冻结成员，不受这些变化影响。
+已经发布的规则集版本和 Release 继续使用原冻结成员，不受这些变化影响。
 
 ### 3.4 DRL 生成与执行语义
 
@@ -237,13 +237,13 @@ Rule Group 本身不得添加 `activation-group`。`activation-group` 会取消�
 
 当前包名同时承担包标识，因此包操作必须维护 Rule Group 引用：
 
-* 重命名包时，同事务更新引用该包或其子包的规则流草稿 selector，并推进规则流 revision。
+* 重命名包时，同事务更新引用该包或其子包的规则集草稿 selector，并推进规则集 revision。
 
-* 已发布规则流快照保持不变，并标记依赖已变化。
+* 已发布规则集快照保持不变，并标记依赖已变化。
 
-* 审核中的规则流引用该包时，包重命名必须被审核锁阻止。
+* 审核中的规则集引用该包时，包重命名必须被审核锁阻止。
 
-* 删除包时，如果规则流草稿仍引用该包，必须拒绝删除，或要求调用方显式提供替代包。
+* 删除包时，如果规则集草稿仍引用该包，必须拒绝删除，或要求调用方显式提供替代包。
 
 ***
 
@@ -258,14 +258,14 @@ Rule Group 本身不得添加 `activation-group`。`activation-group` 会取消�
 
 ├───────────────┬──────────────────────────┬─────────────────┤
 
-│ 节点面板       │ 规则流画布               │ 节点配置抽屉    │
+│ 节点面板       │ 规则集画布               │ 节点配置抽屉    │
 
 │ 规则包/决策表  │ 拖拽、连接、缩放、小地图 │ 映射/条件/预览  │
 
 └───────────────┴──────────────────────────┴─────────────────┘
 ```
 
-项目左侧导航继续由现有 AppShell 提供，不在规则流编辑器内部重复创建。
+项目左侧导航继续由现有 AppShell 提供，不在规则集编辑器内部重复创建。
 
 响应式要求：
 
@@ -350,7 +350,7 @@ Rule Group 本身不得添加 `activation-group`。`activation-group` 会取消�
 
 ### 4.6 多分支显示
 
-不能把现有多分支规则流降级为固定 “是 / 否” 二分结构。网关出边显示：
+不能把现有多分支规则集降级为固定 “是 / 否” 二分结构。网关出边显示：
 
 * 条件分支：`温度 > 30`、`风险等级 = 高` 等条件摘要。
 
@@ -426,7 +426,7 @@ Rule Group 本身不得添加 `activation-group`。`activation-group` 会取消�
 
 * Rule Group 的可写字段取全部冻结成员 output 字段的并集。
 
-抽屉中的 “应用” 只更新当前本地规则流草稿；整个规则流仍由编辑器头的 “保存” 统一提交，避免用户误以为节点已经单独持久化。
+抽屉中的 “应用” 只更新当前本地规则集草稿；整个规则集仍由编辑器头的 “保存” 统一提交，避免用户误以为节点已经单独持久化。
 
 ***
 
@@ -437,7 +437,7 @@ Rule Group 本身不得添加 `activation-group`。`activation-group` 会取消�
 编辑器头显示：
 
 ```
-规则流名称 · 草稿修订 r3 · 已发布 v1 · 最近修改时间
+规则集名称 · 草稿修订 r3 · 已发布 v1 · 最近修改时间
 
 依赖状态：当前 / 需要重新发布
 
@@ -496,7 +496,7 @@ Rule Group 是 FlowStep，不新增以下内容：
 
 * RuleSet 独立发布入口。
 
-现有 `/api/projects/:id/rulesets` 实际返回规则流摘要。前端应逐步把 `Ruleset` 类型和 `useRulesets()` 重命名为 `FlowSummary` 和 `useFlows()`，canonical 列表使用 `/api/projects/:id/flows`。旧 `/rulesets` 只作为兼容别名保留。
+现有 `/api/projects/:id/rulesets` 实际返回规则集摘要。前端应逐步把 `Ruleset` 类型和 `useRulesets()` 重命名为 `FlowSummary` 和 `useFlows()`，canonical 列表使用 `/api/projects/:id/flows`。旧 `/rulesets` 只作为兼容别名保留。
 
 ### 7.2 Flow 接口
 
@@ -552,11 +552,11 @@ interface FlowDetail {
 
 * 总步骤数仍按画布任务节点计算，Rule Group 算一个步骤。
 
-`flowSnapshot` 扩展冻结 Rule Group manifest、fingerprint 和组合 DRL。Release 继续直接使用规则流发布快照，不在 Release 创建或 RES 部署阶段重新解析包。
+`flowSnapshot` 扩展冻结 Rule Group manifest、fingerprint 和组合 DRL。Release 继续直接使用规则集发布快照，不在 Release 创建或 RES 部署阶段重新解析包。
 
 ### 7.4 依赖过期
 
-规则流摘要的 `outdatedDependencies` 扩展支持：
+规则集摘要的 `outdatedDependencies` 扩展支持：
 
 ```ts
 type OutdatedDependency =
@@ -626,7 +626,7 @@ type OutdatedDependency =
 
 * 保留现有表单作为临时降级入口。
 
-验收：不引入 Rule Group 时，现有规则流可以完全通过画布编辑且无数据损失。
+验收：不引入 Rule Group 时，现有规则集可以完全通过画布编辑且无数据损失。
 
 ### Sprint 2：Rule Package 拖入与 Rule Group
 
@@ -676,7 +676,7 @@ type OutdatedDependency =
 
 * 发布后包成员变化不改变旧快照，只标记需要重新发布。
 
-* 包重命名和删除维护或阻止规则流引用。
+* 包重命名和删除维护或阻止规则集引用。
 
 * 同一路径直接节点与 Rule Group 重复资产被拒绝。
 
@@ -718,7 +718,7 @@ type OutdatedDependency =
 
 ### 11.4 回归
 
-* 旧 `rule/table` 规则流完整回归。
+* 旧 `rule/table` 规则集完整回归。
 
 * 节点调试、路径断言和失败节点定位保持可用。
 
@@ -730,7 +730,7 @@ type OutdatedDependency =
 
 ## 12. 验收清单
 
-* [ ] 规则流以画布作为主要编辑器，可拖拽、选中和连接节点。
+* [ ] 规则集以画布作为主要编辑器，可拖拽、选中和连接节点。
 
 * [ ] 左侧显示真实规则包，可将整个包拖为 Rule Group 节点。
 
@@ -738,9 +738,9 @@ type OutdatedDependency =
 
 * [ ] Rule Group 显示规则数、决策表数、排除草稿数和成员版本。
 
-* [ ] 规则流发布时冻结 Rule Group 成员和 DRL，后续包变化不影响旧版本。
+* [ ] 规则集发布时冻结 Rule Group 成员和 DRL，后续包变化不影响旧版本。
 
-* [ ] 包成员或版本变化后，已发布规则流显示需要重新发布。
+* [ ] 包成员或版本变化后，已发布规则集显示需要重新发布。
 
 * [ ] 同一路径重复执行同一资产会阻止发布。
 
@@ -750,8 +750,8 @@ type OutdatedDependency =
 
 * [ ] 节点位置、撤销 / 重做、自动布局、缩放和小地图正常。
 
-* [ ] 旧规则流无需人工迁移即可打开和保存。
+* [ ] 旧规则集无需人工迁移即可打开和保存。
 
-* [ ] 规则流测试、Release 门禁和 RES 执行支持 Rule Group。
+* [ ] 规则集测试、Release 门禁和 RES 执行支持 Rule Group。
 
 * [ ] 全量 Node 测试、前端类型检查、构建和 Docker RES 验证通过。

@@ -4,11 +4,11 @@ DWX（Decision Workbench X）是一个面向规则、决策流和复杂事件处
 
 规则侧使用 Drools 10.2.0，CEP 侧使用 Esper 8.8.0。当前项目用于本地研发、产品验证和客户 Demo，不是面向公网的商用部署方案。
 
-规则、决策表和规则流支持草稿、修订历史、结构化差异、变更集评审、审计日志、版本发布、历史恢复、归档、试运行、参数化测试套件、版本行为对比、覆盖率、回归发布门禁、项目知识资产报告和已发布规则 DRL 导出。CEP 侧支持 BOM Event Profile、EventStream、窗口聚合、pattern/timer 时间驱动语句、真实 Esper 编译与执行、webhook 告警、OpenAPI 和 Prometheus metrics。Team Server 支持 JSON 文件和 PostgreSQL 两种存储模式。
+规则、决策表和规则集支持草稿、修订历史、结构化差异、变更集评审、审计日志、版本发布、历史恢复、归档、试运行、参数化测试套件、版本行为对比、覆盖率、回归发布门禁、项目知识资产报告和已发布规则 DRL 导出。Rule Project 属性统一维护 Ruleset Variable；变量在规则集内由 `RuleContext` 在一次执行期间维护，不进入 BOM、不由 `facts` 传入，并在多步骤/settle 多轮之间保持；变量定义会冻结到 Release 并参与 checksum。CEP 侧支持 BOM Event Profile、EventStream、窗口聚合、pattern/timer 时间驱动语句、真实 Esper 编译与执行、webhook 告警、OpenAPI 和 Prometheus metrics。Team Server 支持 JSON 文件和 PostgreSQL 两种存储模式。
 
-决策表支持内联比较符、闭区间及半开区间、空条件通配确认、同类型业务字段比较和分级诊断。规则流冻结依赖资产版本，依赖升版后会标记需要重新发布，并对多个步骤写同一输出字段给出覆盖警告。测试报告保留规范化输入与未提供字段；BOM input 可配置执行时必填，缺失时 Team Server 和 RES 返回 `400`。可选的数字和 Boolean 字段在新发布产物中使用 Java 包装类型，未传保持 `null`，不会与显式的 `0`/`false` 混淆。
+决策表支持内联比较符、闭区间及半开区间、空条件通配确认、同类型业务字段比较和分级诊断。规则集冻结依赖资产版本，依赖升版后会标记需要重新发布，并对多个步骤写同一输出字段给出覆盖警告。测试报告保留规范化输入与未提供字段；BOM input 可配置执行时必填，缺失时 Team Server 和 RES 返回 `400`。可选的数字和 Boolean 字段在新发布产物中使用 Java 包装类型，未传保持 `null`，不会与显式的 `0`/`false` 混淆。
 
-“浏览”页提供跨项目资产目录，可按名称、规则包、项目和 BOM 业务术语搜索，并组合项目、资产类型、状态筛选；结果可直接定位到规则、决策表、规则流或 BOM 字段。
+“浏览”页提供跨项目资产目录，可按名称、规则包、项目和 BOM 业务术语搜索，并组合项目、资产类型、状态筛选；结果可直接定位到规则、决策表、规则集或 BOM 字段。
 
 产品按规则设计中心、规则治理中心和独立规则执行中心（RES）三个边界演进。详细规划见 [产品需求说明](docs/product-requirements.md)、[技术设计](docs/technical-design.md) 和 [交付任务拆分](docs/delivery-plan.md)。
 
@@ -18,6 +18,7 @@ DWX（Decision Workbench X）是一个面向规则、决策流和复杂事件处
 frontend/                 # 维护中的 React + Vite 前端应用
 server/                   # Team Server API、认证、路由拆分、存储适配与数据库迁移
 shared/                   # 前后端共享的规则、BOM、发布、测试和报表领域逻辑
+  ruleset-variables.js    # Ruleset Variable 类型、默认值和声明校验
 engine/                   # Drools 设计期 Build Service
 res/                      # 独立规则执行中心（RES）
 cep/                      # Esper CEP Build/Runtime Service
@@ -29,7 +30,7 @@ docs/                     # 产品、技术、设计与用户文档
 archive/legacy-prototype/ # 早期单文件原型，仅保留为参考
 ```
 
-`server/index.js` 仍是 Team Server 的组合入口；环境配置已拆到 `server/config.js`，事实输入规范化已拆到 `server/fact-parser.js`，通用 HTTP 工具已拆到 `server/http-utils.js`，资产修订/包名规范化工具已拆到 `server/domain-utils.js`，JSON/PostgreSQL 读写与审计追加已拆到 `server/storage-service.js`，写入队列与变更序列化已拆到 `server/mutation-service.js`，项目数据查询与摘要聚合已拆到 `server/project-query-service.js`，测试目标解析、试运行、覆盖率和套件执行已拆到 `server/test-execution-service.js`，审核锁与冲突资源查询已拆到 `server/governance-service.js`，首页动态聚合已拆到 `server/activity-service.js`，项目创建模板已拆到 `server/project-factory.js`，项目视图组装已拆到 `server/project-presenters.js`，项目编译/发布编排已拆到 `server/project-build-service.js`，Drools/CEP 调用客户端已拆到 `server/engine-client.js`，项目路由分发、项目管理、后台用户目录、项目规则资产、项目规则包、项目规则流、项目事件流、旧版兼容 API、BOM、Change Set、Release 与测试套件路由已拆到 `server/routes/`。后续新增 API 时优先放入 `server/routes/`，避免继续扩大入口文件。
+`server/index.js` 仍是 Team Server 的组合入口；环境配置已拆到 `server/config.js`，事实输入规范化已拆到 `server/fact-parser.js`，通用 HTTP 工具已拆到 `server/http-utils.js`，资产修订/包名规范化工具已拆到 `server/domain-utils.js`，JSON/PostgreSQL 读写与审计追加已拆到 `server/storage-service.js`，写入队列与变更序列化已拆到 `server/mutation-service.js`，项目数据查询与摘要聚合已拆到 `server/project-query-service.js`，测试目标解析、试运行、覆盖率和套件执行已拆到 `server/test-execution-service.js`，审核锁与冲突资源查询已拆到 `server/governance-service.js`，首页动态聚合已拆到 `server/activity-service.js`，项目创建模板已拆到 `server/project-factory.js`，项目视图组装已拆到 `server/project-presenters.js`，项目编译/发布编排已拆到 `server/project-build-service.js`，Drools/CEP 调用客户端已拆到 `server/engine-client.js`，项目路由分发、项目管理、后台用户目录、项目规则资产、项目规则包、项目规则集、项目事件流、旧版兼容 API、BOM、Change Set、Release 与测试套件路由已拆到 `server/routes/`。后续新增 API 时优先放入 `server/routes/`，避免继续扩大入口文件。
 
 用户操作手册位于 `docs/user-guides/DWX决策工作台-用户操作手册.docx`。
 
@@ -45,6 +46,14 @@ docker compose up --build -d engine res cep-build cep-res
 API_PORT=8789 npm run api   # Team Server，与 frontend/ 代理端口保持一致
 npm run dev                 # frontend/ 前端开发服务器，默认 http://127.0.0.1:5173
 ```
+
+也可以使用一键启动脚本完成演示数据初始化、Docker 服务启动以及 API 和前端启动：
+
+```bash
+npm run start
+```
+
+脚本默认使用 `API_PORT=8789`；可通过环境变量覆盖，例如 `API_PORT=8799 npm run start`。脚本退出时会停止本次启动的 API 和前端进程，Docker 服务保持运行，可用 `docker compose stop engine res cep-build cep-res` 停止。
 
 如需重置本地演示数据，可执行 `npm run seed:force`，它会用 `fixtures/demo-data/` 覆盖 `data/*.json`。
 
@@ -73,17 +82,19 @@ npm run api
 ## 边界
 
 - 当前为单工作空间、多项目原型。管理 API 已支持 OIDC JWT 验签、浏览器 BFF 会话、角色门禁和策略式项目/资产授权。PostgreSQL 已覆盖项目、包、资产、草稿修订、发布版本、BOM、测试报告、Release、部署回执、Change Set 和审计事件；尚未实现工作空间级多租户隔离和备份恢复。
-- 规则、决策表、规则流和测试套件使用 `revision`，BOM 使用 `version` 做乐观锁。冲突返回 `409`、当前修订号和服务器快照；前端保留本地编辑，由用户决定是否载入服务器版本。草稿所有权、字段级合并和实时协同尚未实现。
+- 规则、决策表、规则集和测试套件使用 `revision`，BOM 使用 `version` 做乐观锁。冲突返回 `409`、当前修订号和服务器快照；前端保留本地编辑，由用户决定是否载入服务器版本。草稿所有权、字段级合并和实时协同尚未实现。
 - 项目“审核”页支持把最多 50 个资产的当前修订固定到 Change Set，对比最近发布版本与草稿的结构化字段差异，并执行草稿、待评审、已批准、已驳回状态流。单资产可从 BAL/决策表编辑器直接提交审核；审核中资产及其包结构被锁定，批准前重新编译固定修订，批准后才生成发布版本。OIDC 模式禁止提交人审批自己的变更；`local` 模式保留管理员自审能力用于本机开发。
 - 字段字典（BOM）存放在 `data/bom.json`，通过左侧"字段模型"页或 `GET/PUT /api/bom` 管理；当前默认包含客户年龄、年收入、信用评分、客户类型、是否逾期 5 个输入，风险等级、人工审核、批准额度 3 个输出。DRL 的 `declare RuleInput` 块由 BOM 动态生成并随 Release 冻结；Build Service 和 RES 都从编译后 FactType 反射字段类型，不保存 BOM 副本。
-- 每个项目都可独立创建、编辑、运行和归档测试套件；JSON 模式统一存放在 `data/test-suites.json` 并按 `projectId` 隔离，PostgreSQL 模式按 `project_id` 隔离。套件只运行本项目的已发布资产，支持 BOM 驱动的参数数据集、输出/命中规则/规则流路径断言、已发布版本并行对比，以及规则/决策表行/规则流路径覆盖率。标记为发布必需的套件会在本项目每次创建 Release 时实时重跑，失败时拒绝发布。
-- 条件只支持 AND 和基础比较，动作只支持给输出字段赋常量。DRL 输出采用声明型 `RuleInput` 事实；接入业务数据时需要做字段映射。
+- Rule Project 属性中的 `variables` 是规则集变量（Ruleset Variable）的正式定义入口，支持 `Integer`、`Double`、`Boolean`、`String` 和 String 枚举；规则集内的规则 A 可以赋值，规则 B 可以读取。BAL 和决策表编辑器的条件、动作都能选择项目变量；规则级 `variables` 仅作为单条规则独立发布的兼容声明。规则条件使用 `fieldSource: "variable"` 读取，规则动作使用同样的来源写入；变量生成独立的 `declare RuleContext`，RES 在一次 `/execute` 请求内按默认值初始化并在步骤、settle 多轮之间传递，响应通过 `variables` 和 trace 快照回显。
+- Ruleset Variable 不是运行期任务参数：不能通过 `facts` 注入，不跨请求持久化，也不替代 BOM。规则集是最小发布与执行单元；项目变量优先用于规则、决策表和规则集发布，旧规则/规则集变量仅作兼容 fallback。完整需求见 [规则集内部变量需求](docs/requirements-rule-parameters.md)。
+- 每个项目都可独立创建、编辑、运行和归档测试套件；JSON 模式统一存放在 `data/test-suites.json` 并按 `projectId` 隔离，PostgreSQL 模式按 `project_id` 隔离。套件只运行本项目的已发布资产，支持 BOM 驱动的参数数据集、输出/命中规则/规则集路径断言、已发布版本并行对比，以及规则/决策表行/规则集路径覆盖率。标记为发布必需的套件会在本项目每次创建 Release 时实时重跑，失败时拒绝发布。
+- 条件和动作支持 BOM 业务字段和 Ruleset Variable；BOM 字段动作仍只写输出字段常量，Ruleset Variable 动作写入本次执行的 `RuleContext`。项目设置负责维护统一变量定义，BAL/决策表编辑器只负责选择变量。DRL 输出采用声明型 `RuleInput` 事实；接入业务数据时需要做字段映射。
 - 决策表是中文结构化表格编辑器：每个启用行转换为一条生成的 DRL 规则，并参与全局发布编译和导出。编辑器支持 XLSX/CSV 导入导出、列匹配校验和应用前行级差异预览。
-- 规则流支持公共线性步骤、单个排他条件网关、默认分支和节点输入输出映射；每次发布都会冻结引用资产版本、DRL、路由和映射，试运行返回逐节点轨迹。它不是 BPMN/jBPM 流程，不包含多级/并行网关、人工任务、审批或定时器。
+- 规则集支持公共线性步骤、单个排他条件网关、默认分支和节点输入输出映射；每次发布都会冻结引用资产版本、DRL、路由和映射，试运行返回逐节点轨迹。它不是 BPMN/jBPM 流程，不包含多级/并行网关、人工任务、审批或定时器。
 - `engine/` 是允许编译临时 DRL 的设计时服务；`res/` 是独立执行项目，只接受 Team Server 生成且校验和有效的 Release。两者均仅供本机原型调用，尚未实现鉴权、签名、隔离与执行配额，不应暴露到公网。
 - 早期单文件原型已移动到 `archive/legacy-prototype/`，不再作为默认入口，仅保留 `npm run dev:legacy` 可访问；维护中的前端位于 `frontend/`，根 `dev`/`build`/`lint` 均指向它。
 - `fixtures/demo-data/` 是可提交的演示种子数据，`data/` 是本地运行时 JSON 存储目录并被忽略；测试中的默认演示数据兼容性校验读取 `fixtures/demo-data/`，避免干净克隆后依赖本机状态。
 
 ## 项目报告
 
-`GET /api/projects/{projectId}/report` 按项目权限生成自包含 HTML 项目知识资产报告，包含项目概览、BOM 资产总览、规则资产清单、规则流拓扑、测试矩阵和发布部署历史六个章节。规则流优先读取已发布快照，未发布时读取草稿；没有资产、测试或发布记录时展示对应空态。项目报告页支持下载 HTML，也可使用浏览器打印保存为 PDF。
+`GET /api/projects/{projectId}/report` 按项目权限生成自包含 HTML 项目知识资产报告，包含项目概览、BOM 资产总览、规则资产清单、规则集执行拓扑、测试矩阵和发布部署历史六个章节。规则集优先读取已发布快照，未发布时读取草稿；没有资产、测试或发布记录时展示对应空态。项目报告页支持下载 HTML，也可使用浏览器打印保存为 PDF。

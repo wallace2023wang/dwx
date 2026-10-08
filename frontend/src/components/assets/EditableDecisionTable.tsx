@@ -1,12 +1,15 @@
 import { AlertTriangle, CheckCircle2, Code2, Copy, Download, FileSpreadsheet, Info, MoreVertical, Plus, Rocket, Save, Trash2, Upload } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { read, utils, writeFile } from 'xlsx'
-import type { AssetDetail, BomField, DecisionTableAnalysis, DecisionTableDraft } from '../../types'
+import type { AssetDetail, BomField, DecisionTableAnalysis, DecisionTableDraft, RuleSetVariable } from '../../types'
+import Modal from '../Modal'
+import BomFieldPicker, { type BomFieldPickerOption } from '../bom/BomFieldPicker'
 import BomVersionNotice from './BomVersionNotice'
 
 interface EditableDecisionTableProps {
   detail: AssetDetail
   fields: BomField[]
+  projectVariables: RuleSetVariable[]
   busy: boolean
   onSave: (draft: DecisionTableDraft) => Promise<void>
   onCompile: (draft: DecisionTableDraft) => Promise<{ engineVersion: string }>
@@ -38,6 +41,12 @@ interface ColumnView {
   index: number
   fieldKey: string
   field?: BomField
+  fieldSource: 'bom' | 'variable'
+}
+
+interface ColumnOption {
+  field: BomField
+  fieldSource: 'bom' | 'variable'
 }
 
 interface ImportPreview {
@@ -51,13 +60,15 @@ interface ImportPreview {
 }
 
 function tableAoA(draft: DecisionTableDraft) {
+  const columnHeader = (kind: 'condition' | 'action', column: { field: string; fieldSource?: 'bom' | 'variable' }) =>
+    `${kind === 'condition' ? '条件' : '动作'}:${column.fieldSource === 'variable' ? '变量:' : ''}${column.field}`
   const headers = [
     '行号',
     '启用',
     '默认',
     '优先级',
-    ...draft.conditions.map(column => `条件:${column.field}`),
-    ...draft.actions.map(column => `动作:${column.field}`),
+    ...draft.conditions.map(column => columnHeader('condition', column)),
+    ...draft.actions.map(column => columnHeader('action', column)),
   ]
   const rows = draft.rows.map((row, index) => [
     String(index + 1),
@@ -91,8 +102,8 @@ function parseImportedRows(aoa: unknown[][], draft: DecisionTableDraft) {
   const enabledIndex = findIndex('启用')
   const defaultIndex = findIndex('默认')
   const priorityIndex = findIndex('优先级')
-  const conditionIndexes = draft.conditions.map(column => findIndex(`条件:${column.field}`))
-  const actionIndexes = draft.actions.map(column => findIndex(`动作:${column.field}`))
+  const conditionIndexes = draft.conditions.map(column => findIndex(`条件:${column.fieldSource === 'variable' ? '变量:' : ''}${column.field}`))
+  const actionIndexes = draft.actions.map(column => findIndex(`动作:${column.fieldSource === 'variable' ? '变量:' : ''}${column.field}`))
   if (conditionIndexes.some(index => index < 0) || actionIndexes.some(index => index < 0)) throw new Error('导入文件列与当前决策表不匹配，请先保持条件/动作列一致')
   return aoa.slice(1).filter(row => row.some(cell => String(cell ?? '').trim())).map((row): DecisionTableRow => ({
     enabled: enabledIndex >= 0 ? boolCell(row[enabledIndex], true) : true,
@@ -122,6 +133,19 @@ function operatorsFor(field?: BomField) {
   return field && ['Integer', 'Decimal'].includes(field.type)
     ? ['==', '!=', '>', '>=', '<', '<=']
     : ['==', '!=']
+}
+
+function variableAsField(variable: RuleSetVariable, direction: 'input' | 'output'): BomField {
+  return {
+    key: variable.name,
+    label: variable.label || variable.name,
+    type: variable.type === 'String' && variable.enum?.length ? 'Enum' : variable.type === 'Double' ? 'Decimal' : variable.type,
+    direction,
+    references: 0,
+    factName: 'RuleProject',
+    factLabel: 'Rule Project 变量',
+    enum: variable.enum || null,
+  }
 }
 
 function bracketInterval(value: string) {
@@ -245,12 +269,13 @@ function CellEditor({ value, field, fields, kind, disabled, open, onOpen, onChan
   return <div className="flex gap-1">{source}<input className={base} disabled={disabled} type={field?.type === 'Date' ? 'date' : 'text'} value={literalValue} onChange={event => onChange(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); onEnter() } }} placeholder={kind === 'conditions' ? '任意' : '输入结果'} title={error || (!literalValue && kind === 'conditions' ? '留空 = 通配' : undefined)} aria-invalid={Boolean(error)} /></div>
 }
 
-export default function EditableDecisionTable({ detail, fields, busy, onSave, onCompile, onSubmit, onAnalyze }: EditableDecisionTableProps) {
+export default function EditableDecisionTable({ detail, fields, projectVariables, busy, onSave, onCompile, onSubmit, onAnalyze }: EditableDecisionTableProps) {
   const source = detail.draft as DecisionTableDraft
   const [draft, setDraft] = useState<DecisionTableDraft>(() => structuredClone(source))
   const [notice, setNotice] = useState<{ error: boolean; text: string } | null>(null)
   const [analysis, setAnalysis] = useState<DecisionTableAnalysis>({ error: null, warnings: detail.validationWarnings || [], drl: detail.content || null })
   const [addKind, setAddKind] = useState<CellKind | null>(null)
+  const [pendingColumnIds, setPendingColumnIds] = useState<string[]>([])
   const [columnMenu, setColumnMenu] = useState<{ x: number; y: number; column: ColumnView } | null>(null)
   const [rowMenu, setRowMenu] = useState<{ x: number; y: number; row: number } | null>(null)
   const [enumCell, setEnumCell] = useState<string | null>(null)
@@ -259,24 +284,36 @@ export default function EditableDecisionTable({ detail, fields, busy, onSave, on
   const analyzeRef = useRef(onAnalyze)
   const analysisSequence = useRef(0)
   const fieldMap = useMemo(() => new Map(fields.map(field => [field.key, field])), [fields])
+  const fieldForColumn = (column: { field: string; fieldSource?: 'bom' | 'variable' }, direction: 'input' | 'output') => {
+    if (column.fieldSource === 'variable') {
+      const variable = projectVariables.find(candidate => candidate.name === column.field)
+      return variable ? variableAsField(variable, direction) : undefined
+    }
+    return fieldMap.get(column.field)
+  }
   const dirty = JSON.stringify(draft) !== JSON.stringify(source)
   const columns: ColumnView[] = [
-    ...draft.conditions.map((column, index) => ({ id: `condition:${column.field}`, kind: 'conditions' as const, index, fieldKey: column.field, field: fieldMap.get(column.field) })),
-    ...draft.actions.map((column, index) => ({ id: `action:${column.field}`, kind: 'actions' as const, index, fieldKey: column.field, field: fieldMap.get(column.field) })),
+    ...draft.conditions.map((column, index) => ({ id: `condition:${column.fieldSource || 'bom'}:${column.field}`, kind: 'conditions' as const, index, fieldKey: column.field, field: fieldForColumn(column, 'input'), fieldSource: column.fieldSource || 'bom' })),
+    ...draft.actions.map((column, index) => ({ id: `action:${column.fieldSource || 'bom'}:${column.field}`, kind: 'actions' as const, index, fieldKey: column.field, field: fieldForColumn(column, 'output'), fieldSource: column.fieldSource || 'bom' })),
   ]
   const columnGroups = columns.reduce<Array<{ key: string; label: string; kind: CellKind; count: number }>>((groups, column) => {
-    const factKey = column.field?.factName || `missing:${column.id}`
+    const factKey = column.fieldSource === 'variable' ? 'RuleProject' : column.field?.factName || `missing:${column.id}`
     const key = `${column.kind}:${factKey}`
     const previous = groups[groups.length - 1]
     if (previous?.key === key) previous.count += 1
     else groups.push({ key, label: column.field?.factLabel || '失效字段', kind: column.kind, count: 1 })
     return groups
   }, [])
-  const usedFields = new Set(columns.map(column => column.fieldKey))
-  const availableFields = fields.filter(field => field.direction === (addKind === 'conditions' ? 'input' : 'output') && !usedFields.has(field.key))
+  const usedFields = new Set(columns.map(column => `${column.fieldSource}:${column.fieldKey}`))
+  const availableFields: ColumnOption[] = [
+    ...fields.filter(field => field.direction === (addKind === 'conditions' ? 'input' : 'output')).map(field => ({ field, fieldSource: 'bom' as const })),
+    ...projectVariables.map(variable => ({ field: variableAsField(variable, addKind === 'conditions' ? 'input' : 'output'), fieldSource: 'variable' as const })),
+  ].filter(option => !usedFields.has(`${option.fieldSource}:${option.field.key}`))
+  const availableColumnOptions = availableFields.map(option => ({ id: `${option.fieldSource}:${option.field.key}`, option }))
+  const pickerOptions: BomFieldPickerOption[] = availableColumnOptions.map(({ id, option }) => ({ id, field: option.field, sourceLabel: option.fieldSource === 'variable' ? 'Rule Project' : undefined }))
   const cellIssues = draft.rows.flatMap((row, rowIndex) => [
-    ...row.conditions.map((value, index) => ({ row: rowIndex, kind: 'conditions' as const, index, error: conditionError(value, fieldMap.get(draft.conditions[index]?.field), fields) })),
-    ...row.actions.map((value, index) => ({ row: rowIndex, kind: 'actions' as const, index, error: actionError(value, fieldMap.get(draft.actions[index]?.field)) })),
+    ...row.conditions.map((value, index) => ({ row: rowIndex, kind: 'conditions' as const, index, error: conditionError(value, fieldForColumn(draft.conditions[index] || { field: '' }, 'input'), fields) })),
+    ...row.actions.map((value, index) => ({ row: rowIndex, kind: 'actions' as const, index, error: actionError(value, fieldForColumn(draft.actions[index] || { field: '' }, 'output')) })),
   ]).filter(issue => issue.error)
   const invalid = cellIssues.length > 0 || Boolean(analysis.error) || columns.some(column => !column.field)
   const wildcardRows = draft.rows.filter(row => row.enabled && !row.isDefault && row.conditions.every(value => typeof value === 'string' && !value.trim())).length
@@ -313,15 +350,22 @@ export default function EditableDecisionTable({ detail, fields, busy, onSave, on
   const blankRow = (): DecisionTableRow => ({ enabled: true, priority: 0, conditions: draft.conditions.map(() => ''), actions: draft.actions.map(() => '') })
   const insertRow = (index: number, row: DecisionTableRow = blankRow()) => setDraft(current => ({ ...current, rows: [...current.rows.slice(0, index), row, ...current.rows.slice(index)] }))
   const removeRow = (index: number) => setDraft(current => ({ ...current, rows: current.rows.filter((_, position) => position !== index) }))
-  const addColumn = (field: BomField) => {
-    if (!addKind) return
+  const openAddColumns = (kind: CellKind) => {
+    setPendingColumnIds([])
+    setAddKind(kind)
+  }
+  const addColumns = () => {
+    if (!addKind || !pendingColumnIds.length) return
+    const selectedOptions = pendingColumnIds.map(id => availableColumnOptions.find(entry => entry.id === id)?.option).filter((option): option is ColumnOption => Boolean(option))
+    if (!selectedOptions.length) return
     setDraft(current => ({
       ...current,
-      conditions: addKind === 'conditions' ? [...current.conditions, { field: field.key, operator: '==' }] : current.conditions,
-      actions: addKind === 'actions' ? [...current.actions, { field: field.key }] : current.actions,
-      rows: current.rows.map(row => ({ ...row, [addKind]: [...row[addKind], ''] })),
+      conditions: addKind === 'conditions' ? [...current.conditions, ...selectedOptions.map(option => ({ field: option.field.key, fieldSource: option.fieldSource, operator: operatorsFor(option.field)[0] || '==' }))] : current.conditions,
+      actions: addKind === 'actions' ? [...current.actions, ...selectedOptions.map(option => ({ field: option.field.key, fieldSource: option.fieldSource }))] : current.actions,
+      rows: current.rows.map(row => ({ ...row, [addKind]: [...row[addKind], ...selectedOptions.map(() => '')] })),
     }))
     setAddKind(null)
+    setPendingColumnIds([])
   }
   const removeColumn = (column: ColumnView) => {
     if ((column.kind === 'conditions' ? draft.conditions.length : draft.actions.length) <= 1) return
@@ -393,12 +437,12 @@ export default function EditableDecisionTable({ detail, fields, busy, onSave, on
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto p-4">
-        <div className="mb-2 flex items-center gap-2"><h2 className="text-xs font-semibold">决策行</h2><span className="inline-flex items-center gap-1 text-[10px] text-ink-3" title="空条件不会生成约束，会匹配该字段的任意值"><Info size={12} />空条件 = 不参与匹配（通配）；支持 &lt;0.8、[20,25)、20..25</span><button className="ml-auto inline-flex h-7 items-center gap-1 border border-ink-border px-2 text-[11px] text-brand-primary hover:bg-brand-primary-l" onClick={() => setAddKind('conditions')}><Plus size={13} />条件列</button><button className="inline-flex h-7 items-center gap-1 border border-ink-border px-2 text-[11px] text-brand-primary hover:bg-brand-primary-l" onClick={() => setAddKind('actions')}><Plus size={13} />动作列</button><button className="inline-flex h-7 items-center gap-1 px-2 text-[11px] text-brand-primary hover:bg-brand-primary-l" onClick={() => insertRow(draft.rows.length)}><Plus size={13} />添加行</button></div>
+        <div className="mb-2 flex items-center gap-2"><h2 className="text-xs font-semibold">决策行</h2><span className="inline-flex items-center gap-1 text-[10px] text-ink-3" title="空条件不会生成约束，会匹配该字段的任意值"><Info size={12} />空条件 = 不参与匹配（通配）；支持 &lt;0.8、[20,25)、20..25</span><button className="ml-auto inline-flex h-7 items-center gap-1 border border-ink-border px-2 text-[11px] text-brand-primary hover:bg-brand-primary-l" onClick={() => openAddColumns('conditions')}><Plus size={13} />条件列</button><button className="inline-flex h-7 items-center gap-1 border border-ink-border px-2 text-[11px] text-brand-primary hover:bg-brand-primary-l" onClick={() => openAddColumns('actions')}><Plus size={13} />动作列</button><button className="inline-flex h-7 items-center gap-1 px-2 text-[11px] text-brand-primary hover:bg-brand-primary-l" onClick={() => insertRow(draft.rows.length)}><Plus size={13} />添加行</button></div>
         <div className="min-w-[860px] overflow-visible border border-ink-border">
           <table className="w-full border-collapse text-xs">
             <thead className="bg-[#f0f0f0] text-left text-[11px]">
               <tr><th rowSpan={2} className="sticky left-0 z-20 w-12 border-r border-ink-border bg-[#f0f0f0] px-2 text-center">行</th><th rowSpan={2} className="w-12 border-r border-ink-border px-2 text-center">启用</th>{columnGroups.map(group => <th key={group.key} colSpan={group.count} className={`border-r border-ink-border px-2 py-1 text-center font-medium ${group.kind === 'conditions' ? 'text-brand-primary' : 'text-env-production'}`}>{group.kind === 'conditions' ? '条件' : '动作'} · {group.label}</th>)}<th rowSpan={2} className="w-12 text-center">操作</th></tr>
-              <tr>{columns.map(column => <th key={column.id} className={`relative min-w-36 border-r border-t border-ink-border px-2 py-1 ${column.field ? '' : 'bg-[#fff1f1] text-[#c62828]'}`} onContextMenu={event => { event.preventDefault(); setColumnMenu({ x: event.clientX, y: event.clientY, column }) }}><div className="flex items-center gap-1"><button type="button" className="min-w-0 flex-1 truncate border-b border-dashed border-brand-primary text-left font-medium text-brand-primary" title={column.field ? '来自 BOM' : 'BOM 字段已删除'}>{column.field?.label || column.fieldKey}</button><button type="button" className="inline-flex size-6 shrink-0 items-center justify-center text-ink-3 hover:bg-white" onClick={event => { event.stopPropagation(); setColumnMenu({ x: event.clientX, y: event.clientY, column }) }} title="列菜单"><MoreVertical size={12} /></button></div>{column.kind === 'conditions' && <select className="mt-1 h-5 w-full border-0 bg-transparent text-[9px] font-normal text-ink-3 outline-none" value={draft.conditions[column.index].operator} onChange={event => setDraft(current => ({ ...current, conditions: current.conditions.map((item, index) => index === column.index ? { ...item, operator: event.target.value } : item) }))}>{operatorsFor(column.field).map(operator => <option key={operator} value={operator}>无前缀时默认 {operator}</option>)}</select>}</th>)}</tr>
+              <tr>{columns.map(column => <th key={column.id} className={`relative min-w-36 border-r border-t border-ink-border px-2 py-1 ${column.field ? '' : 'bg-[#fff1f1] text-[#c62828]'}`} onContextMenu={event => { event.preventDefault(); setColumnMenu({ x: event.clientX, y: event.clientY, column }) }}><div className="flex items-center gap-1"><button type="button" className="min-w-0 flex-1 truncate border-b border-dashed border-brand-primary text-left font-medium text-brand-primary" title={column.field ? (column.fieldSource === 'variable' ? '来自 Rule Project 变量' : '来自 BOM') : '引用已删除'}>{column.field?.label || column.fieldKey}</button><button type="button" className="inline-flex size-6 shrink-0 items-center justify-center text-ink-3 hover:bg-white" onClick={event => { event.stopPropagation(); setColumnMenu({ x: event.clientX, y: event.clientY, column }) }} title="列菜单"><MoreVertical size={12} /></button></div>{column.kind === 'conditions' && <select className="mt-1 h-5 w-full border-0 bg-transparent text-[9px] font-normal text-ink-3 outline-none" value={draft.conditions[column.index].operator} onChange={event => setDraft(current => ({ ...current, conditions: current.conditions.map((item, index) => index === column.index ? { ...item, operator: event.target.value } : item) }))}>{operatorsFor(column.field).map(operator => <option key={operator} value={operator}>无前缀时默认 {operator}</option>)}</select>}</th>)}</tr>
             </thead>
             <tbody>
               {draft.rows.map((row, rowIndex) => {
@@ -420,7 +464,7 @@ export default function EditableDecisionTable({ detail, fields, busy, onSave, on
       </div>
 
       {importPreview && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onMouseDown={event => { if (event.target === event.currentTarget) setImportPreview(null) }}><section className="w-full max-w-lg border border-ink-border bg-white shadow-xl" role="dialog" aria-modal="true"><header className="border-b border-ink-border bg-[#fafafa] px-4 py-3 text-sm font-semibold">导入差异预览 · {importPreview.filename}</header><div className="space-y-3 p-4 text-xs"><div className="grid grid-cols-4 gap-2"><b className="border border-ink-border p-2 text-center text-env-production">新增 {importPreview.added}</b><b className="border border-ink-border p-2 text-center text-[#b26a00]">更新 {importPreview.changed}</b><b className="border border-ink-border p-2 text-center text-[#c62828]">删除 {importPreview.removed}</b><b className="border border-ink-border p-2 text-center text-ink-3">不变 {importPreview.unchanged}</b></div>{importPreview.details.length > 0 ? <ul className="max-h-44 overflow-auto border border-ink-border bg-[#fafafa] p-2 font-mono text-[11px]">{importPreview.details.map(item => <li key={item} className="py-0.5">{item}</li>)}</ul> : <p className="border border-ink-border bg-[#fafafa] p-3 text-ink-3">没有检测到行级差异。</p>}<p className="text-[11px] text-ink-3">导入只替换决策行，条件列和动作列必须与当前表一致；应用后仍需点击保存。</p></div><footer className="flex justify-end gap-2 border-t border-ink-border bg-[#fafafa] p-3"><button className="h-8 border border-ink-border bg-white px-3 text-[11px]" onClick={() => setImportPreview(null)}>取消</button><button className="h-8 bg-brand-primary px-3 text-[11px] text-white" onClick={applyImportPreview}>应用导入</button></footer></section></div>}
-      {addKind && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4" onMouseDown={event => { if (event.target === event.currentTarget) setAddKind(null) }}><section className="w-full max-w-md border border-ink-border bg-white shadow-xl" role="dialog" aria-modal="true"><header className="border-b border-ink-border bg-[#fafafa] px-4 py-3 text-sm font-semibold">添加{addKind === 'conditions' ? '条件' : '动作'}列</header><div className="max-h-80 overflow-auto p-2">{availableFields.map(field => <button type="button" key={field.key} className="flex w-full items-center justify-between border-b border-[#e8e8e8] px-3 py-2 text-left text-xs hover:bg-brand-primary-l" onClick={() => addColumn(field)}><span><b className="font-medium text-brand-primary">{field.factLabel}</b> · {field.label}</span><code className="text-[10px] text-ink-3">{field.type}</code></button>)}{availableFields.length === 0 && <p className="p-4 text-center text-xs text-ink-3">没有可添加的 BOM 字段</p>}</div><footer className="flex justify-end border-t border-ink-border bg-[#fafafa] p-3"><button className="h-8 border border-ink-border bg-white px-3 text-[11px]" onClick={() => setAddKind(null)}>取消</button></footer></section></div>}
+      {addKind && <Modal title={`添加${addKind === 'conditions' ? '条件' : '动作'}列`} width="max-w-4xl" onClose={() => { setAddKind(null); setPendingColumnIds([]) }}><div className="p-4"><BomFieldPicker options={pickerOptions} selectedIds={pendingColumnIds} onChange={setPendingColumnIds} emptyText="没有可添加的 BOM 字段或 Rule Project 变量" /></div><footer className="flex items-center justify-end gap-2 border-t border-ink-border bg-[#fafafa] p-3"><span className="mr-auto text-[10px] text-ink-3">已选择 {pendingColumnIds.length} 列</span><button className="h-8 border border-ink-border bg-white px-3 text-[11px]" onClick={() => { setAddKind(null); setPendingColumnIds([]) }}>取消</button><button className="h-8 bg-brand-primary px-3 text-[11px] text-white disabled:opacity-40" disabled={!pendingColumnIds.length} onClick={addColumns}>添加所选列</button></footer></Modal>}
       {columnMenu && <div className="fixed z-50 min-w-36 border border-ink-border bg-white py-1 text-[11px] shadow-lg" style={{ left: columnMenu.x, top: columnMenu.y }} onClick={event => event.stopPropagation()}><button type="button" className="flex h-8 w-full items-center gap-2 px-3 text-left hover:bg-ink-bg disabled:opacity-40" disabled={(columnMenu.column.kind === 'conditions' ? draft.conditions.length : draft.actions.length) <= 1} onClick={() => removeColumn(columnMenu.column)}><Trash2 size={12} />删除列</button></div>}
       {rowMenu && <div className="fixed z-50 min-w-40 border border-ink-border bg-white py-1 text-[11px] shadow-lg" style={{ left: rowMenu.x, top: rowMenu.y }} onClick={event => event.stopPropagation()}><button className="flex h-8 w-full items-center gap-2 px-3 text-left hover:bg-ink-bg" onClick={() => { insertRow(rowMenu.row); setRowMenu(null) }}><Plus size={12} />在上方插入</button><button className="flex h-8 w-full items-center gap-2 px-3 text-left hover:bg-ink-bg" onClick={() => { insertRow(rowMenu.row + 1); setRowMenu(null) }}><Plus size={12} />在下方插入</button><button className="flex h-8 w-full items-center gap-2 px-3 text-left hover:bg-ink-bg" onClick={() => { const duplicate = { ...structuredClone(draft.rows[rowMenu.row]), isDefault: false }; insertRow(rowMenu.row + 1, duplicate); setRowMenu(null) }}><Copy size={12} />复制行</button><button className="flex h-8 w-full items-center gap-2 px-3 text-left hover:bg-ink-bg" onClick={() => { const unset = draft.rows[rowMenu.row]?.isDefault === true; setDraft(current => ({ ...current, rows: current.rows.map((row, index) => ({ ...row, isDefault: unset ? false : index === rowMenu.row, conditions: !unset && index === rowMenu.row ? row.conditions.map(() => '') : row.conditions })) })); setRowMenu(null) }}>{draft.rows[rowMenu.row]?.isDefault ? '取消默认行' : '设为默认行'}</button><button className="flex h-8 w-full items-center gap-2 px-3 text-left text-[#c62828] hover:bg-[#fff1f1] disabled:opacity-40" disabled={draft.rows.length === 1} onClick={() => { removeRow(rowMenu.row); setRowMenu(null) }}><Trash2 size={12} />删除行</button></div>}
     </section>

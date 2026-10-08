@@ -30,11 +30,11 @@
 
 
 
-* **Team Server**（Node.js，PostgreSQL 存储）：统一管理项目、BOM、规则（BAL / 决策表）、规则集、规则流、测试套件、变更集、Release
+* **Team Server**（Node.js，PostgreSQL 存储）：统一管理项目、BOM、规则（BAL / 决策表）、规则集、规则集、测试套件、变更集、Release
 
 * **RES / 规则执行服务器**：Docker 容器（`rules-engine-1`，Drools 10.2.0），编译与执行规则
 
-* 前端：React + @xyflow/react（规则流编辑器正在按 Dify 式画布直编改造，见 `ruleflow-editor-design.md`）
+* 前端：React + @xyflow/react（规则集编辑器正在按 Dify 式画布直编改造，见 `ruleflow-editor-design.md`）
 
 ### 1.2 为什么要引入 CEP 事件引擎
 
@@ -139,7 +139,7 @@ IBM ODM（JRules 后继产品）本身就是**双引擎并行**架构：
 
 │  ┌─ 规则项目（engine=rules）────────────────────────────────┐   │
 
-│  │  资产：BAL / 决策表 / 规则集 / 规则流                     │   │
+│  │  资产：BAL / 决策表 / 规则集 / 规则集                     │   │
 
 │  │  编译校验 → Drools compile                                │   │
 
@@ -264,7 +264,7 @@ function resolveEngineTargets(project) {
 | ------ | -------------------------------------- | ----------------------------- |
 | 允许资产类型 | rule / decision-table / ruleset / flow | event-stream                  |
 | BOM    | 完整 BOM（factType + 字段 + 操作符）            | 复用 BOM，事件类型映射 schema          |
-| 规则流    | 支持（步骤绑规则集 / 决策表）                       | v1 不支持                        |
+| 规则集    | 支持（步骤绑规则集 / 决策表）                       | v1 不支持                        |
 | 测试套件   | facts + expected.outputs/fired         | 事件流输入 + 期望检测事件序列              |
 | 编译     | Drools compile                         | Esper EPL compile             |
 | 发布目标   | RULES\_RES\_URL / RES Docker           | CEP\_RES\_URL / Esper Runtime |
@@ -540,7 +540,7 @@ create schema \<FactTypeName> (
 
 * `POST /api/projects/:id/flows/.../compile`、`POST /api/projects/:id/assets/:aid/compile` 等编译入口按项目引擎转发
 
-* 规则流编译在 CEP 项目不可用（前端隐藏）
+* 规则集编译在 CEP 项目不可用（前端隐藏）
 
 ### 7.2 测试套件
 
@@ -652,7 +652,7 @@ Release 必须保持不可变、可校验、可重放。新增 CEP 时不得破�
 
 * 资产清单：CEP 项目列出 event-stream 资产（名称、版本、语句数、输出事件）
 
-* 规则 / 规则流 / 测试统计：CEP 项目显示 N/A 或省略
+* 规则 / 规则集 / 测试统计：CEP 项目显示 N/A 或省略
 
 * 现有 rules 项目报告结构保持不变
 
@@ -680,7 +680,7 @@ Release 必须保持不可变、可校验、可重放。新增 CEP 时不得破�
 | 规则     | 是            | 隐藏                |
 | 决策表    | 是            | 隐藏                |
 | 规则集    | 是            | 隐藏                |
-| 规则流    | 是            | 隐藏                |
+| 规则集    | 是            | 隐藏                |
 | 事件流    | 隐藏           | 是（新增入口）           |
 | 测试套件   | rules schema | cep schema（事件流输入） |
 | 发布     | RES          | Esper             |
@@ -961,13 +961,13 @@ Release 必须保持不可变、可校验、可重放。新增 CEP 时不得破�
 
 * [x] CEP 项目报告：事件流资产统计正确；rules 项目报告结构不变
 
-* [x] CEP 项目导航隐藏规则 / 规则流，显示事件流入口
+* [x] CEP 项目导航隐藏规则 / 规则集，显示事件流入口
 
 ### 回归（不得破坏）
 
 
 
-* [x] rules 项目：BAL / 决策表 / 规则集 / 规则流 / 测试 / Release 全链路正常
+* [x] rules 项目：BAL / 决策表 / 规则集 / 规则集 / 测试 / Release 全链路正常
 
 * [x] 现有测试套件 schema 与运行不受影响
 
@@ -1005,7 +1005,7 @@ Release 必须保持不可变、可校验、可重放。新增 CEP 时不得破�
 
 
 
-* `docs/ruleflow-editor-design.md`：规则流编辑器（rules 项目侧）设计，不受影响
+* `docs/ruleflow-editor-design.md`：规则集编辑器（rules 项目侧）设计，不受影响
 
 * `docs/bom-editor-design.md`：BOM 复用，新增 "事件类型→Esper schema" 映射
 

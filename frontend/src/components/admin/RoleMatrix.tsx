@@ -8,6 +8,7 @@ interface RoleMatrixProps {
 const permissions = [
   { id: 'view', label: '浏览规则、决策表与发布记录' },
   { id: 'author', label: '编辑草稿、BOM 与测试套件' },
+  { id: 'advanced-epl', label: '编辑高级 EPL 语句' },
   { id: 'review', label: '审核 Change Set 与发布申请' },
   { id: 'release', label: '构建 Release 并部署到 RES' },
   { id: 'manage', label: '管理用户、角色与环境' },

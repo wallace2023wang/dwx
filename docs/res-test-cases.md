@@ -72,7 +72,12 @@
 - **请求**：`POST /execute` `{releaseId:"non-exist", facts:{}}`
 - **预期**：404；错误"Release 未部署"。
 
-### RES-EXE-03：多步骤规则流按顺序执行，输出传递到下一步
+### RES-EXE-02A：按 decisionService 执行当前生效版本
+- **前置**：同一 `decisionService` 已部署 v1、v2，v1 为当前生效版本。
+- **请求**：`POST /services/{decisionService}/execute`，请求体仅包含 `facts`，不传 `releaseId`。
+- **预期**：执行 v1；调用 `/activate` 切换至 v2 后，相同业务请求稳定执行 v2。
+
+### RES-EXE-03：多步骤规则集按顺序执行，输出传递到下一步
 - **前置**：Release 有 2 个步骤：步骤1 设置 `riskLevel="中"`；步骤2 的规则在 `riskLevel=="中"` 时设置 `reviewRequired=true`。
 - **请求**：`POST /execute` 空 facts。
 - **预期**：200；`trace.length==2`；最终 facts 同时包含 `riskLevel="中"` 和 `reviewRequired=true`。

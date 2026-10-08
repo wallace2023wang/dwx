@@ -30,7 +30,7 @@ npx playwright test tests/flow-e2e.spec.js  # 只跑完整链路
 | 层 | 用例数 | 内容 |
 |---|---|---|
 | 冒烟 Smoke | 16 | 全部 13 个路由 + CEP/Drools 代表页：渲染不白屏、无 JS 未捕获异常 |
-| 功能 Feature | 12 | 库/浏览/管理/资产/规则流/BOM/测试套件/审核/发布向导/报告下载/CEP 事件流，逐个点击按钮、Tab、对话框、编辑器 |
+| 功能 Feature | 12 | 库/浏览/管理/资产/规则集/BOM/测试套件/审核/发布向导/报告下载/CEP 事件流，逐个点击按钮、Tab、对话框、编辑器 |
 | 链路 E2E | 4 | 新建规则 → 保存 → 提交审核 → 批准 → 构建 Release → 编译 → 部署 RES → 验证发布结果 |
 
 ## 产物
@@ -46,8 +46,8 @@ npx playwright test tests/flow-e2e.spec.js  # 只跑完整链路
 
 以下问题不影响用例通过，但值得修复：
 
-1. **浏览页（/explore）**：对 CEP 项目（`project-6f50ddcf`、`project-7c12c971`）请求 `GET /api/projects/{id}/flows` 返回 **404**——CEP 项目没有规则流资源，前端不应请求该接口。
-2. **规则流校验**：对 `default` 项目规则流 `899825a4...` 执行校验时 `POST .../compile` 返回 **400**——需人工确认该规则流草稿当前的编译错误原因。
+1. **浏览页（/explore）**：对 CEP 项目（`project-6f50ddcf`、`project-7c12c971`）请求 `GET /api/projects/{id}/flows` 返回 **404**——CEP 项目没有规则集资源，前端不应请求该接口。
+2. **规则集校验**：对 `default` 项目规则集 `899825a4...` 执行校验时 `POST .../compile` 返回 **400**——需人工确认该规则集草稿当前的编译错误原因。
 
 ## 文件结构
 

@@ -76,7 +76,7 @@ test('TEST-SUITE-02: 决策表运行使用已发布版本并返回断言详情',
   } finally { await env.stop(); }
 });
 
-test('TEST-SUITE-03: 规则流回归支持路径和跨节点命中断言', async () => {
+test('TEST-SUITE-03: 规则集回归支持路径和跨节点命中断言', async () => {
   const env = await startTestEnv();
   try {
     const rule = await publishedAsset(env, 'rules');

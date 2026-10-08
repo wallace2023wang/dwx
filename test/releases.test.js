@@ -83,6 +83,53 @@ test('release versions increase per decision service and flow steps stay frozen'
   });
 });
 
+test('release preserves the requested semantic display version', () => {
+  const asset = published('rule-semver', newRule(), 2);
+  const release = buildRelease({
+    id: 'release-semver',
+    request: { decisionService: 'default/semver', version: '2.1.2', name: '语义版本', target: { type: 'rule', id: asset.id } },
+    rules: [asset], tables: [], flows: [], releases: [],
+  });
+  assert.equal(release.version, 1);
+  assert.equal(release.displayVersion, '2.1.2');
+  assert.equal(verifyRelease(release), null);
+});
+
+test('new releases reject a flow snapshot with outdated direct dependencies', () => {
+  const rule = published('rule-updated', newRule(), 2);
+  const flow = published('flow-outdated', { name: '过期规则集', description: '', steps: [] }, 1);
+  flow.published = {
+    name: '过期规则集', description: '',
+    steps: [{ type: 'rule', id: rule.id, name: rule.published.name, version: 1, drl: 'package workbench\n' }],
+  };
+  assert.throws(() => buildRelease({
+    id: 'release-outdated',
+    request: { decisionService: 'default/outdated', name: '过期构建', target: { type: 'flow', id: flow.id } },
+    rules: [rule], tables: [], flows: [flow], releases: [],
+    enforceCurrentFlowDependencies: true,
+  }), error => error.code === 'FLOW_DEPENDENCIES_OUTDATED' && /重新发布规则集/.test(error.message));
+});
+
+test('new releases reject a flow snapshot with changed rule-group members', () => {
+  const rule = newRule();
+  rule.category = 'grain.rule.singlepoint';
+  const asset = published('rule-group-member', rule, 2);
+  const flow = published('flow-outdated-group', { name: '规则包规则集', description: '', steps: [] }, 1);
+  flow.published = {
+    name: '规则包规则集', description: '',
+    steps: [{
+      type: 'rule-group', name: '规则组：grain.rule.singlepoint', packageName: 'grain.rule.singlepoint', includeChildren: false,
+      members: [{ type: 'rule', id: asset.id, name: rule.name, version: 1 }], memberFingerprint: 'outdated', drl: 'package workbench\n',
+    }],
+  };
+  assert.throws(() => buildRelease({
+    id: 'release-outdated-group',
+    request: { decisionService: 'default/outdated-group', name: '过期规则包构建', target: { type: 'flow', id: flow.id } },
+    rules: [asset], tables: [], flows: [flow], releases: [],
+    enforceCurrentFlowDependencies: true,
+  }), error => error.code === 'FLOW_DEPENDENCIES_OUTDATED' && /grain\.rule\.singlepoint/.test(error.message));
+});
+
 test('table release isolates FIRST hit policy with the asset id', () => {
   const table = newTable();
   table.hitPolicy = 'FIRST';
@@ -121,4 +168,85 @@ test('flow release freezes exclusive gateway routes into step indexes', () => {
   assert.match(verifyRelease(invalidMapping), /字段映射/);
   release.routing.branches[0].stepIndexes = [2];
   assert.match(verifyRelease(release), /步骤索引|不完整/);
+});
+
+test('flow release uses the top-level variable scope', () => {
+  const variable = { name: 'approved', label: '已批准', type: 'Boolean', defaultValue: false, enum: null, description: '流程内部变量' };
+  const flow = published('flow-variable-scope', { name: '变量流', description: '', steps: [] }, 1);
+  flow.published = {
+    name: '变量流',
+    description: '',
+    variables: [variable],
+    steps: [{
+      type: 'rule',
+      id: 'rule-a',
+      name: '规则 A',
+      version: 1,
+      variables: [{ ...variable, defaultValue: true }],
+      drl: 'package workbench\n',
+    }],
+  };
+  const release = buildRelease({
+    id: 'release-flow-variable-scope',
+    request: { decisionService: 'default/flow-variable', name: '变量流发布', target: { type: 'flow', id: flow.id } },
+    rules: [], tables: [], flows: [flow], releases: [],
+  });
+  assert.deepEqual(release.variables, [variable]);
+  assert.equal(verifyRelease(release), null);
+});
+
+test('flow release applies the current Rule Project variable scope to step DRL', () => {
+  const variable = { name: 'approved', label: '已批准', type: 'Boolean', defaultValue: false, enum: null, description: '' };
+  const rule = newRule();
+  rule.name = '项目变量规则';
+  rule.conditions = [{ fieldSource: 'variable', field: 'approved', operator: '==', value: 'true' }];
+  rule.actions = [{ field: 'riskLevel', value: '低' }];
+  const ruleAsset = published('rule-project-variable', rule, 2);
+  const flow = published('flow-project-variable', { name: '项目变量规则集', description: '', steps: [] }, 1);
+  flow.published = {
+    name: '项目变量规则集',
+    description: '',
+    steps: [{
+      type: 'rule',
+      id: ruleAsset.id,
+      name: rule.name,
+      version: 2,
+      drl: 'stale DRL without RuleContext',
+    }],
+  };
+
+  const release = buildRelease({
+    id: 'release-project-variable-flow',
+    request: { decisionService: 'default/project-variable-flow', name: '项目变量规则集发布', target: { type: 'flow', id: flow.id } },
+    rules: [ruleAsset], tables: [], flows: [flow], releases: [],
+    projectVariables: [variable],
+  });
+
+  assert.deepEqual(release.variables, [variable]);
+  assert.match(release.steps[0].drl, /declare RuleContext/);
+  assert.doesNotMatch(release.steps[0].drl, /stale DRL/);
+  assert.equal(verifyRelease(release), null);
+});
+
+test('release freezes Ruleset Variable definitions and protects them with checksum', () => {
+  const rule = newRule();
+  rule.variables = [{ name: 'approved', label: '已批准', type: 'Boolean', defaultValue: false }];
+  rule.conditions = [{ fieldSource: 'variable', field: 'approved', operator: '==', value: 'true' }];
+  rule.actions = [{ field: 'riskLevel', value: '低' }];
+  const asset = published('rule-with-variable', rule, 1);
+  asset.versions[0].drl = undefined;
+  const release = buildRelease({
+    id: 'release-variable',
+    request: { decisionService: 'default/variable', name: '变量发布', target: { type: 'rule', id: asset.id } },
+    rules: [asset], tables: [], flows: [], releases: [],
+  });
+
+  assert.deepEqual(release.variables.map(variable => variable.name), ['approved']);
+  assert.equal(release.variables[0].defaultValue, false);
+  assert.match(release.steps[0].drl, /declare RuleContext/);
+  assert.equal(verifyRelease(release), null);
+
+  const changed = structuredClone(release);
+  changed.variables[0].defaultValue = true;
+  assert.match(verifyRelease(changed), /校验和/);
 });

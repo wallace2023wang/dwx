@@ -1,17 +1,19 @@
 import { generateDrl } from '../shared/rules.js';
 import { conditionCellExportValue, resolveRuleGroupMembers, ruleGroupFingerprint, tableDrl, validateTable } from '../shared/assets.js';
 import { findField, inferSemanticType } from '../shared/bom.js';
-import { compileEventStreamDraft } from '../shared/event-streams.js';
+import { compileEventStreamDraft, eventStreamDependencies } from '../shared/event-streams.js';
 import { canonicalPackageName, packageLabel } from '../shared/packages.js';
 
 function assetBomIssue(draft, type, bom) {
   const invalidCondition = draft.conditions?.find(column => {
+    if (column.fieldSource === 'variable') return false;
     if (column.raw || column.pattern) return false;
     const field = findField(bom, column.field);
     return !field || field.kind !== 'input';
   });
   if (invalidCondition) return `条件字段 ${invalidCondition.field || '（空）'} 不存在或不是输入字段`;
   const invalidValueField = draft.conditions?.find(column => {
+    if (column.fieldSource === 'variable') return false;
     if (column.raw || column.pattern || column.valueSource !== 'field') return false;
     const field = findField(bom, column.field);
     const valueField = findField(bom, column.valueField);
@@ -35,6 +37,7 @@ function assetBomIssue(draft, type, bom) {
     }
   }
   const invalidAction = draft.actions?.find(column => {
+    if (column.fieldSource === 'variable') return false;
     const field = findField(bom, column.field);
     return !field || field.kind !== 'output';
   });
@@ -84,7 +87,7 @@ export function projectPackages(rules, tables, packageRecords = [], bom, changeS
   return [...packages.values()];
 }
 
-export function projectAssetDetail(item, type, bom, changeSets = []) {
+export function projectAssetDetail(item, type, bom, changeSets = [], projectVariables = null) {
   const summary = projectAssetSummaryWithReview(item, type, bom, changeSets);
   const draft = item.draft;
   const reviewedAt = item.published ? item.versions.at(-1)?.createdAt || item.updatedAt : '尚未审核';
@@ -104,6 +107,7 @@ export function projectAssetDetail(item, type, bom, changeSets = []) {
     publishedBomVersion: item.versions?.at(-1)?.bomVersion ?? null,
     currentBomVersion: bom.version,
     bomOutdated: item.versions?.at(-1)?.bomVersion != null && item.versions.at(-1).bomVersion !== bom.version,
+    projectVariables: structuredClone(projectVariables || []),
     deprecatedAt: item.deprecatedAt || null,
     deprecatedBy: item.deprecatedBy || null,
     deprecationReason: item.deprecationReason || null,
@@ -118,22 +122,27 @@ export function projectAssetDetail(item, type, bom, changeSets = []) {
     },
   };
   if (type === 'rule') {
-    try { detail.content = generateDrl([draft], bom); }
+    try { detail.content = generateDrl([draft], bom, projectVariables?.length ? projectVariables : draft.variables); }
     catch (error) { detail.content = `// 当前草稿无法生成 DRL：${error.message}`; }
     return detail;
   }
-  const validation = validateTable(draft, bom);
+  const variables = projectVariables?.length ? projectVariables : [];
+  const validation = validateTable(draft, bom, variables);
   detail.validationWarnings = validation.warnings;
-  try { detail.content = tableDrl(draft, bom, item.id); }
+  try { detail.content = tableDrl(draft, bom, item.id, variables); }
   catch (error) { detail.content = `// 当前草稿无法生成 DRL：${error.message}`; }
   const conditionColumns = draft.conditions.map((column, index) => ({
     id: `condition-${index}`,
-    label: findField(bom, column.field)?.label || column.field,
+    label: column.fieldSource === 'variable'
+      ? projectVariables?.find(variable => variable.name === column.field)?.label || column.field
+      : findField(bom, column.field)?.label || column.field,
     kind: 'condition',
   }));
   const actionColumns = draft.actions.map((column, index) => ({
     id: `action-${index}`,
-    label: findField(bom, column.field)?.label || column.field,
+    label: column.fieldSource === 'variable'
+      ? projectVariables?.find(variable => variable.name === column.field)?.label || column.field
+      : findField(bom, column.field)?.label || column.field,
     kind: 'action',
   }));
   detail.decisionTable = {
@@ -401,6 +410,7 @@ export function projectEventStreamDetail(item, data) {
     published: item.published || null,
     versions: item.versions || [],
     schemas: compiled.result?.schemas || [],
+    dependencyGraph: eventStreamDependencies(item.draft),
     validationError: compiled.error || null,
   };
 }

@@ -3,6 +3,7 @@ import { fieldConstraint, generateDrl, operators, formatDrlValue } from './rules
 import { defaultBom, findField, inferSemanticType, inputFields as bomInputs, outputFields as bomOutputs } from './bom.js';
 import { canonicalPackageName, DEFAULT_PACKAGE_NAME, PACKAGE_NAME_RE } from './packages.js';
 import { DomainError } from './errors.js';
+import { canonicalRuleSetVariables, findRuleSetVariable, normalizeRuleSetVariables, validateRuleSetVariables, variableDrlValue } from './ruleset-variables.js';
 
 const DEFAULT_BOM = defaultBom();
 
@@ -48,7 +49,7 @@ function rowSalience(table, row, position, activeCount) {
     : tableBase + displayOrder;
 }
 
-export const newFlow = () => ({ name: '未命名规则流', description: '', steps: [], branches: [], editor: { positions: {} } });
+export const newFlow = () => ({ name: '未命名规则集', description: '', variables: [], steps: [], branches: [], editor: { positions: {} } });
 
 /**
  * 解析一个条件单元格，返回 DRL 条件片段数组。
@@ -77,7 +78,8 @@ export function conditionCellExportValue(cell) {
 export function parseConditionCell(field, operator, raw, bom = DEFAULT_BOM) {
   if (isFieldReferenceCell(raw)) {
     const valueField = findField(bom, raw.valueField);
-    if (!valueField || valueField.kind !== 'input') throw new Error(`${field.label}用于比较的业务字段不存在或不是输入字段`);
+    // 允许引用 input 或 output 字段：决策表输出（如动态阈值）写回 RuleInput 后，BAL/决策表行可同事实内比较
+    if (!valueField || (valueField.kind !== 'input' && valueField.kind !== 'output')) throw new Error(`${field.label}用于比较的业务字段不存在或不是输入字段`);
     if (valueField.key === field.key) throw new Error(`${field.label}不能与自身比较`);
     if (inferSemanticType(valueField) !== inferSemanticType(field)) throw new Error(`${field.label}只能与同类型业务字段比较`);
     const allowed = ['==', '!=', '>', '>=', '<', '<='];
@@ -161,18 +163,58 @@ export function parseConditionCell(field, operator, raw, bom = DEFAULT_BOM) {
   return [`${field.key} ${effectiveOperator} ${v}`];
 }
 
+function variableField(variable, direction = 'input') {
+  return {
+    key: variable.name,
+    label: variable.label || variable.name,
+    type: variable.type,
+    kind: direction,
+    enum: variable.enum || null,
+  };
+}
+
+function tableColumnField(column, bom, variables, direction) {
+  if (column?.fieldSource === 'variable') {
+    const variable = findRuleSetVariable(variables, column.field);
+    return variable ? variableField(variable, direction) : null;
+  }
+  return findField(bom, column?.field);
+}
+
+function parseVariableConditionCell(variable, operator, raw) {
+  if (typeof raw !== 'string' || !raw.trim()) return [];
+  const text = raw.trim();
+  const comparison = text.match(/^(>=|<=|!=|==|>|<)\s*(.+)$/);
+  const effectiveOperator = comparison?.[1] || operator;
+  const operand = comparison?.[2]?.trim() || text;
+  if (!['==', '!=', '>', '>=', '<', '<='].includes(effectiveOperator)) throw new Error(`${variable.label}的变量条件运算符无效`);
+  if (['Boolean', 'String'].includes(variable.type) && !['==', '!='].includes(effectiveOperator)) throw new Error(`${variable.label}只支持等于或不等于`);
+  const value = variableDrlValue(variable, operand);
+  if (value === null) throw new Error(`${variable.label}的条件值无效`);
+  return [{ fieldSource: 'variable', field: variable.name, operator: effectiveOperator, value: operand }];
+}
+
 /**
  * 把一行的条件列解析成 DRL 条件片段数组（AND 连接）。
  * 默认行（条件全空）返回空数组。
  */
-function rowConditions(table, row, inputs, bom = DEFAULT_BOM) {
-  const fragments = [];
+function rowConditionParts(table, row, inputs, bom = DEFAULT_BOM, variables = []) {
+  const input = [];
+  const variable = [];
   for (let i = 0; i < table.conditions.length; i++) {
     const col = table.conditions[i];
-    const field = inputs.find(f => f.key === col.field);
+    const field = tableColumnField(col, bom, variables, 'input');
     const cell = row.conditions[i] ?? '';
-    fragments.push(...parseConditionCell(field, col.operator, cell, bom));
+    if (col.fieldSource === 'variable') variable.push(...parseVariableConditionCell(findRuleSetVariable(variables, col.field), col.operator, cell));
+    else input.push(...parseConditionCell(field, col.operator, cell, bom));
   }
+  return { input, variable };
+}
+
+function rowConditions(table, row, inputs, bom = DEFAULT_BOM, variables = []) {
+  const fragments = [];
+  const parts = rowConditionParts(table, row, inputs, bom, variables);
+  fragments.push(...parts.input, ...parts.variable.map(item => `${item.field} ${item.operator} ${variableDrlValue(findRuleSetVariable(variables, item.field), item.value)}`));
   return fragments;
 }
 
@@ -300,9 +342,9 @@ function constraintSubset(a, b) {
   return false;
 }
 
-function rowConstraints(table, entry, inputs) {
+function rowConstraints(table, entry, inputs, bom = DEFAULT_BOM, variables = []) {
   return table.conditions.map((column, index) => conditionConstraint(
-    inputs.find(field => field.key === column.field), column.operator, entry.row.conditions[index],
+    tableColumnField(column, bom, variables, 'input'), column.operator, entry.row.conditions[index],
   ));
 }
 
@@ -399,29 +441,32 @@ function findUncoveredWitness(allConstraints, targetIndex, blockerIndexes) {
   return { status: 'covered' };
 }
 
-function formatWitness(values, table, inputs) {
+function formatWitness(values, table, inputs, variables = []) {
   return values.map((value, index) => {
-    const field = inputs.find(entry => entry.key === table.conditions[index].field);
+    const field = tableColumnField(table.conditions[index], DEFAULT_BOM, variables, 'input')
+      || inputs.find(entry => entry.key === table.conditions[index].field);
     const display = typeof value === 'boolean' ? (value ? '是' : '否') : String(value);
     return `${field.label}=${display}`;
   }).join('，');
 }
 
 /** 返回可证明的重复、重叠、不可达和单字段域缺口。 */
-function conflictingActions(table, left, right, outputs) {
+function conflictingActions(table, left, right, outputs, variables = []) {
   return table.actions.flatMap((column, index) => {
     const leftValue = String(left.actions[index] ?? '').trim();
     const rightValue = String(right.actions[index] ?? '').trim();
     if (!leftValue || !rightValue || leftValue === rightValue) return [];
-    return [outputs.find(field => field.key === column.field)?.label || column.field];
+    return [tableColumnField(column, DEFAULT_BOM, variables, 'output')?.label
+      || outputs.find(field => field.key === column.field)?.label
+      || column.field];
   });
 }
 
-function analyzeTable(table, activeRows, inputs, outputs) {
+function analyzeTable(table, activeRows, inputs, outputs, bom = DEFAULT_BOM, variables = []) {
   const errors = [];
   const warnings = [];
   if (!activeRows.length) return { errors, warnings };
-  const constraints = activeRows.map(entry => rowConstraints(table, entry, inputs));
+  const constraints = activeRows.map(entry => rowConstraints(table, entry, inputs, bom, variables));
   for (let i = 0; i < activeRows.length; i++) {
     if (constraints[i].some(constraint => constraint.kind === 'numeric' && constraint.intervals.length === 0)) {
       warnings.push(`第 ${activeRows[i].index + 1} 行条件域为空，永远不会命中`);
@@ -431,7 +476,7 @@ function analyzeTable(table, activeRows, inputs, outputs) {
       const equivalent = rowSubset(constraints[i], constraints[j]) === true && rowSubset(constraints[j], constraints[i]) === true;
       if (equivalent) errors.push(`第 ${activeRows[i].index + 1} 行与第 ${activeRows[j].index + 1} 行条件完全一致，必然同时触发`);
       else if (overlap === true) {
-        const conflicts = conflictingActions(table, activeRows[i].row, activeRows[j].row, outputs);
+        const conflicts = conflictingActions(table, activeRows[i].row, activeRows[j].row, outputs, variables);
         warnings.push(conflicts.length
           ? `第 ${activeRows[i].index + 1} 行与第 ${activeRows[j].index + 1} 行条件存在重叠，且动作结果冲突：${conflicts.join('、')}`
           : `第 ${activeRows[i].index + 1} 行与第 ${activeRows[j].index + 1} 行条件存在重叠`);
@@ -464,34 +509,40 @@ function analyzeTable(table, activeRows, inputs, outputs) {
 
   if (!table.rows.some((row, index) => row.enabled && (row.isDefault || table.defaultRow === index))) {
     const gap = findUncoveredWitness(constraints, null, activeRows.map((_, index) => index));
-    if (gap.status === 'found') warnings.push(`决策表有命中缺口，例如：${formatWitness(gap.witness, table, inputs)}`);
+    if (gap.status === 'found') warnings.push(`决策表有命中缺口，例如：${formatWitness(gap.witness, table, inputs, variables)}`);
     if (gap.status === 'limited') warnings.push(`多维缺口分析超过 ${ANALYSIS_NODE_LIMIT} 个组合，未能完成`);
   }
   return { errors, warnings };
 }
 
-export function validateTable(table, bom = DEFAULT_BOM) {
+export function validateTable(table, bom = DEFAULT_BOM, declaredVariables = []) {
   const inputs = bomInputs(bom);
   const outputs = bomOutputs(bom);
+  const variableError = validateRuleSetVariables(declaredVariables);
+  if (variableError) return { error: `规则集变量无效：${variableError}`, warnings: [] };
+  const variables = canonicalRuleSetVariables(declaredVariables);
+  if (variables.some(variable => (bom.fields || []).some(field => field.key === variable.name))) {
+    return { error: '规则集变量名称不能与 BOM 字段重复', warnings: [] };
+  }
   if (!table || typeof table !== 'object') return { error: '决策表内容无效', warnings: [] };
   if (typeof table.name !== 'string' || !table.name.trim() || table.name.length > 80) return { error: '名称需为 1–80 个字符', warnings: [] };
   if (typeof table.description !== 'string' || table.description.length > 500) return { error: '说明不能超过 500 个字符', warnings: [] };
   if (typeof table.category !== 'string' || !PACKAGE_NAME_RE.test(canonicalPackageName(table.category))) return { error: '规则包需为有效英文包名', warnings: [] };
   if (!Number.isInteger(table.priority) || table.priority < -1000 || table.priority > 1000) return { error: '优先级需为 -1000 到 1000 的整数', warnings: [] };
   if (!hitPolicies.some(policy => policy.key === hitPolicyOf(table))) return { error: '命中策略无效', warnings: [] };
-  if (!Array.isArray(table.conditions) || table.conditions.length < 1 || table.conditions.length > inputs.length) return { error: '条件列数量无效', warnings: [] };
-  if (!Array.isArray(table.actions) || table.actions.length < 1 || table.actions.length > outputs.length) return { error: '结果列数量无效', warnings: [] };
+  if (!Array.isArray(table.conditions) || table.conditions.length < 1 || table.conditions.length > inputs.length + variables.length) return { error: '条件列数量无效', warnings: [] };
+  if (!Array.isArray(table.actions) || table.actions.length < 1 || table.actions.length > outputs.length + variables.length) return { error: '结果列数量无效', warnings: [] };
   const conditionKeys = new Set();
   for (const column of table.conditions) {
-    const field = findField(bom, column?.field);
-    if (!field || field.kind !== 'input' || conditionKeys.has(field.key) || !operators.some(op => op.key === column.operator) || (field.type === 'Boolean' && !['==', '!='].includes(column.operator))) return { error: '条件列字段重复或比较方式无效', warnings: [] };
-    conditionKeys.add(field.key);
+    const field = tableColumnField(column, bom, variables, 'input');
+    if (!field || field.kind !== 'input' || conditionKeys.has(`${column?.fieldSource || 'bom'}:${field.key}`) || !operators.some(op => op.key === column.operator) || (field.type === 'Boolean' && !['==', '!='].includes(column.operator))) return { error: '条件列字段重复或比较方式无效', warnings: [] };
+    conditionKeys.add(`${column?.fieldSource || 'bom'}:${field.key}`);
   }
   const actionKeys = new Set();
   for (const column of table.actions) {
-    const field = findField(bom, column?.field);
-    if (!field || field.kind !== 'output' || actionKeys.has(field.key)) return { error: '结果列字段重复或无效', warnings: [] };
-    actionKeys.add(column.field);
+    const field = tableColumnField(column, bom, variables, 'output');
+    if (!field || field.kind !== 'output' || actionKeys.has(`${column?.fieldSource || 'bom'}:${field.key}`)) return { error: '结果列字段重复或无效', warnings: [] };
+    actionKeys.add(`${column?.fieldSource || 'bom'}:${field.key}`);
   }
   if (!Array.isArray(table.rows) || table.rows.length < 1 || table.rows.length > 200) return { error: '决策表需要 1–200 行', warnings: [] };
 
@@ -520,9 +571,10 @@ export function validateTable(table, bom = DEFAULT_BOM) {
     // 校验条件单元格值（区间/枚举/单值）
     for (let c = 0; c < table.conditions.length; c++) {
       const col = table.conditions[c];
-      const field = inputs.find(f => f.key === col.field);
+      const field = tableColumnField(col, bom, variables, 'input');
       try {
-        parseConditionCell(field, col.operator, row.conditions[c], bom);
+        if (col.fieldSource === 'variable') parseVariableConditionCell(findRuleSetVariable(variables, col.field), col.operator, row.conditions[c]);
+        else parseConditionCell(field, col.operator, row.conditions[c], bom);
       } catch (e) {
         return { error: `第 ${index + 1} 行：${e.message}`, warnings: [] };
       }
@@ -532,12 +584,14 @@ export function validateTable(table, bom = DEFAULT_BOM) {
     let actionCount = 0;
     for (let c = 0; c < table.actions.length; c++) {
       const col = table.actions[c];
-      const field = outputs.find(f => f.key === col.field);
+      const field = tableColumnField(col, bom, variables, 'output');
       if (typeof (row.actions[c] ?? '') !== 'string') return { error: `第 ${index + 1} 行：${field.label}的结果值无效`, warnings: [] };
       const cell = (row.actions[c] ?? '').trim();
       if (!cell) continue;
       actionCount++;
-      if (formatDrlValue(field, cell) === null) return { error: `第 ${index + 1} 行：${field.label}的结果值"${cell}"无效`, warnings: [] };
+      if (col.fieldSource === 'variable'
+        ? variableDrlValue(findRuleSetVariable(variables, col.field), cell) === null
+        : formatDrlValue(field, cell) === null) return { error: `第 ${index + 1} 行：${field.label}的结果值"${cell}"无效`, warnings: [] };
     }
     if (actionCount === 0) return { error: `第 ${index + 1} 行没有任何结果赋值`, warnings: [] };
 
@@ -548,7 +602,7 @@ export function validateTable(table, bom = DEFAULT_BOM) {
   if (defaultCount === 1 && activeRows.length === 0) warnings.push('默认行存在但没有任何显式启用行，将作为全量兜底规则触发');
 
   // 冲突检测
-  const { errors, warnings: conflicts } = analyzeTable(table, activeRows, inputs, outputs);
+  const { errors, warnings: conflicts } = analyzeTable(table, activeRows, inputs, outputs, bom, variables);
   if (errors.length) return { error: errors[0], warnings: conflicts };
   warnings.push(...conflicts);
 
@@ -556,10 +610,11 @@ export function validateTable(table, bom = DEFAULT_BOM) {
   return { error: null, warnings };
 }
 
-export function tableRules(table, bom = DEFAULT_BOM, executionKey) {
-  const v = validateTable(table, bom);
+export function tableRules(table, bom = DEFAULT_BOM, executionKey, declaredVariables = []) {
+  const v = validateTable(table, bom, declaredVariables);
   if (v.error) throw new Error(v.error);
   const inputs = bomInputs(bom);
+  const variables = canonicalRuleSetVariables(declaredVariables);
   const rules = [];
   const activeRows = [];
   const defaultRows = [];
@@ -573,17 +628,17 @@ export function tableRules(table, bom = DEFAULT_BOM, executionKey) {
 
   // 生成所有显式行的规则条件片段，供默认行引用
   const allRowFragments = activeRows.map(({ row, index }) => {
-    const fragments = rowConditions(table, row, inputs, bom);
+    const fragments = rowConditions(table, row, inputs, bom, variables);
     return { fragments, row, index };
   });
 
   for (const [position, { row, index }] of activeRows.entries()) {
-    const conditions = rowConditions(table, row, inputs, bom);
+    const parts = rowConditionParts(table, row, inputs, bom, variables);
     const actionEntries = [];
     for (let c = 0; c < table.actions.length; c++) {
       const cell = (row.actions[c] ?? '').trim();
       if (!cell) continue;
-      actionEntries.push({ field: table.actions[c].field, value: cell });
+      actionEntries.push({ field: table.actions[c].field, fieldSource: table.actions[c].fieldSource || 'bom', value: cell });
     }
     rules.push({
       name: `${table.name} 第${index + 1}行`, description: '', category: table.category, priority: table.priority,
@@ -592,7 +647,7 @@ export function tableRules(table, bom = DEFAULT_BOM, executionKey) {
       tableRowIndex: index,
       tableDefault: false,
       collectHit: collectsHits(table) ? { tableName: table.name, rowIndex: index, defaultRow: false } : null,
-      conditions: conditions.map(frag => ({ raw: frag })),
+      conditions: [...parts.input.map(frag => ({ raw: frag })), ...parts.variable],
       actions: actionEntries,
     });
   }
@@ -603,12 +658,19 @@ export function tableRules(table, bom = DEFAULT_BOM, executionKey) {
     for (let c = 0; c < table.actions.length; c++) {
       const cell = (row.actions[c] ?? '').trim();
       if (!cell) continue;
-      actionEntries.push({ field: table.actions[c].field, value: cell });
+      actionEntries.push({ field: table.actions[c].field, fieldSource: table.actions[c].fieldSource || 'bom', value: cell });
     }
-    const notPatterns = allRowFragments.map(({ fragments }) => ({
+    const notPatterns = allRowFragments.map(({ row: explicitRow }) => {
+      const parts = rowConditionParts(table, explicitRow, inputs, bom, variables);
+      const clauses = [
+        `RuleInput( ${parts.input.join(', ')} )`,
+        ...(parts.variable.length ? [`RuleContext( ${parts.variable.map(item => `${item.field} ${item.operator} ${variableDrlValue(findRuleSetVariable(variables, item.field), item.value)}`).join(', ')} )`] : []),
+      ];
+      return {
       pattern: 'not',
-      condition: fragments.length ? `RuleInput( ${fragments.join(', ')} )` : 'RuleInput()',
-    }));
+      condition: clauses.length === 1 ? clauses[0] : `( ${clauses.join(' and ')} )`,
+      };
+    });
     rules.push({
       name: `${table.name} 默认行`, description: '', category: table.category, priority: table.priority,
       salience: table.priority * TABLE_PRIORITY_SCALE - 1,
@@ -623,14 +685,14 @@ export function tableRules(table, bom = DEFAULT_BOM, executionKey) {
   return rules;
 }
 
-export const tableDrl = (table, bom = DEFAULT_BOM, executionKey) => generateDrl(tableRules(table, bom, executionKey), bom);
+export const tableDrl = (table, bom = DEFAULT_BOM, executionKey, declaredVariables = null) => generateDrl(tableRules(table, bom, executionKey, declaredVariables || []), bom, declaredVariables);
 
 /**
  * 将 Drools 返回的规则名转换为稳定的决策表行轨迹。
  * fired 的顺序就是实际触发顺序；COLLECT 额外标记为独立收集结果。
  */
-export function tableExecutionTrace(table, fired = [], bom = DEFAULT_BOM) {
-  const generated = tableRules(table, bom);
+export function tableExecutionTrace(table, fired = [], bom = DEFAULT_BOM, declaredVariables = []) {
+  const generated = tableRules(table, bom, undefined, declaredVariables);
   const byRuleName = new Map(generated.map((rule, index) => [
     `${rule.name} [${index + 1}]`,
     rule,
@@ -665,9 +727,9 @@ export function tableExecutionTrace(table, fired = [], bom = DEFAULT_BOM) {
   });
 }
 
-export function tableCollectedHits(table, fired = [], bom = DEFAULT_BOM) {
+export function tableCollectedHits(table, fired = [], bom = DEFAULT_BOM, declaredVariables = []) {
   if (!collectsHits(table)) return [];
-  return tableExecutionTrace(table, fired, bom)
+  return tableExecutionTrace(table, fired, bom, declaredVariables)
     .filter(entry => entry.rowIndex !== null)
     .map(entry => ({
       order: entry.order,
@@ -778,6 +840,73 @@ function flowStepMembers(step, rules, tables, packages) {
   return step?.id ? [{ type: step.type, id: step.id }] : [];
 }
 
+function flowRuleAssets(flow, rules, tables, packages) {
+  return [...(flow.steps || []), ...(flow.branches || []).flatMap(branch => branch.steps || [])]
+    .flatMap(step => flowStepMembers(step, rules, tables, packages)
+      .map(member => member.asset || (member.type === 'rule'
+        ? rules.find(asset => asset.id === member.id)
+        : tables.find(asset => asset.id === member.id)))
+      .filter(asset => asset?.published)
+      .filter(asset => rules.includes(asset)));
+}
+
+function validateFlowRuleVariableUsage(flow, rules, tables, packages, variables) {
+  for (const asset of flowRuleAssets(flow, rules, tables, packages)) {
+    const rule = asset.published;
+    const ruleName = rule.name || asset.id;
+    for (const item of [...(rule.conditions || []), ...(rule.actions || [])]) {
+      if (item?.fieldSource !== 'variable') continue;
+      const variable = findRuleSetVariable(variables, item.field);
+      if (!variable) return `规则“${ruleName}”引用的规则集变量“${item.field}”未在规则集中定义；正式入口为 Rule Project 属性`;
+      if (rule.conditions?.includes(item)) {
+        if (!['==', '!=', '>', '<', '>=', '<='].includes(item.operator)) return `规则“${ruleName}”的变量条件运算符无效`;
+        if (variable.type === 'Boolean' && !['==', '!='].includes(item.operator)) return `规则“${ruleName}”的布尔变量只支持等于或不等于`;
+      }
+      if (variableDrlValue(variable, item.value) === null) return `规则“${ruleName}”的变量“${item.field}”值无效`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Resolve the single variable scope used by a rule flow.
+ *
+ * A non-empty project variable array is authoritative. When it is empty or
+ * absent, legacy flow/member declarations are merged for compatibility with
+ * older assets that predate the Rule Project entry point.
+ */
+export function resolveFlowVariables(flow, rules, tables, bom = DEFAULT_BOM, packages = [], projectVariables = null) {
+  if (flow?.variables != null && !Array.isArray(flow.variables)) throw new Error('规则集变量定义必须是数组');
+  if (projectVariables != null && !Array.isArray(projectVariables)) throw new Error('Rule Project 变量定义必须是数组');
+  const rawFlowVariables = Array.isArray(projectVariables) && projectVariables.length
+    ? projectVariables
+    : Array.isArray(flow?.variables) ? flow.variables : [];
+  const flowVariableError = validateRuleSetVariables(rawFlowVariables);
+  if (flowVariableError) throw new Error(`规则集变量无效：${flowVariableError}`);
+
+  const authoritative = rawFlowVariables.length > 0;
+  const merged = new Map(canonicalRuleSetVariables(rawFlowVariables).map(variable => [variable.name, variable]));
+  for (const asset of flowRuleAssets(flow, rules, tables, packages)) {
+    const memberVariables = normalizeRuleSetVariables(asset.published.variables);
+    const memberError = validateRuleSetVariables(memberVariables);
+    if (memberError) throw new Error(`规则“${asset.published.name || asset.id}”的变量无效：${memberError}`);
+    for (const variable of canonicalRuleSetVariables(memberVariables)) {
+      const previous = merged.get(variable.name);
+      if (previous && JSON.stringify(previous) !== JSON.stringify(variable)) {
+        throw new Error(`规则集变量 "${variable.name}" 定义冲突`);
+      }
+      if (!authoritative) merged.set(variable.name, variable);
+    }
+  }
+
+  const variables = canonicalRuleSetVariables([...merged.values()]);
+  const bomKeys = new Set((bom?.fields || []).map(field => field.key));
+  if (variables.some(variable => bomKeys.has(variable.name))) throw new Error('规则集变量名称不能与 BOM 字段重复');
+  const usageError = validateFlowRuleVariableUsage(flow, rules, tables, packages, variables);
+  if (usageError) throw new Error(usageError);
+  return variables;
+}
+
 function repeatedGroupMemberError(steps, rules, tables, packages, label) {
   const seen = new Map();
   for (const [index, step] of steps.entries()) {
@@ -795,28 +924,28 @@ function repeatedGroupMemberError(steps, rules, tables, packages, label) {
 
 function validateFlowEditor(editor) {
   if (editor == null) return null;
-  if (typeof editor !== 'object' || Array.isArray(editor)) return '规则流画布信息无效';
+  if (typeof editor !== 'object' || Array.isArray(editor)) return '规则集画布信息无效';
   if (editor.positions != null) {
-    if (typeof editor.positions !== 'object' || Array.isArray(editor.positions)) return '规则流节点位置无效';
+    if (typeof editor.positions !== 'object' || Array.isArray(editor.positions)) return '规则集节点位置无效';
     for (const position of Object.values(editor.positions)) {
-      if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y)) return '规则流节点位置无效';
+      if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y)) return '规则集节点位置无效';
     }
   }
   if (editor.viewport != null) {
     const { x, y, zoom } = editor.viewport;
-    if (![x, y, zoom].every(Number.isFinite) || zoom < 0.25 || zoom > 2) return '规则流画布视口无效';
+    if (![x, y, zoom].every(Number.isFinite) || zoom < 0.25 || zoom > 2) return '规则集画布视口无效';
   }
   return null;
 }
 
 export function validateFlow(flow, rules, tables, bom = DEFAULT_BOM, packages = [], options = {}) {
-  if (!flow || typeof flow !== 'object') return '规则流内容无效';
+  if (!flow || typeof flow !== 'object') return '规则集内容无效';
   if (typeof flow.name !== 'string' || !flow.name.trim() || flow.name.length > 80) return '名称需为 1–80 个字符';
   if (typeof flow.description !== 'string' || flow.description.length > 500) return '说明不能超过 500 个字符';
   const branches = flow.branches ?? [];
-  if (!Array.isArray(flow.steps) || flow.steps.length > 20) return '规则流公共步骤数量无效';
-  if (!Array.isArray(branches) || branches.length > 8) return '规则流最多支持 8 个分支';
-  if (!flow.steps.length && !branches.length) return '规则流至少需要一个步骤或条件分支';
+  if (!Array.isArray(flow.steps) || flow.steps.length > 20) return '规则集公共步骤数量无效';
+  if (!Array.isArray(branches) || branches.length > 8) return '规则集最多支持 8 个分支';
+  if (!flow.steps.length && !branches.length) return '规则集至少需要一个步骤或条件分支';
   const editorError = validateFlowEditor(flow.editor);
   if (editorError) return editorError;
   const nodeIds = new Set();
@@ -871,7 +1000,7 @@ export function validateFlow(flow, rules, tables, bom = DEFAULT_BOM, packages = 
   }
   if (branches.length && !conditionalCount) return '条件网关至少需要一个条件分支';
   if (defaultCount > 1) return '条件网关最多一个默认分支';
-  if (totalSteps > 20) return '规则流全部路径合计最多 20 个步骤';
+  if (totalSteps > 20) return '规则集全部路径合计最多 20 个步骤';
   if (flow.steps.some(step => step.type === 'rule-group')) {
     const repeated = repeatedGroupMemberError(flow.steps, rules, tables, packages, '公共路径');
     if (repeated) return repeated;
@@ -882,12 +1011,18 @@ export function validateFlow(flow, rules, tables, bom = DEFAULT_BOM, packages = 
     const repeated = repeatedGroupMemberError(path, rules, tables, packages, `分支“${branch.name}”路径`);
     if (repeated) return repeated;
   }
+  try {
+    resolveFlowVariables(flow, rules, tables, bom, packages, options.projectVariables);
+  } catch (error) {
+    return error.message;
+  }
   return null;
 }
 
-export function flowSnapshot(flow, rules, tables, bom = DEFAULT_BOM, packages = []) {
-  const error = validateFlow(flow, rules, tables, bom, packages);
+export function flowSnapshot(flow, rules, tables, bom = DEFAULT_BOM, packages = [], projectVariables = null) {
+  const error = validateFlow(flow, rules, tables, bom, packages, { projectVariables });
   if (error) throw new Error(error);
+  const variables = resolveFlowVariables(flow, rules, tables, bom, packages, projectVariables);
   const freezeStep = step => {
     if (step.type === 'rule-group') {
       const resolved = resolveRuleGroupMembers(step.selector, rules, tables, packages);
@@ -899,8 +1034,10 @@ export function flowSnapshot(flow, rules, tables, bom = DEFAULT_BOM, packages = 
             currentBomVersion: bom.version, suggestedAction: 'republish',
           });
         }
-        if (member.type === 'rule') return [{ ...structuredClone(published), name: `${published.name} [${member.id}]` }];
-        return tableRules(published, bom, member.id).map(rule => ({ ...rule, name: `${rule.name} [${member.id}]` }));
+        if (member.type === 'rule') {
+          return [{ ...structuredClone(published), name: `${published.name} [${member.id}]` }];
+        }
+        return tableRules(published, bom, member.id, variables).map(rule => ({ ...rule, name: `${rule.name} [${member.id}]` }));
       });
       const frozen = {
         nodeId: step.nodeId,
@@ -910,7 +1047,8 @@ export function flowSnapshot(flow, rules, tables, bom = DEFAULT_BOM, packages = 
         includeChildren: step.selector.includeChildren,
         members: resolved.map(({ type, id, name, version, bomVersion }) => ({ type, id, name, version, bomVersion })),
         memberFingerprint: ruleGroupFingerprint(resolved),
-        drl: generateDrl(executableRules, bom),
+        variables,
+        drl: generateDrl(executableRules, bom, variables),
       };
       if (step.inputMappings?.length) frozen.inputMappings = structuredClone(step.inputMappings);
       if (step.outputMappings?.length) frozen.outputMappings = structuredClone(step.outputMappings);
@@ -925,30 +1063,36 @@ export function flowSnapshot(flow, rules, tables, bom = DEFAULT_BOM, packages = 
       });
     }
     const frozen = { nodeId: step.nodeId, type: step.type, id: step.id, name: asset.published.name, version: asset.versions.at(-1)?.number,
-      drl: version.drl || (step.type === 'rule' ? generateDrl([asset.published], bom) : tableDrl(asset.published, bom, asset.id)) };
+      variables,
+      drl: step.type === 'rule'
+        ? generateDrl([asset.published], bom, variables)
+        : tableDrl(asset.published, bom, asset.id, variables) };
     if (step.inputMappings?.length) frozen.inputMappings = structuredClone(step.inputMappings);
     if (step.outputMappings?.length) frozen.outputMappings = structuredClone(step.outputMappings);
     return frozen;
   };
+  const steps = flow.steps.map(freezeStep);
+  const branches = (flow.branches ?? []).map(branch => {
+    const field = branch.default ? null : findField(bom, branch.condition.field);
+    return {
+      id: branch.id,
+      name: branch.name,
+      default: branch.default === true,
+      condition: branch.default ? null : {
+        field: branch.condition.field,
+        operator: branch.condition.operator,
+        value: flowConditionValue(field, branch.condition.value),
+      },
+      steps: branch.steps.map(freezeStep),
+    };
+  });
   return {
     name: flow.name,
     description: flow.description,
     bomVersion: bom.version,
     bom: structuredClone(bom),
-    steps: flow.steps.map(freezeStep),
-    branches: (flow.branches ?? []).map(branch => {
-      const field = branch.default ? null : findField(bom, branch.condition.field);
-      return {
-        id: branch.id,
-        name: branch.name,
-        default: branch.default === true,
-        condition: branch.default ? null : {
-          field: branch.condition.field,
-          operator: branch.condition.operator,
-          value: flowConditionValue(field, branch.condition.value),
-        },
-        steps: branch.steps.map(freezeStep),
-      };
-    }),
+    variables,
+    steps,
+    branches,
   };
 }

@@ -208,7 +208,7 @@ function validateBomEventTypes(bom) {
 
 /**
  * 对比新旧 BOM，返回影响分析结果。
- * usedKeys: 当前所有资产（规则、决策表和规则流）引用过的 field key 集合。
+ * usedKeys: 当前所有资产（规则、决策表和规则集）引用过的 field key 集合。
  * 返回 { errors: string[], warnings: string[] }
  *   errors：被删除字段仍被引用 → 必须阻止保存
  *   warnings：类型/kind 变更、枚举收缩 → 提示但不阻止

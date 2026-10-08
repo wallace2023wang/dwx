@@ -214,6 +214,7 @@ const handleReleases = createReleaseHandler({
   readAssets,
   writeAssets,
   readBom,
+  readPackageRecords,
   actorOf,
   appendAuditEvent,
   engine,

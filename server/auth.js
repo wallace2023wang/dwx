@@ -4,6 +4,7 @@ import { createRemoteJWKSet, jwtVerify } from 'jose';
 const ROLE_PERMISSIONS = {
   viewer: ['view'],
   author: ['view', 'author'],
+  'cep-developer': ['view', 'author', 'advanced-epl'],
   reviewer: ['view', 'review'],
   'release-manager': ['view', 'release'],
   admin: ['*'],

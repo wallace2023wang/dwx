@@ -5650,7 +5650,7 @@
     "decisionService": "project-63dbe140/nitrogen-control",
     "version": 1,
     "name": "自动充氮控制 v1",
-    "description": "规则驱动状态机：10 行迁移表 + 结束收口表 + 规则流；门禁套件 16 用例",
+    "description": "规则驱动状态机：10 行迁移表 + 结束收口表 + 规则集；门禁套件 16 用例",
     "target": {
       "type": "flow",
       "id": "f5d2612e-e57b-4826-b0d3-2a38f105d9b7",

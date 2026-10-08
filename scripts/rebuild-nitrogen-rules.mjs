@@ -8,7 +8,7 @@
  *
  * 本脚本把链路从「决策表 + 驱动算阈值」换成「BAL 规则包（含跨字段阈值比较）」：
  *   1. 发布 scripts/seed-nitrogen-bal.mjs 建好的 11 条规则
- *   2. 把规则流改为 Rule Group 步骤（整包执行）
+ *   2. 把规则集改为 Rule Group 步骤（整包执行）
  *   3. 更新测试套件（19 条，含动态阈值用例）
  *   4. 创建新 Release（触发编译 + 门禁）并部署到 RES
  *
@@ -22,7 +22,7 @@
 const RTS_URL = (process.env.RTS_URL || 'http://127.0.0.1:8789').replace(/\/$/, '');
 const PROJECT = process.env.PROJECT_ID || 'project-63dbe140';
 const PACKAGE = 'nitrogen';
-const FLOW_NAME = '自动充氮控制规则流';
+const FLOW_NAME = '自动充氮控制规则集';
 const DECISION_SERVICE = 'nitrogen-control';
 const NO_DEPLOY = process.argv.includes('--no-deploy');
 
@@ -65,7 +65,7 @@ async function resetRevision(assetId, revision, type, label) {
 
 /**
  * 发布规则，并保证**产物冻结的 BOM 版本与当前 BOM 一致**。
- * 平台有意要求：BOM 升版后，依赖它的已发布资产必须重新发布，否则规则流拒绝编译
+ * 平台有意要求：BOM 升版后，依赖它的已发布资产必须重新发布，否则规则集拒绝编译
  * （flowSnapshot：'使用 BOM vN，当前为 vM，请先重新发布该资产'）。
  */
 async function publishRule(assetId, label, currentBomVersion) {
@@ -105,13 +105,13 @@ async function main() {
   const targets = assets.filter(a => a.type === 'rule' || !a.type);
   for (const asset of targets) await publishRule(asset.id, asset.name, currentBomVersion);
 
-  // ---- 2. 规则流改为 Rule Group ----
-  log('\n2. 规则流改为规则包步骤');
+  // ---- 2. 规则集改为 Rule Group ----
+  log('\n2. 规则集改为规则包步骤');
   const flows = await get(`/api/projects/${PROJECT}/flows`);
   let flow = flows.find(f => (f.flowName || f.name) === FLOW_NAME);
   if (!flow) {
     flow = await post(`/api/projects/${PROJECT}/flows`);
-    log(`  创建规则流 ${flow.id ?? flow.flowId}`);
+    log(`  创建规则集 ${flow.id ?? flow.flowId}`);
   }
   const flowId = flow.id ?? flow.flowId;
   const detail = await get(`/api/projects/${PROJECT}/flows/${flowId}`);
@@ -132,12 +132,12 @@ async function main() {
   const compiled = await post(`/api/projects/${PROJECT}/flows/${flowId}/compile`, { revision: saved.revision });
   log(`  编译：${compiled?.ok === false ? '失败' : '通过'}（${compiled?.stepCount ?? '?'} 步 / ${compiled?.branchCount ?? 0} 分支）`);
 
-  // ---- 3. 发布规则流 ----
-  log('\n3. 发布规则流');
+  // ---- 3. 发布规则集 ----
+  log('\n3. 发布规则集');
   const flowNow = await get(`/api/projects/${PROJECT}/flows/${flowId}`);
   if (flowNow.status !== 'published') {
     const published = await post(`/api/projects/${PROJECT}/flows/${flowId}/publish`, { revision: flowNow.revision });
-    log(`  规则流 → published v${published.version}`);
+    log(`  规则集 → published v${published.version}`);
   } else {
     log(`  已是 published v${flowNow.version}（如需带最新规则需重新发布：页面操作或本脚本重跑前先 bump）`);
   }

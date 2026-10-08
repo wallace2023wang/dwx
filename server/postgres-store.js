@@ -147,6 +147,8 @@ export class PostgresStore {
       FROM projects p WHERE ($1 OR NOT p.archived) ORDER BY p.updated_at DESC`, [includeArchived]);
     return result.rows.map(row => ({
       id: row.id, name: row.name, description: row.description, icon: row.icon, engine: row.engine || 'rules',
+      variables: Array.isArray(row.variables) ? row.variables : [],
+      approvalPolicy: row.approval_policy || undefined,
       version: row.version, branch: row.branch, defaultEnvironment: row.default_environment,
       archived: row.archived, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at),
       updatedBy: row.updated_by, packageCount: row.package_count, assetCount: row.asset_count,
@@ -163,10 +165,10 @@ export class PostgresStore {
     try {
       await client.query('BEGIN');
       await client.query(`INSERT INTO projects
-        (id, workspace_id, name, description, icon, engine, version, branch, default_environment, archived, created_at, updated_at, updated_by)
-        VALUES ($1, 'default', $2, $3, $4, $5, $6, 'main', $7, false, $8, $8, $9)`, [
+        (id, workspace_id, name, description, icon, engine, version, branch, default_environment, variables, approval_policy, archived, created_at, updated_at, updated_by)
+        VALUES ($1, 'default', $2, $3, $4, $5, $6, 'main', $7, $8, $9, false, $10, $10, $11)`, [
         project.id, project.name, project.description, project.icon, project.engine || 'rules', project.version, project.defaultEnvironment,
-        project.createdAt, project.updatedBy,
+        JSON.stringify(project.variables || []), JSON.stringify(project.approvalPolicy || {}), project.createdAt, project.updatedBy,
       ]);
       for (const pkg of packages) await client.query(`INSERT INTO packages (project_id, name, label, parent_id, created_at)
         VALUES ($1, $2, $3, $4, $5)`, [project.id, pkg.name, pkg.label, pkg.parentId || null, pkg.createdAt]);
@@ -181,9 +183,9 @@ export class PostgresStore {
 
   async updateProject(id, updates) {
     const result = await this.pool.query(`UPDATE projects SET name = $2, description = $3, icon = $4,
-      default_environment = $5, updated_at = $6, updated_by = $7 WHERE id = $1 RETURNING id`, [
+      default_environment = $5, variables = $6, approval_policy = $7, updated_at = $8, updated_by = $9 WHERE id = $1 RETURNING id`, [
       id, updates.name, updates.description, updates.icon, updates.defaultEnvironment,
-      updates.updatedAt, updates.updatedBy,
+      JSON.stringify(updates.variables || []), JSON.stringify(updates.approvalPolicy || {}), updates.updatedAt, updates.updatedBy,
     ]);
     return result.rowCount ? this.getProject(id) : null;
   }

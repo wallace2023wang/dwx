@@ -232,7 +232,7 @@ A′ + C 意味着同时使用 Drools 与 Esper，落地为**两个项目、两�
 |---|---|---|
 | 引擎 / 项目 | Drools / 新建 `engine=rules` | Esper / 复用 `engine=cep` |
 | BOM | 状态机入参与设备指令 | 传感器事件类型 |
-| 资产 | 决策表 + 规则流 + 套件 | EventStream |
+| 资产 | 决策表 + 规则集 + 套件 | EventStream |
 
 核实：平台 BOM 按项目隔离（`bom-<projectId>.json`，`server/index.js:40,131`），事件校验走 `validateEventPayloads(events, cepBom)`、控制执行走 `parseFacts(facts, rulesBom)`，**两引擎之间无共享字段定义、无交叉校验**。因此两套 BOM 可独立演进，改一边不需要重发另一边的 Release。
 

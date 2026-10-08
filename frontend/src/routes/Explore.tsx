@@ -16,7 +16,7 @@ import { type ExploreItem, type ExploreKind, useExploreCatalog } from '../api/ex
 const kindMeta: Record<ExploreKind, { label: string; icon: typeof FileText; className: string }> = {
   rule: { label: 'BAL 规则', icon: FileText, className: 'bg-brand-primary-l text-brand-primary' },
   'decision-table': { label: '决策表', icon: Table2, className: 'bg-[#ede9fe] text-[#6d28d9]' },
-  flow: { label: '规则流', icon: GitBranch, className: 'bg-[#e8f5e9] text-env-production' },
+  flow: { label: '规则集', icon: GitBranch, className: 'bg-[#e8f5e9] text-env-production' },
   'event-stream': { label: '事件流', icon: GitBranch, className: 'bg-[#e8f5e9] text-env-production' },
   bom: { label: 'BOM 字段', icon: Braces, className: 'bg-[#fff3e0] text-[#a15c00]' },
 }
@@ -113,7 +113,7 @@ export default function Explore() {
               <option value="all">全部类型</option>
               <option value="rule">BAL 规则</option>
               <option value="decision-table">决策表</option>
-              <option value="flow">规则流</option>
+              <option value="flow">规则集</option>
               <option value="event-stream">事件流</option>
               <option value="bom">BOM 字段</option>
             </select>

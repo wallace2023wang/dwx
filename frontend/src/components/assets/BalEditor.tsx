@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { ChevronDown, FileCode2, FileText, Languages } from 'lucide-react'
-import type { AssetDetail, BomField, RuleDraft } from '../../types'
+import type { AssetDetail, BomField, RuleDraft, RuleSetVariable } from '../../types'
 import AssetProperties from './AssetProperties'
 import BalRuleView from './BalRuleView'
 import BomVersionNotice from './BomVersionNotice'
@@ -19,6 +19,7 @@ const statusMeta = {
 interface BalEditorProps {
   detail: AssetDetail | null | undefined
   fields: BomField[]
+  projectVariables?: RuleSetVariable[]
   loading?: boolean
   onOpenBom?: (fieldKey: string) => void
 }
@@ -31,7 +32,7 @@ function EmptyEditor({ loading }: { loading?: boolean }) {
   )
 }
 
-export default function BalEditor({ detail, fields, loading, onOpenBom }: BalEditorProps) {
+export default function BalEditor({ detail, fields, projectVariables, loading, onOpenBom }: BalEditorProps) {
   const [view, setView] = useState<'bal' | 'drl'>('bal')
 
   useEffect(() => setView('bal'), [detail?.id])
@@ -58,7 +59,7 @@ export default function BalEditor({ detail, fields, loading, onOpenBom }: BalEdi
         {view === 'bal'
           ? draft
             ? <>
-                <BalRuleView draft={draft} fields={fields} onOpenBom={onOpenBom} />
+                <BalRuleView draft={draft} fields={fields} projectVariables={projectVariables} onOpenBom={onOpenBom} />
                 <AssetProperties attributes={detail.attributes} />
               </>
             : <div className="p-5 text-[11px] text-[#c62828]">该演示规则缺少结构化 BAL 定义。</div>

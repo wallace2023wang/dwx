@@ -189,3 +189,41 @@ test('extended string and date operators support compatible business-field opera
   assert.match(drl, /dateValue\.compareTo\(dateOther\) < 0/);
   assert.match(drl, /dateValue\.compareTo\(dateOther\) > 0/);
 });
+
+test('Ruleset Variables are declared separately from BOM and can be read and written', () => {
+  const rule = newRule();
+  rule.variables = [
+    { name: 'pctAtLeastMax', label: '浓度达到最大值', type: 'Boolean', defaultValue: false },
+    { name: 'phaseCandidate', label: '候选阶段', type: 'String', defaultValue: 'FILLING', enum: ['FILLING', 'CIRCULATION'] },
+  ];
+  rule.conditions = [{ fieldSource: 'variable', field: 'pctAtLeastMax', operator: '==', value: 'true' }];
+  rule.actions = [{ fieldSource: 'variable', field: 'phaseCandidate', value: 'CIRCULATION' }];
+
+  assert.equal(validateRule(rule), null);
+  const drl = generateDrl([rule]);
+  assert.match(drl, /declare RuleContext/);
+  assert.match(drl, /pctAtLeastMax : java\.lang\.Boolean/);
+  assert.match(drl, /phaseCandidate : String/);
+  assert.match(drl, /\$ctx : RuleContext\( pctAtLeastMax == true \)/);
+  assert.match(drl, /modify\(\$ctx\)/);
+  assert.doesNotMatch(drl, /pctAtLeastMax :.*RuleInput/);
+});
+
+test('Ruleset Variables reject undeclared references, invalid defaults, duplicates, and BOM collisions', () => {
+  const rule = newRule();
+  rule.variables = [{ name: 'flag', label: '标记', type: 'Boolean', defaultValue: 'yes' }];
+  assert.match(validateRule(rule), /默认值无效/);
+
+  rule.variables = [
+    { name: 'flag', label: '标记', type: 'Boolean', defaultValue: false },
+    { name: 'flag', label: '另一个标记', type: 'Boolean', defaultValue: false },
+  ];
+  assert.match(validateRule(rule), /重复/);
+
+  rule.variables = [{ name: 'customerAge', label: '年龄副本', type: 'Integer', defaultValue: 18 }];
+  assert.match(validateRule(rule), /BOM/);
+
+  rule.variables = [{ name: 'flag', label: '标记', type: 'Boolean', defaultValue: false }];
+  rule.conditions = [{ fieldSource: 'variable', field: 'missing', operator: '==', value: 'true' }];
+  assert.match(validateRule(rule), /条件变量/);
+});

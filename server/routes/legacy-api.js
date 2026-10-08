@@ -4,6 +4,7 @@ import { flowSnapshot, newFlow, newTable, tableCollectedHits, tableDrl, tableExe
 import { advanceAssetRevision, initializeAssetRevision, normalizePackageReferences } from '../domain-utils.js';
 import { bodyOf, expectedRevision, operationError, reply, revisionConflict } from '../http-utils.js';
 import { domainErrorResult } from '../../shared/errors.js';
+import { nextRulesetName, rulesetNameConflict } from '../../shared/ruleset-names.js';
 
 export function createLegacyApiHandler({
   engine,
@@ -28,11 +29,13 @@ export function createLegacyApiHandler({
       if (req.method === 'POST') {
         const result = await mutateAssets(kind, assets => {
           const now = new Date().toISOString();
-          const item = initializeAssetRevision({ id: crypto.randomUUID(), draft: isTable ? newTable() : newFlow(), published: null, versions: [], archived: false, updatedAt: now });
+          const draft = isTable ? newTable() : newFlow();
+          if (!isTable) draft.name = nextRulesetName(assets, draft.name);
+          const item = initializeAssetRevision({ id: crypto.randomUUID(), draft, published: null, versions: [], archived: false, updatedAt: now });
           assets.unshift(item);
           return { item };
         });
-        await appendAuditEvent('asset.created', isTable ? 'table' : 'flow', result.item.id, `创建${isTable ? '决策表' : '规则流'}：${result.item.draft.name}`, { revision: 1 }, req);
+        await appendAuditEvent('asset.created', isTable ? 'table' : 'flow', result.item.id, `创建${isTable ? '决策表' : '规则集'}：${result.item.draft.name}`, { revision: 1 }, req);
         return reply(res, 201, result.item);
       }
     }
@@ -53,12 +56,16 @@ export function createLegacyApiHandler({
         if (!item) return { status: 404, error: '资产不存在' };
         const conflict = revisionConflict(item, expected);
         if (conflict) return conflict;
+        if (!isTable) {
+          const nameConflict = rulesetNameConflict(assets, item, draft.name, { allowUnchanged: true });
+          if (nameConflict) return nameConflict;
+        }
         item.draft = draft;
         advanceAssetRevision(item, 'saved', true);
         return { item };
       });
       if (result.error) return reply(res, result.status, operationError(result));
-      await appendAuditEvent('asset.saved', isTable ? 'table' : 'flow', id, `保存${isTable ? '决策表' : '规则流'}：${result.item.draft.name}`, { revision: result.item.revision }, req);
+      await appendAuditEvent('asset.saved', isTable ? 'table' : 'flow', id, `保存${isTable ? '决策表' : '规则集'}：${result.item.draft.name}`, { revision: result.item.revision }, req);
       return reply(res, 200, result.item);
     }
     if (segments.length !== 4 || req.method !== 'POST') return reply(res, 404, { error: '未找到操作' });
@@ -93,7 +100,7 @@ export function createLegacyApiHandler({
         const result = domainErrorResult(error);
         return reply(res, result.status, operationError(result));
       }
-      if (!flow) return reply(res, 400, { error: '规则流尚未发布' });
+      if (!flow) return reply(res, 400, { error: '规则集尚未发布' });
       const options = {};
       if (Object.prototype.hasOwnProperty.call(payload, 'stopAfter')) options.stopAfter = payload.stopAfter;
       if (Object.prototype.hasOwnProperty.call(payload, 'expectedPath')) options.expectedPath = payload.expectedPath;
@@ -116,6 +123,10 @@ export function createLegacyApiHandler({
       else if (action === 'restore') {
         const version = item.versions.find(entry => entry.number === params.version);
         if (!version) return { status: 404, error: '版本不存在' };
+        if (!isTable) {
+          const nameConflict = rulesetNameConflict(assets, item, version.draft.name, { allowUnchanged: true });
+          if (nameConflict) return nameConflict;
+        }
         item.draft = structuredClone(version.draft);
         advanceAssetRevision(item, 'restored', true);
       } else if (isTable) {
@@ -137,6 +148,8 @@ export function createLegacyApiHandler({
         item.published = structuredClone(item.draft);
         advanceAssetRevision(item, 'saved');
       } else {
+        const nameConflict = rulesetNameConflict(assets, item, item.draft.name, { publishedOnly: true });
+        if (nameConflict) return nameConflict;
         const rules = await readRules();
         const tables = await readAssets('tables');
         let snapshot;
@@ -165,7 +178,7 @@ export function createLegacyApiHandler({
     if (result.error) return reply(res, result.status, operationError(result));
     const actionLabels = { publish: '发布', restore: '恢复', archive: '归档' };
     await appendAuditEvent(`asset.${action}`, isTable ? 'table' : 'flow', id,
-      `${actionLabels[action]}${isTable ? '决策表' : '规则流'}：${result.item.draft.name}`,
+      `${actionLabels[action]}${isTable ? '决策表' : '规则集'}：${result.item.draft.name}`,
       { revision: result.item.revision, version: result.item.versions.at(-1)?.number || null }, req);
     return reply(res, 200, result.item);
   }

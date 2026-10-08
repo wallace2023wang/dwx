@@ -156,7 +156,7 @@ function transformSuite(suite: ServerSuite, bom: BomModel): ManagedTestSuite {
     ...(testCase.parameters || []).flatMap(parameter => Object.keys(parameter.facts)),
   ]))]
   const results = new Map((suite.lastRun?.cases || []).map(testCase => [testCase.id, testCase]))
-  const targetType = { rule: '规则', table: '决策表', flow: '规则流' }[suite.target.type]
+  const targetType = { rule: '规则', table: '决策表', flow: '规则集' }[suite.target.type]
   return {
     id: suite.id,
     name: suite.name,

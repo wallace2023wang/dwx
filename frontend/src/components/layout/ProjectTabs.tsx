@@ -3,7 +3,7 @@ import { useProject } from '../../api/projects'
 
 const ruleTabs = [
   { label: '资产', path: 'assets' },
-  { label: '规则流', path: 'flow' },
+  { label: '规则集', path: 'flow' },
   { label: 'BOM / 词汇', path: 'bom' },
   { label: '测试套件', path: 'tests' },
   { label: '审核', path: 'reviews' },

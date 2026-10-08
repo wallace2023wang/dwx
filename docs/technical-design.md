@@ -8,7 +8,7 @@
 ```text
 ┌─────────────────────────────────────────────────────────────┐
 │ Rule Designer（React）                                      │
-│ 规则 / 决策表 / 规则流 / 测试 / 中文业务词汇               │
+│ 规则 / 决策表 / 规则集 / 测试 / 中文业务词汇               │
 └───────────────────────┬─────────────────────────────────────┘
                         │ 管理 API
 ┌───────────────────────▼─────────────────────────────────────┐
@@ -63,6 +63,14 @@ Release 使用规范化 JSON 表示。创建后除部署状态外不得修改内
       ]
     }
   ],
+  "variables": [
+    {
+      "name": "pctAtLeastMax",
+      "label": "浓度达到最大值",
+      "type": "Boolean",
+      "defaultValue": false
+    }
+  ],
   "routing": {
     "type": "exclusive",
     "afterStep": 1,
@@ -103,7 +111,8 @@ Release 使用规范化 JSON 表示。创建后除部署状态外不得修改内
 - `engine`
 - `model`（新 Release 必填；旧 Release 缺失时按 legacy 契约验签）
 - `steps`
-- `routing`（分支规则流存在时必填；线性和 legacy Release 不包含）
+- `routing`（分支规则集存在时必填；线性和 legacy Release 不包含）
+- `variables`（Rule Project 变量的冻结定义，变量定义改变会改变 checksum）
 
 不覆盖 Team Server 本地部署状态。JSON 属性按名称排序后进行 UTF-8 SHA-256，保证不同进程得到相同结果。
 
@@ -112,16 +121,17 @@ Release 使用规范化 JSON 表示。创建后除部署状态外不得修改内
 - 规则和决策表每次发布同时冻结结构化内容、完整 BOM、`bomVersion` 和已经通过编译的 DRL。
 - 单规则：一个执行步骤，直接复用规则版本冻结的 DRL 和 BOM，不按当前模型重新生成。
 - 决策表：一个执行步骤，直接复用决策表版本冻结的 DRL 和 BOM，不按当前模型重新生成。
-- 线性规则流：每个已冻结流程步骤对应一个执行步骤，直接复用流程发布快照中的 DRL 和资产版本。
-- 分支规则流：公共步骤位于 `steps[0..afterStep)`，各分支步骤继续扁平化写入 `steps`，`routing.branches[].stepIndexes` 冻结每个分支拥有的步骤。
+- 线性规则集：每个已冻结流程步骤对应一个执行步骤，直接复用流程发布快照中的 DRL 和资产版本。
+- 分支规则集：公共步骤位于 `steps[0..afterStep)`，各分支步骤继续扁平化写入 `steps`，`routing.branches[].stepIndexes` 冻结每个分支拥有的步骤。
 - 流程步骤可包含 `inputMappings` 和 `outputMappings`。输入映射在节点执行前复制“流程上下文源字段 -> 节点输入字段”；输出映射在同名输出回写后复制“节点输出字段 -> 流程上下文目标字段”。
 - 映射源和目标必须存在于冻结 BOM 且类型相同。输入映射目标必须是 `input`，输出映射源必须是 `output`；同组内目标不能重复，源和目标不能相同，每个方向最多 20 项。
 - 未配置映射时继续使用同名字段传递。源值为 `null` 或不存在时不覆盖目标，并在轨迹中记录 `applied: false`。
 - `routing.type` 当前仅支持 `exclusive`。公共步骤执行后按分支显示顺序判断，选择第一条满足条件的分支；全部条件不满足时选择唯一默认分支。没有默认分支时允许不执行任何分支步骤。
 - 条件字段必须存在于冻结 BOM，当前支持 `==`、`!=`、`>`、`>=`、`<`、`<=`；发布快照把编辑器中的值转换为 BOM 对应的字符串、数字或布尔类型。
 - 一个流程当前最多 8 个分支、全部公共和分支步骤合计最多 20 个；每个分支至少一个步骤，且最多一个默认分支。
-- 规则流内全部步骤必须使用当前同一 BOM 版本；模型升级后需重新发布被引用资产，禁止混合不同 `RuleInput` 结构。
+- 规则集内全部步骤必须使用当前同一 BOM 版本；模型升级后需重新发布被引用资产，禁止混合不同 `RuleInput` 结构。
 - Release 只引用已发布版本，不读取未保存或未发布草稿。
+- 规则集是最小发布与执行单元。Ruleset Variable 正式定义位于 Rule Project 属性，规则、决策表和规则集编辑器只引用项目变量；规则级变量仅作为兼容 fallback。
 - 同一个决策服务的版本号单调递增。
 - Release、部署回执和版本序列按项目隔离；非默认项目的 `decisionService` 必须以 `{projectId}/` 开头，避免服务标识跨项目混用。
 - Team Server 执行代理按 Release 的 `model` 校验输入；RES 仍以 DRL 中的 `declare RuleInput` 反射字段，两侧契约互相校验。
@@ -134,7 +144,7 @@ Release 使用规范化 JSON 表示。创建后除部署状态外不得修改内
 - `ALL`：所有匹配行按显示顺序执行。生成的 `salience` 保证顺序稳定，后执行行可覆盖前一行写入的同一结果字段。
 - `FIRST`：显示顺序靠前的匹配行拥有更高 `salience`，并通过 Drools `activation-group` 保证只执行一行。
 - `PRIORITY`：先比较行级业务优先级，再按显示顺序打破同优先级并列；同样通过 `activation-group` 保证只执行一行。
-- 规则流快照、单表 Release 和全量 DRL 导出都使用决策表资产 ID 构造互斥组，多个决策表不会互相取消激活。
+- 规则集快照、单表 Release 和全量 DRL 导出都使用决策表资产 ID 构造互斥组，多个决策表不会互相取消激活。
 - 旧版本决策表未包含 `hitPolicy` 时按 `ALL` 解释，不修改已发布快照。
 - `COLLECT`：所有匹配行按显示顺序执行，同时在 DRL 中声明并插入 `DecisionHit` 事实，RES/Engine 返回独立 `decisionHits` 命中结果集合；旧 `ALL` 仅保留覆盖式兼容语义。
 
@@ -193,7 +203,7 @@ Team Server 把完整 Release 发送给 RES `/deploy`，成功后记录部署回
 
 项目工作区接口只读取对应项目的已发布资产、BOM 和 Release；跨项目 Release ID 返回 `404`。项目删除时同步清理其 Release 和部署回执。
 
-### 3.1 规则流设计期调试
+### 3.1 规则集设计期调试
 
 `POST /api/flows/{id}/test` 除 `draft`、`published` 和 `facts` 外支持：
 
@@ -213,18 +223,18 @@ Team Server 把完整 Release 发送给 RES `/deploy`，成功后记录部署回
 ### 3.2 测试套件与回归门禁
 
 - `GET /api/test-suites`：返回未归档套件。
-- `POST /api/test-suites`、`PUT /api/test-suites/{id}`：创建或更新套件，目标必须是已发布规则、决策表或规则流。
+- `POST /api/test-suites`、`PUT /api/test-suites/{id}`：创建或更新套件，目标必须是已发布规则、决策表或规则集。
 - `POST /api/test-suites/{id}/run`：运行单个套件并保存最近 20 次报告。
 - `POST /api/test-suites/{id}/compare`：在同一目标的两个已发布版本上运行相同数据集，保存对比报告但不替换 `lastRun`。
 - `POST /api/test-suites/run`：顺序运行全部活动套件，返回批量汇总。
 - `POST /api/test-suites/{id}/archive`：归档套件。
 - `/api/projects/{projectId}/test-suites`：上述接口的项目隔离 canonical 路由，覆盖列表、创建、更新、单套件运行、全量运行和归档；`/api/projects/{projectId}/tests` 保留兼容，顶层 `/api/test-suites` 是 `default` 项目的兼容入口。单套件运行可用 `{ "targetVersion": 1 }` 指定已发布版本。
 
-每个案例包含基础输入事实，以及至少一个输出、命中规则或规则流路径断言。案例可选 `parameters[]`；每个参数行与基础输入浅合并并形成独立执行，参数只能覆盖 BOM 输入字段。单案例最多 100 个参数行，单套件展开后最多 1000 次执行。常规执行始终解析目标的最新已发布版本及其冻结 BOM/DRL/流程快照，不读取草稿。报告记录 `targetVersion`、`parentCaseId`、`parameterId`、`inputFacts`、`omittedFields`、逐案例实际输出、命中规则、路径、断言详情和耗时。未提供的可选输入保持未赋值；冻结 BOM 中 `required=true` 的 input 缺失时拒绝执行。
+每个案例包含基础输入事实，以及至少一个输出、命中规则或规则集路径断言。案例可选 `parameters[]`；每个参数行与基础输入浅合并并形成独立执行，参数只能覆盖 BOM 输入字段。单案例最多 100 个参数行，单套件展开后最多 1000 次执行。常规执行始终解析目标的最新已发布版本及其冻结 BOM/DRL/流程快照，不读取草稿。报告记录 `targetVersion`、`parentCaseId`、`parameterId`、`inputFacts`、`omittedFields`、逐案例实际输出、命中规则、路径、断言详情和耗时。未提供的可选输入保持未赋值；冻结 BOM 中 `required=true` 的 input 缺失时拒绝执行。
 
-常规报告同时生成覆盖率：规则目标以 Drools 命中结果统计；决策表以 `decisionTrace[].rowIndex` 对所有启用行（含默认行）统计；规则流以分支 `path.branchId` 统计，无分支流程使用主路径。对比接口可显式指定 `baseVersion` 和 `candidateVersion`，默认使用最近两个版本；比较输出、命中规则、路径和断言状态，并分类为 `unchanged`、`changed`、`improved` 或 `regressed`。非 `unchanged` 项计入 `reviewRequired`。
+常规报告同时生成覆盖率：规则目标以 Drools 命中结果统计；决策表以 `decisionTrace[].rowIndex` 对所有启用行（含默认行）统计；规则集以分支 `path.branchId` 统计，无分支流程使用主路径。对比接口可显式指定 `baseVersion` 和 `candidateVersion`，默认使用最近两个版本；比较输出、命中规则、路径和断言状态，并分类为 `unchanged`、`changed`、`improved` 或 `regressed`。非 `unchanged` 项计入 `reviewRequired`。
 
-Release 门禁不信任 `lastRun`：创建时重新运行当前项目内所有 `required=true` 且绑定同一目标资产的套件。非必需套件仅用于日常回归，不阻止 Release。测试目标解析、报告保存和门禁摘要始终携带同一个 `projectId`，跨项目套件 ID 返回 `404`。测试执行复用设计期的已发布资产执行函数，规则流节点映射、分支选择和轨迹语义只有一份实现。
+Release 门禁不信任 `lastRun`：创建时重新运行当前项目内所有 `required=true` 且绑定同一目标资产的套件。非必需套件仅用于日常回归，不阻止 Release。测试目标解析、报告保存和门禁摘要始终携带同一个 `projectId`，跨项目套件 ID 返回 `404`。测试执行复用设计期的已发布资产执行函数，规则集节点映射、分支选择和轨迹语义只有一份实现。
 
 ### 3.3 Change Set 与审计
 
@@ -240,11 +250,11 @@ Change Set 保存时把资产类型、ID、资产修订号、最近发布版本�
 
 状态机为 `DRAFT -> SUBMITTED -> APPROVED` 或 `DRAFT -> SUBMITTED -> REJECTED -> DRAFT`。提交要求至少一个资产且至少一项实际差异，驳回必须填写意见。项目资产提交后禁止保存、重命名、移动、删除和通过包操作间接修改；驳回后恢复编辑，批准时校验固定修订、BOM 和 Drools 编译结果后生成发布版本。审核动作串行执行，避免批准与驳回并发造成状态和发布版本分离。OIDC 模式使用验签 principal 作为 actor，并禁止提交人批准自己的变更；`local` 模式的 `x-actor` 仅用于本机原型，不可信，允许管理员自审以便开发测试。
 
-资产可用性使用独立 `lifecycleStatus: active | deprecated | archived`，不复用评审/发布状态。废弃资产保留包归属、版本和既有 Release 追溯，但只读且不参与 Rule Group、直接规则流步骤或新 Release；废弃时记录操作者、原因和可选替代资产，恢复后回到活动草稿。归档资产默认不返回、不参与包成员解析和计数，通过 `includeArchived=true` 才用于历史查询。
+资产可用性使用独立 `lifecycleStatus: active | deprecated | archived`，不复用评审/发布状态。废弃资产保留包归属、版本和既有 Release 追溯，但只读且不参与 Rule Group、直接规则集步骤或新 Release；废弃时记录操作者、原因和可选替代资产，恢复后回到活动草稿。归档资产默认不返回、不参与包成员解析和计数，通过 `includeArchived=true` 才用于历史查询。
 
 ### 3.4 项目报告
 
-`GET /api/projects/{projectId}/report` 在项目级鉴权后生成自包含 HTML，不依赖外部 CDN 或前端运行时。聚合内容固定为六个章节：项目概览、BOM 事实类型与字段类型统计、规则/决策表资产清单、规则流步骤与分支拓扑、测试矩阵及覆盖率、Release 与部署历史。规则流报告优先使用 `published` 快照，草稿仅用于尚未发布的规则流；资产、测试套件和发布列表过滤归档对象并按项目隔离。
+`GET /api/projects/{projectId}/report` 在项目级鉴权后生成自包含 HTML，不依赖外部 CDN 或前端运行时。聚合内容固定为六个章节：项目概览、BOM 事实类型与字段类型统计、规则/决策表资产清单、规则集步骤与分支拓扑、测试矩阵及覆盖率、Release 与部署历史。规则集报告优先使用 `published` 快照，草稿仅用于尚未发布的规则集；资产、测试套件和发布列表过滤归档对象并按项目隔离。
 
 报告使用统一 HTML 转义处理项目名称、资产名称、业务描述和其他用户可控展示值。响应使用 `text/html; charset=utf-8` 和 UTF-8 文件名；前端项目报告页提供 HTML 下载和浏览器打印 PDF，打印时隐藏全局导航与报告工具栏并重复表头。空 BOM、空资产、空测试和空 Release 均展示明确空态，不阻断报告生成。
 
@@ -322,7 +332,7 @@ Team Server 支持两种存储适配器。未设置 `DATABASE_URL` 时使用 JSO
 
 设置 `DATABASE_URL` 时，服务启动会自动执行 `server/migrations/*.sql`，并使用 PostgreSQL：
 
-- `assets` 保存规则、决策表和规则流当前草稿、发布快照及 `revision`。
+- `assets` 保存规则、决策表和规则集当前草稿、发布快照及 `revision`。
 - `asset_revisions` 追加保存创建、保存、恢复产生的草稿快照；`asset_versions` 保存不可变发布版本。
 - `bom_versions` 保存模型历史并保证每个项目只有一个活动版本。
 - `test_suites`、`test_runs` 保存套件、版本感知报告和最近运行记录。
@@ -334,7 +344,7 @@ Team Server 支持两种存储适配器。未设置 `DATABASE_URL` 时使用 JSO
 
 资产和测试套件 API 使用期望 `revision`，BOM 使用期望 `version`。应用层先返回结构化冲突，PostgreSQL 写入事务再通过行锁比较数据库当前修订，防止多个 Team Server 进程绕过检查。冲突响应为 `409`，包含 `currentRevision` 和可用时的 `current` 快照。前端保留本地编辑并要求用户显式载入服务器版本。
 
-后续存储工作包括可信用户主体、职责分离、可配置审批层级、Change Set 与 Release 强制关联；大型测试数据、构建日志和制品可迁移到对象存储，并补充备份恢复流程。
+项目记录持久化审核策略，Change Set 在提交时保存策略快照和逐人批准记录；1/2 人审核使用串行评审锁与乐观修订，只有最后一票触发发布。后续存储工作包括 Change Set 与 Release 强制关联；大型测试数据、构建日志和制品可迁移到对象存储，并补充备份恢复流程。
 
 ## 6. 安全演进
 
@@ -357,7 +367,7 @@ MVP 的本机端口仅绑定 `127.0.0.1`。生产前必须完成：
 
 仅保存资产 ID 无法保证历史可重放。Release 同时保存结构化来源元数据和实际执行 DRL，RES 不回查 Team Server。
 
-### ADR-003：规则流先采用短事务顺序执行
+### ADR-003：规则集先采用短事务顺序执行
 
 当前业务目标是决策编排。第一阶段只支持“公共步骤 + 单个排他网关 + 分支步骤”，不支持多级网关、并行、聚合、子流程或循环。人工任务和长事务交给 BPMN 引擎，避免 RES 演变为不完整的工作流系统。
 

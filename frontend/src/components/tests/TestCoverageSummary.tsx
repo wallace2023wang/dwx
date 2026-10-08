@@ -1,7 +1,7 @@
 import { CheckCircle2, CircleDashed } from 'lucide-react'
 import type { ServerCoverage } from '../../api/tests'
 
-const kindLabel = { rule: '规则', 'table-row': '决策表行', 'flow-path': '规则流路径' }
+const kindLabel = { rule: '规则', 'table-row': '决策表行', 'flow-path': '规则集路径' }
 
 export default function TestCoverageSummary({ coverage }: { coverage?: ServerCoverage }) {
   if (!coverage) return null

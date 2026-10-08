@@ -213,6 +213,51 @@ function outputEventType(statement) {
   return inserted || statement.outputEventType || `${statement.name}Event`;
 }
 
+export function eventStreamDependencies(input = {}) {
+  const draft = normalizeEventStreamDraft(input);
+  const enabled = draft.statements.filter(statement => statement.enabled !== false);
+  const producers = new Map();
+  for (const statement of enabled) {
+    const eventType = outputEventType(statement);
+    const list = producers.get(eventType) || [];
+    list.push(statement.name);
+    producers.set(eventType, list);
+  }
+  const dependencies = [];
+  for (const statement of enabled) {
+    for (const eventType of referencedTypes(statement.epl)) {
+      const sourceStatements = producers.get(eventType) || [];
+      if (!sourceStatements.length) continue;
+      dependencies.push({
+        eventType,
+        consumer: statement.name,
+        producers: [...sourceStatements],
+        selfReference: sourceStatements.includes(statement.name),
+      });
+    }
+  }
+  return {
+    outputs: [...producers.entries()].map(([eventType, statements]) => ({ eventType, statements: [...statements] })),
+    dependencies,
+  };
+}
+
+export function eventStreamDependencyImpact(previousInput = {}, nextInput = {}) {
+  const previous = eventStreamDependencies(previousInput);
+  const next = eventStreamDependencies(nextInput);
+  const nextOutputs = new Set(next.outputs.map(output => output.eventType));
+  const removedOutputs = previous.outputs.filter(output => !nextOutputs.has(output.eventType));
+  const nextDraft = normalizeEventStreamDraft(nextInput);
+  const impacts = [];
+  for (const output of removedOutputs) {
+    const consumers = nextDraft.statements
+      .filter(statement => statement.enabled !== false && referencedTypes(statement.epl).includes(output.eventType))
+      .map(statement => statement.name);
+    if (consumers.length) impacts.push({ eventType: output.eventType, removedProducers: output.statements, consumers });
+  }
+  return impacts;
+}
+
 export function normalizeEventStreamDraft(input = {}) {
   return {
     name: String(input.name || '未命名事件流').trim(),

@@ -853,6 +853,88 @@ test('project approval workflow locks submitted assets and publishes the pinned 
   }
 });
 
+test('project approval policy requires distinct reviewers and freezes policy on submission', async () => {
+  const env = await startTestEnv();
+  try {
+    const project = (await env.request('/api/projects', 'POST', {
+      name: '双人审核项目', description: '验证职责分离', icon: 'shield', bomTemplate: 'risk',
+    })).body;
+    const configured = await env.request(`/api/projects/${project.id}`, 'PUT', {
+      name: project.name, description: project.description, icon: project.icon,
+      defaultEnvironment: project.defaultEnvironment, variables: [],
+      approvalPolicy: {
+        requiredApprovals: 2, requireComment: true, preventSelfApproval: true,
+        allowedReviewerRoles: ['reviewer', 'admin'],
+      },
+    });
+    assert.equal(configured.status, 200);
+    assert.equal(configured.body.approvalPolicy.requiredApprovals, 2);
+
+    await env.request(`/api/projects/${project.id}/packages`, 'POST', {
+      name: 'eligibility', label: '准入', parentId: null,
+    });
+    const createdResponse = await env.request(`/api/projects/${project.id}/rules`, 'POST', {
+      type: 'rule', name: '双人审核规则', category: 'eligibility',
+    });
+    assert.equal(createdResponse.status, 201);
+    const created = createdResponse.body;
+    const draft = structuredClone(created.draft);
+    draft.description = '需要双人审核的规则变更';
+    draft.conditions[0].value = '18';
+    draft.actions[0].value = '低';
+    const saved = await env.request(`/api/projects/${project.id}/rules/${created.id}`, 'PUT', {
+      revision: created.revision, draft,
+    });
+    assert.equal(saved.status, 200);
+    const submittedAsset = await env.request(`/api/projects/${project.id}/rules/${created.id}/submit`, 'POST', {
+      revision: saved.body.revision,
+    }, { 'x-actor': 'author-a' });
+    assert.equal(submittedAsset.status, 201);
+    const changeSetId = submittedAsset.body.changeSetId;
+    const submitted = (await env.request(`/api/projects/${project.id}/change-sets/${changeSetId}`)).body;
+    assert.equal(submitted.reviewPolicySnapshot.requiredApprovals, 2);
+
+    const changedPolicy = await env.request(`/api/projects/${project.id}`, 'PUT', {
+      name: project.name, description: project.description, icon: project.icon,
+      defaultEnvironment: project.defaultEnvironment, variables: [],
+      approvalPolicy: {
+        requiredApprovals: 1, requireComment: false, preventSelfApproval: false,
+        allowedReviewerRoles: ['admin'],
+      },
+    });
+    assert.equal(changedPolicy.status, 200);
+
+    const missingComment = await env.request(`/api/projects/${project.id}/change-sets/${changeSetId}/approve`, 'POST', {
+      revision: submitted.revision,
+    }, { 'x-actor': 'reviewer-a' });
+    assert.equal(missingComment.status, 400);
+
+    const first = await env.request(`/api/projects/${project.id}/change-sets/${changeSetId}/approve`, 'POST', {
+      revision: submitted.revision, comment: '一审通过',
+    }, { 'x-actor': 'reviewer-a' });
+    assert.equal(first.status, 200);
+    assert.equal(first.body.status, 'SUBMITTED');
+    assert.equal(first.body.approvals.length, 1);
+    assert.equal(first.body.reviewPolicySnapshot.requiredApprovals, 2);
+    assert.equal((await env.request(`/api/projects/${project.id}/rules/${created.id}`)).body.status, 'in-review');
+
+    const duplicate = await env.request(`/api/projects/${project.id}/change-sets/${changeSetId}/approve`, 'POST', {
+      revision: first.body.revision, comment: '重复批准',
+    }, { 'x-actor': 'reviewer-a' });
+    assert.equal(duplicate.status, 409);
+
+    const second = await env.request(`/api/projects/${project.id}/change-sets/${changeSetId}/approve`, 'POST', {
+      revision: first.body.revision, comment: '二审通过',
+    }, { 'x-actor': 'reviewer-b' });
+    assert.equal(second.status, 200);
+    assert.equal(second.body.status, 'APPROVED');
+    assert.deepEqual(second.body.approvals.map(approval => approval.actor), ['reviewer-a', 'reviewer-b']);
+    assert.equal((await env.request(`/api/projects/${project.id}/rules/${created.id}`)).body.status, 'published');
+  } finally {
+    await env.stop();
+  }
+});
+
 test('project Release builds, deploys, executes, and stays isolated from other projects', async () => {
   const env = await startTestEnv();
   try {
@@ -1286,6 +1368,37 @@ test('CEP draft event-stream can prepare a test skeleton before publish', async 
   }
 });
 
+test('CEP event-stream exposes dependencies and blocks removing the only producer', async () => {
+  const env = await startTestEnv();
+  try {
+    const project = await env.request('/api/projects', 'POST', {
+      name: 'CEP 依赖分析', description: '派生事件引用', icon: 'warehouse', engine: 'cep', bomTemplate: 'grain',
+    });
+    const projectId = project.body.id;
+    const created = await env.request(`/api/projects/${projectId}/event-streams`, 'POST', {
+      name: '多阶段事件流',
+      statements: [
+        { name: 'ProduceAlarm', epl: 'insert into AlarmEvent select * from GrainStore where averageTemperature > 25' },
+        { name: 'ConsumeAlarm', epl: 'insert into EscalatedEvent select * from AlarmEvent' },
+      ],
+    });
+    assert.equal(created.status, 201);
+    assert.deepEqual(created.body.dependencyGraph.dependencies, [{
+      eventType: 'AlarmEvent', consumer: 'ConsumeAlarm', producers: ['ProduceAlarm'], selfReference: false,
+    }]);
+
+    const blocked = await env.request(`/api/projects/${projectId}/event-streams/${created.body.id}`, 'PUT', {
+      revision: created.body.revision,
+      draft: { ...created.body.draft, statements: created.body.draft.statements.filter(statement => statement.name !== 'ProduceAlarm') },
+    });
+    assert.equal(blocked.status, 409);
+    assert.equal(blocked.body.code, 'EVENT_STREAM_DEPENDENCY_CONFLICT');
+    assert.equal(blocked.body.details.dependencies[0].eventType, 'AlarmEvent');
+  } finally {
+    await env.stop();
+  }
+});
+
 test('CEP event-stream deletion is revision-safe and preserves immutable releases', async () => {
   const env = await startTestEnv({ cepApiKey: 'cep-test-key' });
   try {
@@ -1321,7 +1434,11 @@ test('CEP event-stream deletion is revision-safe and preserves immutable release
     });
     assert.equal(deleted.status, 204);
     assert.deepEqual((await env.request(`/api/projects/${projectId}/event-streams`)).body, []);
-    assert.equal((await env.request(`/api/projects/${projectId}/event-streams/${created.body.id}`)).status, 404);
+    const archivedStreams = await env.request(`/api/projects/${projectId}/event-streams?archived=true`);
+    assert.equal(archivedStreams.body[0].id, created.body.id);
+    const archivedDetail = await env.request(`/api/projects/${projectId}/event-streams/${created.body.id}`);
+    assert.equal(archivedDetail.status, 200);
+    assert.equal(archivedDetail.body.status, 'archived');
 
     const releases = await env.request(`/api/projects/${projectId}/releases`);
     assert.equal(releases.status, 200);
@@ -1330,6 +1447,17 @@ test('CEP event-stream deletion is revision-safe and preserves immutable release
       decisionService: 'archived-stream-2', name: '删除后发布包', target: { type: 'event-stream', id: created.body.id },
     });
     assert.equal(recreate.status, 400);
+
+    const restored = await env.request(`/api/projects/${projectId}/event-streams/${created.body.id}/restore`, 'POST', {
+      revision: archivedDetail.body.revision,
+    });
+    assert.equal(restored.status, 200);
+    assert.equal(restored.body.status, 'draft');
+    assert.equal(restored.body.version, published.body.version);
+    assert.equal(restored.body.published, null);
+    assert.equal((await env.request(`/api/projects/${projectId}/event-streams`)).body[0].id, created.body.id);
+    const audit = await env.request(`/api/projects/${projectId}/audit-events`);
+    assert.ok(audit.body.some(event => event.action === 'asset.restored' && event.resourceId === created.body.id));
   } finally {
     await env.stop();
   }

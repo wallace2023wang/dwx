@@ -43,11 +43,15 @@ export interface EventStreamRecord extends EventStreamSummary {
   validationError?: string | null
   schemas?: Array<{ name: string; fields: Array<{ key: string; type: string }> }>
   versions?: EventStreamVersion[]
+  dependencyGraph?: {
+    outputs: Array<{ eventType: string; statements: string[] }>
+    dependencies: Array<{ eventType: string; consumer: string; producers: string[]; selfReference: boolean }>
+  }
 }
 export interface EventStreamCompileResult { diagnostics?: Array<{ statement?: string; line?: number; column?: number; message: string }>; [key: string]: unknown }
 
-export async function loadEventStreams(projectId: string): Promise<EventStreamSummary[]> {
-  return (await http.get<EventStreamSummary[]>(`/projects/${encodeURIComponent(projectId)}/event-streams`)).data
+export async function loadEventStreams(projectId: string, archived = false): Promise<EventStreamSummary[]> {
+  return (await http.get<EventStreamSummary[]>(`/projects/${encodeURIComponent(projectId)}/event-streams`, { params: archived ? { archived: 'true' } : undefined })).data
 }
 
 function requestError(error: unknown) {
@@ -60,11 +64,26 @@ function requestError(error: unknown) {
   return error instanceof Error ? error : new Error('请求失败')
 }
 
-export function useEventStreams(projectId: string | undefined) {
+export function useEventStreams(projectId: string | undefined, archived = false) {
   return useQuery({
-    queryKey: ['projects', projectId, 'event-streams'],
+    queryKey: ['projects', projectId, 'event-streams', { archived }],
     enabled: Boolean(projectId),
-    queryFn: () => loadEventStreams(projectId ?? ''),
+    queryFn: () => loadEventStreams(projectId ?? '', archived),
+  })
+}
+
+export function useRestoreEventStream(projectId: string | undefined) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ streamId, revision }: { streamId: string; revision: number }) => {
+      if (!projectId) throw new Error('缺少项目')
+      try { return (await http.post<EventStreamRecord>(`/projects/${encodeURIComponent(projectId)}/event-streams/${encodeURIComponent(streamId)}/restore`, { revision })).data }
+      catch (error) { throw requestError(error) }
+    },
+    onSuccess: async detail => {
+      queryClient.setQueryData(['projects', projectId, 'event-streams', detail.id], detail)
+      await queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'event-streams'] })
+    },
   })
 }
 

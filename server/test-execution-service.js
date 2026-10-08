@@ -30,7 +30,7 @@ export function createTestExecutionService({
       const bom = version.bom || await readBom(projectId);
       return {
         type: target.type, item, version: version.number, bom, project,
-        drl: version.drl || generateDrl([version.rule || item.published], bom),
+        drl: version.drl || generateDrl([version.rule || item.published], bom, (version.rule || item.published).variables),
       };
     }
     if (target.type === 'table') {
@@ -38,7 +38,7 @@ export function createTestExecutionService({
       const table = version.draft || item.published;
       return {
         type: target.type, item, version: version.number, bom, table, project,
-        drl: version.drl || tableDrl(table, bom, item.id),
+        drl: version.drl || tableDrl(table, bom, item.id, project.variables || []),
       };
     }
     if (target.type === 'event-stream') {
@@ -181,8 +181,8 @@ export function createTestExecutionService({
     const result = resolved.type === 'table' ? {
       ...checked.result,
       hitPolicy: resolved.table.hitPolicy || 'ALL',
-      decisionTrace: tableExecutionTrace(resolved.table, checked.result.fired, resolved.bom),
-      decisionHits: Array.isArray(checked.result.decisionHits) && checked.result.decisionHits.length ? checked.result.decisionHits : tableCollectedHits(resolved.table, checked.result.fired, resolved.bom),
+      decisionTrace: tableExecutionTrace(resolved.table, checked.result.fired, resolved.bom, resolved.project?.variables || []),
+      decisionHits: Array.isArray(checked.result.decisionHits) && checked.result.decisionHits.length ? checked.result.decisionHits : tableCollectedHits(resolved.table, checked.result.fired, resolved.bom, resolved.project?.variables || []),
     } : checked.result;
     return { status: 200, result, targetVersion: resolved.version, bom: resolved.bom, normalizedFacts };
   }

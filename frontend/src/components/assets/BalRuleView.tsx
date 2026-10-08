@@ -1,10 +1,12 @@
 import { ChevronDown, ChevronUp, Code2, LockKeyhole, Plus, Trash2 } from 'lucide-react'
-import type { BomField, RuleActionDraft, RuleConditionDraft, RuleDraft, RuleFieldConditionDraft, RulePatternConditionDraft, RuleRawConditionDraft } from '../../types'
+import type { BomField, RuleActionDraft, RuleConditionDraft, RuleDraft, RuleFieldConditionDraft, RulePatternConditionDraft, RuleRawConditionDraft, RuleSetVariable, RuleSetVariableType } from '../../types'
 import { BOM_TYPE_CAPABILITIES, defaultOperatorForType, operatorsForType, supportsFieldValueForType } from '../../domain/bomTypes'
 
 interface BalRuleViewProps {
   draft: RuleDraft
   fields: BomField[]
+  projectVariables?: RuleSetVariable[]
+  variables?: RuleSetVariable[]
   editable?: boolean
   onChange?: (draft: RuleDraft) => void
   onOpenBom?: (fieldKey: string) => void
@@ -92,6 +94,31 @@ function valueError(value: string, field: BomField | undefined) {
   return null
 }
 
+function variableValueError(value: string, variable: RuleSetVariable | undefined) {
+  if (!variable) return '引用的规则集变量不存在'
+  if (!value.trim()) return '请填写值'
+  if (variable.type === 'Boolean' && !['true', 'false'].includes(value)) return '请选择 true 或 false'
+  if (variable.type === 'Integer' && (!/^-?\d+$/.test(value) || !Number.isSafeInteger(Number(value)))) return '请输入有效整数'
+  if (variable.type === 'Double' && (!Number.isFinite(Number(value)))) return '请输入有效数字'
+  if (variable.type === 'String' && variable.enum?.length && !variable.enum.includes(value)) return '该值不在枚举范围内'
+  return null
+}
+
+function variableDefault(variable: RuleSetVariable) {
+  if (variable.type === 'Boolean') return false
+  if (variable.type === 'String') return variable.enum?.[0] || ''
+  return 0
+}
+
+function enumValuesFromText(value: string) {
+  const values = value.split(',').map(item => item.trim()).filter(Boolean)
+  return values.length ? values : null
+}
+
+function variableLabel(variable: RuleSetVariable | undefined, name: string) {
+  return variable?.label || name || '未选择变量'
+}
+
 function usesFieldValue(condition: RuleFieldConditionDraft) {
   return condition.valueSource === 'field'
 }
@@ -174,11 +201,33 @@ function advancedExpression(condition: RuleRawConditionDraft | RulePatternCondit
   return condition.raw || `${condition.pattern} ${condition.condition}`
 }
 
-export function validateBalDraft(draft: RuleDraft, fields: BomField[]) {
+export function validateBalDraft(draft: RuleDraft, fields: BomField[], projectVariables?: RuleSetVariable[]) {
   const issues: string[] = []
+  const variables = projectVariables?.length ? projectVariables : (draft.variables || [])
+  const variableNames = new Set<string>()
+  for (const [index, variable] of variables.entries()) {
+    if (!/^[a-z][a-zA-Z0-9_]{1,31}$/.test(variable.name)) issues.push(`第 ${index + 1} 个规则集变量名称无效`)
+    if (!variable.label.trim()) issues.push(`第 ${index + 1} 个规则集变量缺少显示名`)
+    if (variableNames.has(variable.name)) issues.push(`规则集变量“${variable.name}”重复`)
+    if (fields.some(field => field.key === variable.name)) issues.push(`规则集变量“${variable.name}”不能与 BOM 字段同名`)
+    variableNames.add(variable.name)
+    if (variable.type === 'Integer' && (typeof variable.defaultValue !== 'number' || !Number.isInteger(variable.defaultValue))) issues.push(`规则集变量“${variable.name}”的默认值必须是整数`)
+    if (variable.type === 'Double' && (typeof variable.defaultValue !== 'number' || !Number.isFinite(variable.defaultValue))) issues.push(`规则集变量“${variable.name}”的默认值必须是数字`)
+    if (variable.type === 'Boolean' && typeof variable.defaultValue !== 'boolean') issues.push(`规则集变量“${variable.name}”的默认值必须是 Boolean`)
+    if (variable.type === 'String' && (typeof variable.defaultValue !== 'string' || variable.defaultValue.length > 200)) issues.push(`规则集变量“${variable.name}”的默认值必须是 200 字符以内文本`)
+    if (variable.type === 'String' && variable.enum?.length && !variable.enum.includes(String(variable.defaultValue))) issues.push(`规则集变量“${variable.name}”的默认值不在枚举范围内`)
+  }
   const actionKeys = new Set<string>()
   for (const [index, condition] of draft.conditions.entries()) {
     if (isAdvancedCondition(condition)) continue
+    if (condition.fieldSource === 'variable') {
+      const variable = variables.find(candidate => candidate.name === condition.field)
+      if (!variable) issues.push(`第 ${index + 1} 个条件引用的规则集变量不存在`)
+      const error = variableValueError(condition.value, variable)
+      if (error) issues.push(`第 ${index + 1} 个条件：${error}`)
+      if (variable?.type === 'Boolean' && !['==', '!='].includes(condition.operator)) issues.push(`第 ${index + 1} 个条件：布尔变量只支持等于或不等于`)
+      continue
+    }
     const field = fields.find(candidate => candidate.key === condition.field && candidate.direction === 'input')
     if (!field) issues.push(`第 ${index + 1} 个条件引用的 BOM 字段不存在`)
     else {
@@ -190,6 +239,15 @@ export function validateBalDraft(draft: RuleDraft, fields: BomField[]) {
     if (error) issues.push(`第 ${index + 1} 个条件：${error}`)
   }
   for (const [index, action] of draft.actions.entries()) {
+    if (action.fieldSource === 'variable') {
+      const variable = variables.find(candidate => candidate.name === action.field)
+      if (!variable) issues.push(`第 ${index + 1} 个动作引用的规则集变量不存在`)
+      const error = variableValueError(action.value, variable)
+      if (error) issues.push(`第 ${index + 1} 个动作：${error}`)
+      if (actionKeys.has(`variable:${action.field}`)) issues.push(`第 ${index + 1} 个动作重复设置了同一变量`)
+      actionKeys.add(`variable:${action.field}`)
+      continue
+    }
     const field = fields.find(candidate => candidate.key === action.field && candidate.direction === 'output')
     if (!field) issues.push(`第 ${index + 1} 个动作引用的 BOM 字段不存在`)
     const error = valueError(action.value, field)
@@ -364,11 +422,12 @@ function ReadonlyTerm({ children, fieldKey, onOpenBom }: { children: string; fie
   return <button type="button" className="border-b border-dashed border-brand-primary font-medium text-brand-primary hover:bg-brand-primary-l" onClick={() => onOpenBom(fieldKey)} title="在 BOM 中查看">{children}</button>
 }
 
-function ConditionRow({ condition, index, count, facts, editable, onChange, onMove, onDelete, onOpenBom }: {
+function ConditionRow({ condition, index, count, facts, variables, editable, onChange, onMove, onDelete, onOpenBom }: {
   condition: RuleConditionDraft
   index: number
   count: number
   facts: FactOption[]
+  variables: RuleSetVariable[]
   editable: boolean
   onChange: (condition: RuleConditionDraft) => void
   onMove: (offset: number) => void
@@ -390,6 +449,52 @@ function ConditionRow({ condition, index, count, facts, editable, onChange, onMo
           <span className="rounded-[2px] border border-[#d9aa38] bg-white px-1.5 py-0.5 text-[10px] font-medium text-[#734d00]">高级表达式</span>
           <span className="rounded-[2px] border border-ink-border bg-white px-1.5 py-0.5 text-[10px] text-ink-2">{condition.raw ? '内联 DRL' : '独立 DRL'}</span>
           <span className="inline-flex items-center gap-1 text-[10px] text-ink-3" title="高级表达式保持原样，不能在 BAL 编辑器中修改"><LockKeyhole size={11} />只读</span>
+        </div>
+      </div>
+    )
+  }
+
+  const variableMode = condition.fieldSource === 'variable'
+  const selectedVariable = variables.find(variable => variable.name === condition.field)
+  if (variableMode) {
+    if (!editable) {
+      return (
+        <div>
+          {index > 0 && <div className="mb-1 text-[11px] font-medium text-ink-3">{connector}</div>}
+          <div className="flex min-h-11 flex-wrap items-center gap-2 rounded-[3px] border border-[#b8c9f5] bg-[#f5f8ff] px-3 py-2">
+            <span className="text-ink-3">规则集变量</span>
+            <span className="border-b border-dashed border-brand-primary font-medium text-brand-primary">{variableLabel(selectedVariable, condition.field)}</span>
+            <strong className="font-semibold text-ink-1">{condition.operator}</strong>
+            <code className="rounded-[2px] bg-white px-2 py-1 font-mono text-[12px] text-ink-1">{condition.value || '未设置'}</code>
+          </div>
+        </div>
+      )
+    }
+    const variableChoices = variables
+    const variableError = variableValueError(condition.value, selectedVariable)
+    const options = selectedVariable?.type === 'Boolean' ? ['==', '!='] : ['==', '!=', '>', '<', '>=', '<=']
+    return (
+      <div>
+        {index > 0 && <select className="mb-1 h-7 rounded-[2px] border border-ink-border bg-white px-2 text-[11px] font-medium text-ink-3 outline-none focus:border-brand-primary" value={condition.connector || 'and'} onChange={event => onChange({ ...condition, connector: event.target.value as 'and' | 'or' })} aria-label="条件连接词"><option value="and">并且</option><option value="or">或者</option></select>}
+        <div className={`flex min-h-12 flex-wrap items-center gap-2 rounded-[3px] border px-3 py-2 ${!selectedVariable || variableError ? 'border-[#c62828] bg-[#fffafa]' : 'border-[#b8c9f5] bg-[#f5f8ff]'}`}>
+          <select className="h-8 rounded-[2px] border border-ink-border bg-white px-1.5 text-[11px] text-ink-2 outline-none focus:border-brand-primary" value="variable" onChange={event => {
+            if (event.target.value === 'bom') {
+              const field = facts[0]?.fields[0]
+              onChange({ ...condition, fieldSource: undefined, field: field?.key || '', factType: facts[0]?.name, operator: defaultOperatorForType(field?.type), value: field ? defaultLiteralValue(field, defaultOperatorForType(field.type)) : '' })
+            }
+          }} aria-label="条件来源"><option value="variable">规则集变量</option><option value="bom">业务事实</option></select>
+          <select className="h-8 min-w-[150px] rounded-[2px] border border-brand-primary bg-white px-2 text-[12px] font-medium text-brand-primary outline-none" value={condition.field} onChange={event => {
+            const next = variables.find(variable => variable.name === event.target.value)
+            onChange({ ...condition, field: event.target.value, operator: next?.type === 'Boolean' ? '==' : '==', value: next ? String(next.defaultValue) : '' })
+          }} aria-label="规则集变量">
+            {!selectedVariable && <option value={condition.field}>变量已失效</option>}
+            {variableChoices.map(variable => <option key={variable.name} value={variable.name}>{variable.label} · {variable.name}</option>)}
+          </select>
+          <select className="h-8 rounded-[2px] border border-ink-border bg-white px-2 text-[11px] font-semibold text-ink-1 outline-none focus:border-brand-primary" value={condition.operator} onChange={event => onChange({ ...condition, operator: event.target.value })} aria-label="变量比较符">{options.map(operator => <option key={operator} value={operator}>{operator}</option>)}</select>
+          {selectedVariable?.type === 'Boolean' ? <select className="h-8 min-w-[100px] rounded-[2px] border border-transparent bg-white px-2 font-mono text-[12px] outline-none focus:border-brand-primary" value={condition.value} onChange={event => onChange({ ...condition, value: event.target.value })} aria-label="变量条件值"><option value="true">true</option><option value="false">false</option></select>
+            : selectedVariable?.type === 'String' && selectedVariable.enum?.length ? <select className="h-8 min-w-[140px] rounded-[2px] border border-transparent bg-white px-2 font-mono text-[12px] outline-none focus:border-brand-primary" value={condition.value} onChange={event => onChange({ ...condition, value: event.target.value })} aria-label="变量条件值">{selectedVariable.enum.map(value => <option key={value} value={value}>{value}</option>)}</select>
+              : <input className={`h-8 min-w-[110px] flex-1 rounded-[2px] border px-2 font-mono text-[12px] outline-none ${variableError ? 'border-[#c62828] bg-[#fff1f1]' : 'border-transparent bg-white focus:border-brand-primary'}`} type={selectedVariable?.type === 'String' ? 'text' : 'number'} value={condition.value} onChange={event => onChange({ ...condition, value: event.target.value })} aria-label="变量条件值" />}
+          <RowActions index={index} count={count} onMove={onMove} onDelete={onDelete} />
         </div>
       </div>
     )
@@ -470,6 +575,12 @@ function ConditionRow({ condition, index, count, facts, editable, onChange, onMo
         </select>
       )}
       <div className={`flex min-h-12 flex-wrap items-center gap-2 rounded-[3px] border px-3 py-2 ${invalid || conditionError ? 'border-[#c62828] bg-[#fffafa]' : 'border-ink-border bg-[#fafafa]'}`}>
+        {variables.length > 0 && <select className="h-8 rounded-[2px] border border-ink-border bg-white px-1.5 text-[11px] text-ink-2 outline-none focus:border-brand-primary" value="bom" onChange={event => {
+          if (event.target.value === 'variable') {
+            const variable = variables[0]
+            onChange({ ...condition, fieldSource: 'variable', field: variable.name, operator: '==', value: String(variable.defaultValue) })
+          }
+        }} aria-label="条件来源"><option value="bom">业务事实</option><option value="variable">规则集变量</option></select>}
         <select className="h-8 rounded-[2px] border border-ink-border bg-white px-1.5 text-[11px] text-ink-2 outline-none focus:border-brand-primary" value={condition.quantifier || 'one'} onChange={event => onChange({ ...condition, quantifier: event.target.value as RuleConditionDraft['quantifier'] })} aria-label="量词">
           {quantifiers.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
@@ -498,17 +609,50 @@ function ConditionRow({ condition, index, count, facts, editable, onChange, onMo
   )
 }
 
-function ActionRow({ action, index, count, facts, editable, onChange, onMove, onDelete, onOpenBom }: {
+function ActionRow({ action, index, count, facts, variables, editable, onChange, onMove, onDelete, onOpenBom }: {
   action: RuleActionDraft
   index: number
   count: number
   facts: FactOption[]
+  variables: RuleSetVariable[]
   editable: boolean
   onChange: (action: RuleActionDraft) => void
   onMove: (offset: number) => void
   onDelete: () => void
   onOpenBom?: (fieldKey: string) => void
 }) {
+  const variableMode = action.fieldSource === 'variable'
+  const selectedVariable = variables.find(variable => variable.name === action.field)
+  if (variableMode) {
+    if (!editable) {
+      return <div className="flex min-h-11 flex-wrap items-center gap-2 rounded-[3px] border border-[#b8c9f5] bg-[#f5f8ff] px-3 py-2"><strong className="font-semibold text-ink-2">设置</strong><span className="text-ink-3">规则集变量</span><span className="border-b border-dashed border-brand-primary font-medium text-brand-primary">{variableLabel(selectedVariable, action.field)}</span><span className="text-ink-3">为</span><code className="rounded-[2px] bg-white px-2 py-1 font-mono text-[12px] text-ink-1">{action.value || '未设置'}</code></div>
+    }
+    const error = variableValueError(action.value, selectedVariable)
+    return (
+      <div className={`flex min-h-12 flex-wrap items-center gap-2 rounded-[3px] border px-3 py-2 ${!selectedVariable || error ? 'border-[#c62828] bg-[#fffafa]' : 'border-[#b8c9f5] bg-[#f5f8ff]'}`}>
+        <strong className="font-semibold text-ink-2">设置</strong>
+        <select className="h-8 rounded-[2px] border border-ink-border bg-white px-1.5 text-[11px] text-ink-2 outline-none focus:border-brand-primary" value="variable" onChange={event => {
+          if (event.target.value === 'bom') {
+            const field = facts[0]?.fields[0]
+            onChange({ ...action, fieldSource: undefined, field: field?.key || '', factType: facts[0]?.name, value: field ? defaultLiteralValue(field) : '', actionType: 'set' })
+          }
+        }} aria-label="动作目标来源"><option value="variable">规则集变量</option><option value="bom">业务输出</option></select>
+        <span className="text-[11px] text-ink-3">规则集变量</span>
+        <select className="h-8 min-w-[150px] rounded-[2px] border border-brand-primary bg-white px-2 text-[12px] font-medium text-brand-primary outline-none" value={action.field} onChange={event => {
+          const next = variables.find(variable => variable.name === event.target.value)
+          onChange({ ...action, field: event.target.value, value: next ? String(next.defaultValue) : '' })
+        }} aria-label="动作变量">
+          {!selectedVariable && <option value={action.field}>变量已失效</option>}
+          {variables.map(variable => <option key={variable.name} value={variable.name}>{variable.label} · {variable.name}</option>)}
+        </select>
+        <span className="text-ink-3">为</span>
+        {selectedVariable?.type === 'Boolean' ? <select className="h-8 min-w-[100px] rounded-[2px] border border-transparent bg-white px-2 font-mono text-[12px] outline-none focus:border-brand-primary" value={action.value} onChange={event => onChange({ ...action, value: event.target.value })} aria-label="变量动作值"><option value="true">true</option><option value="false">false</option></select>
+          : selectedVariable?.type === 'String' && selectedVariable.enum?.length ? <select className="h-8 min-w-[140px] rounded-[2px] border border-transparent bg-white px-2 font-mono text-[12px] outline-none focus:border-brand-primary" value={action.value} onChange={event => onChange({ ...action, value: event.target.value })} aria-label="变量动作值">{selectedVariable.enum.map(value => <option key={value} value={value}>{value}</option>)}</select>
+            : <input className={`h-8 min-w-[110px] flex-1 rounded-[2px] border px-2 font-mono text-[12px] outline-none ${error ? 'border-[#c62828] bg-[#fff1f1]' : 'border-transparent bg-white focus:border-brand-primary'}`} type={selectedVariable?.type === 'String' ? 'text' : 'number'} value={action.value} onChange={event => onChange({ ...action, value: event.target.value })} aria-label="变量动作值" />}
+        <RowActions index={index} count={count} onMove={onMove} onDelete={onDelete} />
+      </div>
+    )
+  }
   const fact = selectedFact(facts, action.factType, action.field)
   const field = selectedField(facts, action.field)
   const invalid = !field
@@ -541,6 +685,12 @@ function ActionRow({ action, index, count, facts, editable, onChange, onMove, on
   return (
     <div className={`flex min-h-12 flex-wrap items-center gap-2 rounded-[3px] border px-3 py-2 ${invalid || valueError(action.value, field) ? 'border-[#c62828] bg-[#fffafa]' : 'border-ink-border bg-[#fafafa]'}`}>
       <strong className="min-w-8 font-semibold text-ink-2">{verb}</strong>
+      {variables.length > 0 && <select className="h-8 rounded-[2px] border border-ink-border bg-white px-1.5 text-[11px] text-ink-2 outline-none focus:border-brand-primary" value="bom" onChange={event => {
+        if (event.target.value === 'variable') {
+          const variable = variables[0]
+          onChange({ ...action, fieldSource: 'variable', field: variable.name, value: String(variable.defaultValue), factType: undefined, actionType: 'set' })
+        }
+      }} aria-label="动作目标来源"><option value="bom">业务输出</option><option value="variable">规则集变量</option></select>}
       <TermSelect value={fact?.name || action.factType || ''} label="目标事实类型" options={facts.map(option => ({ value: option.name, label: option.label }))} invalid={!fact} onChange={selectFact} />
       <span className="text-ink-3">的</span>
       <TermSelect value={action.field} label="目标业务字段" options={(fact?.fields || []).map(option => ({ value: option.key, label: option.label }))} invalid={invalid} onChange={selectField} />
@@ -551,7 +701,7 @@ function ActionRow({ action, index, count, facts, editable, onChange, onMove, on
   )
 }
 
-function balPreview(draft: RuleDraft, fields: BomField[]) {
+function balPreview(draft: RuleDraft, fields: BomField[], variables: RuleSetVariable[]) {
   const inputFacts = factsFor(fields, 'input')
   const outputFacts = factsFor(fields, 'output')
   const lines = [`规则 ${JSON.stringify(draft.name)}`, '', '  当']
@@ -562,6 +712,11 @@ function balPreview(draft: RuleDraft, fields: BomField[]) {
         ? `${quantifiers.find(option => option.value === condition.quantifier)?.label || condition.quantifier} `
         : ''
       lines.push(`    ${prefix}${quantifier}[高级表达式] ${advancedExpression(condition)}`)
+      return
+    }
+    if (condition.fieldSource === 'variable') {
+      const variable = variables.find(candidate => candidate.name === condition.field)
+      lines.push(`    ${prefix}规则集变量 ${variableLabel(variable, condition.field)} ${condition.operator} ${condition.value || '未设置'}`)
       return
     }
     const fact = selectedFact(inputFacts, condition.factType, condition.field)
@@ -578,6 +733,11 @@ function balPreview(draft: RuleDraft, fields: BomField[]) {
   })
   lines.push('', '  那么')
   draft.actions.forEach(action => {
+    if (action.fieldSource === 'variable') {
+      const variable = variables.find(candidate => candidate.name === action.field)
+      lines.push(`    设置规则集变量 ${variableLabel(variable, action.field)} 为 ${action.value || '未设置'}`)
+      return
+    }
     const fact = selectedFact(outputFacts, action.factType, action.field)
     const field = selectedField(outputFacts, action.field)
     const add = action.actionType === 'add' || isListField(field)
@@ -586,15 +746,57 @@ function balPreview(draft: RuleDraft, fields: BomField[]) {
   return lines.join('\n')
 }
 
-export default function BalRuleView({ draft, fields, editable = false, onChange, onOpenBom }: BalRuleViewProps) {
+export default function BalRuleView({ draft, fields, projectVariables, editable = false, onChange, onOpenBom }: BalRuleViewProps) {
   const inputFacts = factsFor(fields, 'input')
   const outputFacts = factsFor(fields, 'output')
+  const variables = projectVariables?.length ? projectVariables : (draft.variables || [])
+  const hasProjectVariables = Boolean(projectVariables?.length)
   const setDraft = (next: RuleDraft) => onChange?.(next)
   const firstConditionField = inputFacts[0]?.fields[0]
   const firstActionField = outputFacts[0]?.fields[0]
+  const updateVariable = (index: number, patch: Partial<RuleSetVariable>) => setDraft({ ...draft, variables: variables.map((variable, position) => position === index ? { ...variable, ...patch } : variable) })
+  const addVariable = () => setDraft({ ...draft, variables: [...variables, { name: `temp${variables.length + 1}`, label: '临时变量', type: 'Boolean', defaultValue: false, enum: null, description: '' }] })
+  const removeVariable = (index: number) => {
+    const removed = variables[index]
+    setDraft({
+      ...draft,
+      variables: variables.filter((_, position) => position !== index),
+      conditions: draft.conditions.filter(condition => condition.fieldSource !== 'variable' || condition.field !== removed?.name),
+      actions: draft.actions.filter(action => action.fieldSource !== 'variable' || action.field !== removed?.name),
+    })
+  }
 
   return (
     <div className="bg-white px-5 py-5 text-[13px] max-sm:px-4" aria-label={editable ? 'BAL 规则编辑区' : 'BAL 规则只读视图'}>
+      <section className="mb-5 border-b border-ink-border pb-4" aria-labelledby="bal-variable-heading">
+        <div className="mb-2 flex min-h-7 items-center gap-3">
+          <h3 id="bal-variable-heading" className="font-semibold text-ink-3">{hasProjectVariables ? 'Rule Project 变量' : '规则变量兼容声明'}</h3>
+          {editable && !hasProjectVariables && <button type="button" className="inline-flex h-7 items-center gap-1 rounded-[2px] px-2 text-[11px] text-brand-primary hover:bg-brand-primary-l" onClick={addVariable}><Plus size={13} />添加变量</button>}
+          <span className="text-[10px] text-ink-3">{hasProjectVariables ? '变量由项目属性统一维护，当前编辑器只负责选择、读取或写入。' : '仅用于旧数据兼容和单条规则独立发布；项目变量请到 Rule Project 属性定义。'}</span>
+        </div>
+        {variables.length === 0
+          ? <p className="rounded-[3px] border border-dashed border-ink-border bg-[#fafafa] px-3 py-2 text-[11px] text-ink-3">暂无项目变量。请打开项目右上角“项目设置”，在 Rule Project 变量中添加。</p>
+          : <div className="space-y-2">
+              {variables.map((variable, index) => (
+                <div key={`${variable.name}-${index}`} className="grid grid-cols-[minmax(100px,1fr)_minmax(110px,1fr)_100px_minmax(100px,1fr)_auto] items-start gap-2 rounded-[3px] border border-[#b8c9f5] bg-[#f5f8ff] p-2">
+                  {editable && !hasProjectVariables ? <>
+                    <input className="control-input h-8 font-mono text-[11px]" value={variable.name} onChange={event => updateVariable(index, { name: event.target.value })} placeholder="变量名" aria-label={`变量 ${index + 1} 名称`} />
+                    <input className="control-input h-8 text-[11px]" value={variable.label} onChange={event => updateVariable(index, { label: event.target.value })} placeholder="显示名" aria-label={`变量 ${index + 1} 显示名`} />
+                    <select className="control-input h-8 text-[11px]" value={variable.type} onChange={event => {
+                      const type = event.target.value as RuleSetVariableType
+                      updateVariable(index, { type, defaultValue: variableDefault({ ...variable, type }), enum: type === 'String' ? variable.enum : null })
+                    }} aria-label={`变量 ${index + 1} 类型`}><option value="Boolean">Boolean</option><option value="Integer">Integer</option><option value="Double">Double</option><option value="String">String</option></select>
+                    {variable.type === 'Boolean'
+                      ? <select className="control-input h-8 text-[11px]" value={String(variable.defaultValue)} onChange={event => updateVariable(index, { defaultValue: event.target.value === 'true' })} aria-label={`变量 ${index + 1} 默认值`}><option value="false">false</option><option value="true">true</option></select>
+                      : <input className="control-input h-8 text-[11px]" type={variable.type === 'String' ? 'text' : 'number'} value={String(variable.defaultValue)} onChange={event => updateVariable(index, { defaultValue: variable.type === 'String' ? event.target.value : Number(event.target.value) })} placeholder="默认值" aria-label={`变量 ${index + 1} 默认值`} />}
+                    <button type="button" className="inline-flex size-8 items-center justify-center text-ink-3 hover:bg-[#ffebee] hover:text-[#c62828]" onClick={() => removeVariable(index)} title="删除变量"><Trash2 size={13} /></button>
+                    {variable.type === 'String' && <input className="col-span-4 control-input h-8 text-[11px]" value={(variable.enum || []).join(', ')} onChange={event => updateVariable(index, { enum: enumValuesFromText(event.target.value) })} placeholder="String 枚举（可选，逗号分隔）" aria-label={`变量 ${index + 1} 枚举值`} />}
+                    <input className="col-span-4 control-input h-8 text-[11px]" value={variable.description || ''} onChange={event => updateVariable(index, { description: event.target.value })} placeholder="说明（可选）" aria-label={`变量 ${index + 1} 说明`} />
+                  </> : <div className="col-span-5 flex flex-wrap items-center gap-2 text-[11px]"><b className="font-mono text-brand-primary">{variable.name}</b><span>{variable.label}</span><span className="rounded-[2px] bg-white px-1.5 py-0.5 font-mono">{variable.type}</span><span className="text-ink-3">默认 {String(variable.defaultValue)}</span>{variable.description && <span className="text-ink-3">{variable.description}</span>}</div>}
+                </div>
+              ))}
+            </div>}
+      </section>
       <section aria-labelledby="bal-when-heading">
         <div className="mb-2 flex min-h-7 items-center gap-3">
           <h3 id="bal-when-heading" className="font-semibold text-ink-3">当</h3>
@@ -608,6 +810,7 @@ export default function BalRuleView({ draft, fields, editable = false, onChange,
               index={index}
               count={draft.conditions.length}
               facts={inputFacts}
+              variables={variables}
               editable={editable}
               onOpenBom={onOpenBom}
               onChange={next => setDraft({ ...draft, conditions: draft.conditions.map((item, position) => position === index ? next : item) })}
@@ -631,6 +834,7 @@ export default function BalRuleView({ draft, fields, editable = false, onChange,
               index={index}
               count={draft.actions.length}
               facts={outputFacts}
+              variables={variables}
               editable={editable}
               onOpenBom={onOpenBom}
               onChange={next => setDraft({ ...draft, actions: draft.actions.map((item, position) => position === index ? next : item) })}
@@ -644,7 +848,7 @@ export default function BalRuleView({ draft, fields, editable = false, onChange,
       {editable && (
         <details className="mt-5 border-t border-ink-border pt-3">
           <summary className="cursor-pointer select-none text-[11px] font-medium text-ink-2">BAL 中文预览</summary>
-          <pre className="mt-2 overflow-auto rounded-[3px] border border-ink-border bg-[#fafafa] p-3 font-sans text-[12px] leading-6 text-ink-1">{balPreview(draft, fields)}</pre>
+          <pre className="mt-2 overflow-auto rounded-[3px] border border-ink-border bg-[#fafafa] p-3 font-sans text-[12px] leading-6 text-ink-1">{balPreview(draft, fields, variables)}</pre>
         </details>
       )}
     </div>

@@ -93,7 +93,7 @@ export function validateTestSuite(suite, bom) {
     if (!Array.isArray(expected.fired) || expected.fired.some(name => typeof name !== 'string' || !name || name.length > 200)) return `${label}期望命中规则无效`;
     if (Object.prototype.hasOwnProperty.call(expected, 'path') && expected.path !== null
       && (typeof expected.path !== 'string' || !expected.path || expected.path.length > 100)) return `${label}期望路径无效`;
-    if (suite.target.type !== 'flow' && Object.prototype.hasOwnProperty.call(expected, 'path')) return `${label}仅规则流可断言路径`;
+    if (suite.target.type !== 'flow' && Object.prototype.hasOwnProperty.call(expected, 'path')) return `${label}仅规则集可断言路径`;
     if (!Object.keys(expected.outputs).length && !expected.fired.length && !Object.prototype.hasOwnProperty.call(expected, 'path')) return `${label}至少需要一个结果断言`;
   }
   if (!enabledCases) return '测试套件至少需要一个启用的案例';

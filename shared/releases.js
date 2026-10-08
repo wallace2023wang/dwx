@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto';
 import { generateDrl } from './rules.js';
-import { tableDrl } from './assets.js';
+import { resolveRuleGroupMembers, ruleGroupFingerprint, tableDrl, tableRules } from './assets.js';
 import { defaultBom, findField, validateBom } from './bom.js';
 import { CEP_ENGINE_VERSION } from './event-streams.js';
+import { canonicalRuleSetVariables, normalizeRuleSetVariables, validateRuleSetVariables } from './ruleset-variables.js';
+import { DomainError } from './errors.js';
 
 export const RELEASE_SCHEMA_VERSION = 1;
 export const DROOLS_VERSION = '10.2.0';
@@ -21,6 +23,7 @@ export function releaseContent(release) {
     schemaVersion: release.schemaVersion,
     decisionService: release.decisionService,
     version: release.version,
+    displayVersion: release.displayVersion,
     name: release.name,
     description: release.description,
     target: release.target,
@@ -32,6 +35,7 @@ export function releaseContent(release) {
   if (release.module != null) content.module = release.module;
   if (release.model != null) content.model = release.model;
   if (release.routing != null) content.routing = release.routing;
+  if (release.variables != null) content.variables = release.variables;
   return content;
 }
 
@@ -46,9 +50,10 @@ export function validateReleaseRequest(request) {
     return '决策服务标识需为 3-80 位小写字母、数字、点、横线、下划线或斜线';
   }
   if (typeof request.name !== 'string' || !request.name.trim() || request.name.length > 80) return '发布名称需为 1-80 个字符';
+  if (request.version != null && (typeof request.version !== 'string' || !/^\d+\.\d+\.\d+$/.test(request.version))) return 'Release 版本号必须使用 SemVer 格式，例如 2.1.0';
   if (typeof (request.description ?? '') !== 'string' || (request.description ?? '').length > 500) return '发布说明不能超过 500 个字符';
   if (!request.target || !['rule', 'table', 'flow', 'event-stream'].includes(request.target.type) || typeof request.target.id !== 'string' || !request.target.id) {
-    return '发布来源必须是有效的规则、决策表、规则流或事件流';
+    return '发布来源必须是有效的规则、决策表、规则集或事件流';
   }
   return null;
 }
@@ -60,7 +65,7 @@ function publishedAsset(collection, id, label) {
   return asset;
 }
 
-function releaseStep(step) {
+function releaseStep(step, options = {}) {
   const result = {
     name: step.name,
     type: step.type,
@@ -68,9 +73,101 @@ function releaseStep(step) {
     assetVersion: step.version,
     drl: step.drl,
   };
+  if (options.includeVariables !== false && step.variables?.length) result.variables = structuredClone(step.variables);
   if (step.inputMappings?.length) result.inputMappings = structuredClone(step.inputMappings);
   if (step.outputMappings?.length) result.outputMappings = structuredClone(step.outputMappings);
   return result;
+}
+
+function mergeRuleSetVariables(...collections) {
+  const merged = new Map();
+  for (const collection of collections) {
+    for (const variable of normalizeRuleSetVariables(collection)) {
+      const previous = merged.get(variable.name);
+      if (previous && JSON.stringify(previous) !== JSON.stringify(variable)) {
+        throw new Error(`规则集变量 "${variable.name}" 定义冲突`);
+      }
+      merged.set(variable.name, variable);
+    }
+  }
+  const definitions = [...merged.values()];
+  const error = validateRuleSetVariables(definitions);
+  if (error) throw new Error(error);
+  return canonicalRuleSetVariables(definitions);
+}
+
+function assetVersion(asset, number) {
+  return asset?.versions?.find(version => version.number === number) || asset?.versions?.at(-1);
+}
+
+function flowDependencyIssues(flow, rules, tables, packages) {
+  const assets = new Map([
+    ...rules.map(asset => [`rule:${asset.id}`, asset]),
+    ...tables.map(asset => [`table:${asset.id}`, asset]),
+  ]);
+  const steps = [...(flow.steps || []), ...(flow.branches || []).flatMap(branch => branch.steps || [])];
+  return steps.flatMap(step => {
+    if (step.type === 'rule-group') {
+      const selector = step.selector || { packageName: step.packageName, includeChildren: step.includeChildren === true };
+      try {
+        const members = resolveRuleGroupMembers(selector, rules, tables, packages);
+        return step.memberFingerprint && ruleGroupFingerprint(members) !== step.memberFingerprint
+          ? [{ type: 'rule-group', name: step.name || `规则组：${selector.packageName}`, packageName: selector.packageName }]
+          : [];
+      } catch {
+        return [{ type: 'rule-group', name: step.name || `规则组：${selector.packageName}`, packageName: selector.packageName }];
+      }
+    }
+    const asset = assets.get(`${step.type}:${step.id}`);
+    const latestVersion = asset?.versions?.at(-1)?.number;
+    return latestVersion && step.version && latestVersion !== step.version
+      ? [{ type: step.type, id: step.id, name: step.name || asset.published?.name || asset.draft?.name || step.id, frozenVersion: step.version, latestVersion }]
+      : [];
+  });
+}
+
+function assertCurrentFlowDependencies(flow, rules, tables, packages) {
+  const issues = flowDependencyIssues(flow, rules, tables, packages);
+  if (!issues.length) return;
+  const summary = issues.slice(0, 3).map(issue => issue.type === 'rule-group'
+    ? `${issue.name}成员已变化`
+    : `${issue.name} v${issue.frozenVersion} → v${issue.latestVersion}`).join('；');
+  throw new DomainError('FLOW_DEPENDENCIES_OUTDATED', `规则集依赖已有新发布版本（${summary}），请先重新发布规则集，再构建 Release`, {
+    dependencies: issues,
+    suggestedAction: 'republish-flow',
+  }, { status: 409 });
+}
+
+function regenerateFlowStep(step, rules, tables, model, variables) {
+  if (!variables.length) return step;
+  const asset = step.type === 'rule'
+    ? rules.find(candidate => candidate.id === step.id)
+    : step.type === 'table'
+      ? tables.find(candidate => candidate.id === step.id)
+      : null;
+  if (asset) {
+    const version = assetVersion(asset, step.version);
+    const source = version?.rule || version?.draft || asset.published;
+    if (source) {
+      const drl = step.type === 'rule'
+        ? generateDrl([source], version?.bom || model, variables)
+        : tableDrl(source, version?.bom || model, asset.id, variables);
+      return { ...step, drl };
+    }
+  }
+  if (step.type !== 'rule-group' || !Array.isArray(step.members)) return step;
+  const executableRules = step.members.flatMap(member => {
+    const memberAsset = member.type === 'rule'
+      ? rules.find(candidate => candidate.id === member.id)
+      : tables.find(candidate => candidate.id === member.id);
+    const version = assetVersion(memberAsset, member.version);
+    const source = version?.rule || version?.draft || memberAsset?.published;
+    if (!source) return [];
+    if (member.type === 'rule') return [{ ...source, name: `${source.name} [${member.id}]` }];
+    return tableRules(source, version?.bom || model, member.id, variables)
+      .map(rule => ({ ...rule, name: `${rule.name} [${member.id}]` }));
+  });
+  return executableRules.length ? { ...step, drl: generateDrl(executableRules, model, variables) } : step;
 }
 
 function verifyStepMappings(step, model) {
@@ -93,28 +190,36 @@ function verifyStepMappings(step, model) {
   return true;
 }
 
-export function buildRelease({ id, request, rules, tables, flows, eventStreams = [], releases, bom = defaultBom(), createdAt = new Date().toISOString(), createdBy = 'Team Server' }) {
+export function buildRelease({ id, request, rules, tables, flows, eventStreams = [], releases, bom = defaultBom(), projectVariables = [], packageRecords = [], enforceCurrentFlowDependencies = false, createdAt = new Date().toISOString(), createdBy = 'Team Server' }) {
   const error = validateReleaseRequest(request);
   if (error) throw new Error(error);
 
   const nextVersion = releases
     .filter(item => item.decisionService === request.decisionService)
     .reduce((maximum, item) => Math.max(maximum, item.version || 0), 0) + 1;
+  const displayVersion = request.version || `${nextVersion}.0.0`;
+  if (releases.some(item => item.decisionService === request.decisionService && (item.displayVersion || `${item.version}.0.0`) === displayVersion)) {
+    throw new Error(`决策服务 ${request.decisionService} 已存在 Release v${displayVersion}`);
+  }
   let targetAsset;
   let steps;
   let model;
   let routing;
+  let variables = [];
 
   if (request.target.type === 'rule') {
     targetAsset = publishedAsset(rules, request.target.id, '规则');
     const version = targetAsset.versions.at(-1);
     model = structuredClone(version.bom || bom);
+    variables = mergeRuleSetVariables(projectVariables.length ? projectVariables : targetAsset.published.variables);
     steps = [{
       name: targetAsset.published.name,
       type: 'rule',
       assetId: targetAsset.id,
       assetVersion: version.number,
-      drl: version.drl || generateDrl([targetAsset.published], model),
+      drl: projectVariables.length
+        ? generateDrl([targetAsset.published], model, variables)
+        : version.drl || generateDrl([targetAsset.published], model, variables),
     }];
   } else if (request.target.type === 'table') {
     targetAsset = publishedAsset(tables, request.target.id, '决策表');
@@ -125,12 +230,27 @@ export function buildRelease({ id, request, rules, tables, flows, eventStreams =
       type: 'table',
       assetId: targetAsset.id,
       assetVersion: version.number,
-      drl: version.drl || tableDrl(targetAsset.published, model, targetAsset.id),
+      drl: projectVariables.length
+        ? tableDrl(targetAsset.published, model, targetAsset.id, projectVariables)
+        : version.drl || tableDrl(targetAsset.published, model, targetAsset.id, projectVariables),
     }];
+    variables = mergeRuleSetVariables(projectVariables);
   } else if (request.target.type === 'flow') {
-    targetAsset = publishedAsset(flows, request.target.id, '规则流');
+    targetAsset = publishedAsset(flows, request.target.id, '规则集');
+    if (enforceCurrentFlowDependencies) assertCurrentFlowDependencies(targetAsset.published, rules, tables, packageRecords);
     model = structuredClone(targetAsset.published.bom || targetAsset.versions.at(-1).bom || bom);
-    steps = targetAsset.published.steps.map(releaseStep);
+    const flowVariables = targetAsset.published.variables || targetAsset.published.snapshot?.variables;
+    if (projectVariables.length) variables = mergeRuleSetVariables(projectVariables);
+    else if (flowVariables?.length) variables = mergeRuleSetVariables(flowVariables);
+    else {
+      variables = mergeRuleSetVariables(
+        ...(targetAsset.published.steps || []).map(step => step.variables || []),
+        ...(targetAsset.published.branches?.flatMap(branch => branch.steps || []).map(step => step.variables || []) || []),
+      );
+    }
+    const releaseStepOptions = { includeVariables: !variables.length };
+    const freezeFlowStep = step => releaseStep(regenerateFlowStep(step, rules, tables, model, variables), releaseStepOptions);
+    steps = targetAsset.published.steps.map(freezeFlowStep);
     if (targetAsset.published.branches?.length) {
       routing = {
         type: 'exclusive',
@@ -139,7 +259,7 @@ export function buildRelease({ id, request, rules, tables, flows, eventStreams =
           const stepIndexes = [];
           for (const step of branch.steps) {
             stepIndexes.push(steps.length);
-            steps.push(releaseStep(step));
+            steps.push(freezeFlowStep(step));
           }
           return {
             id: branch.id,
@@ -159,6 +279,7 @@ export function buildRelease({ id, request, rules, tables, flows, eventStreams =
       id,
       decisionService: request.decisionService,
       version: nextVersion,
+      displayVersion,
       name: request.name.trim(),
       description: (request.description ?? '').trim(),
       target: { type: 'event-stream', id: targetAsset.id, assetVersion: version.number },
@@ -179,6 +300,7 @@ export function buildRelease({ id, request, rules, tables, flows, eventStreams =
     id,
     decisionService: request.decisionService,
     version: nextVersion,
+    displayVersion,
     name: request.name.trim(),
     description: (request.description ?? '').trim(),
     target: {
@@ -193,6 +315,7 @@ export function buildRelease({ id, request, rules, tables, flows, eventStreams =
     createdBy,
   };
   if (routing) release.routing = routing;
+  if (variables.length) release.variables = variables;
   release.checksum = releaseChecksum(release);
   return release;
 }
@@ -212,6 +335,12 @@ export function verifyRelease(release) {
   if (release.model != null) {
     const modelError = validateBom(release.model);
     if (modelError || !Number.isInteger(release.model.version) || release.model.version < 1) return `发布包字段模型无效${modelError ? `：${modelError}` : ''}`;
+  }
+  if (release.variables != null) {
+    const variableError = validateRuleSetVariables(release.variables);
+    if (variableError) return `发布包规则集变量无效：${variableError}`;
+    const modelKeys = new Set((release.model?.fields || []).map(field => field.key));
+    if (release.variables.some(variable => modelKeys.has(variable.name))) return '规则集变量名称不能与 BOM 字段重复';
   }
   if (release.routing != null) {
     const routing = release.routing;

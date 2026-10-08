@@ -15,9 +15,9 @@
 | **F1** | **决策表条件单元格不能引用字段值，只能是字面量** | `shared/assets.js:64 parseConditionCell` → `:134 formatDrlValue(field, operand)` → `shared/rules.js:44` 对 Double 要求 `Number.isFinite(Number(trimmed))`；`maxPct` 不在范围内 → 返回 `null` → 抛"条件值无效"。区间语法同样要求 `-?\d+(\.\d+)?`（`:83`） | **"`nitrogenPct >= maxPct`" 不能写成决策表单元格。** A′ 必须改为"比较结果预处理成布尔入参"或换 BAL |
 | **F2** | **输出字段不能回灌为输入** | `server/index.js:104 parseFacts`：`Object.keys(raw).some(key => !inputs.some(...))` → 任意 output 字段出现在 facts 里直接 400 | 上一轮的 `nextPhase`/设备指令无法作为下一轮输入送给 RES。**状态必须由调用方（仓端中控）持有**——与路线 A 的定位一致，但这是平台强制的，不是可选设计 |
 | **F3** | **决策表命中 = "首个条件匹配的行"，与物理行序无关** | 实测（真实 Drools `/test`）：`PENDING + endReached=true` 命中第 6 行而非第 1 行；`PENDING + paused=true` 命中第 7 行；`FILLING + endReached=true` 命中第 6 行。生成 DRL 的 salience 随行号递减，但**优先级裁决方向与直觉相反**，实际效果是"逐行向下匹配、先匹配上的胜出"，与源码里 `documents` 常见的"末行覆盖"假设相反 | **不得依赖行序推断优先级**；需要"兜底"的行必须写成**显式条件**（本设计的暂停行条件为 `paused == true`，不靠行号兜底） |
-| **F5** | **发布产物会冻结当时的 BOM 版本；BOM 升版后旧产物不可用于规则流** | 实测：表在 BOM v4 时发布，BOM 升到 v6 后编辑规则流报 `充氮结束处理表 使用 BOM v4，当前为 v6，请先重新发布该资产`（`flowSnapshot` 的检查，`shared/assets.js:871`）。同时 `projectAssetDetail` 原先不返回产物 BOM 版本，调用方无法判断是否需要重发 | 表 A/B **在任何 BOM 修改后必须重新发布**；为此在 `projectAssetDetail` 增加了 `versions[]` 与 `publishedBomVersion`（`server/index.js`） |
+| **F5** | **发布产物会冻结当时的 BOM 版本；BOM 升版后旧产物不可用于规则集** | 实测：表在 BOM v4 时发布，BOM 升到 v6 后编辑规则集报 `充氮结束处理表 使用 BOM v4，当前为 v6，请先重新发布该资产`（`flowSnapshot` 的检查，`shared/assets.js:871`）。同时 `projectAssetDetail` 原先不返回产物 BOM 版本，调用方无法判断是否需要重发 | 表 A/B **在任何 BOM 修改后必须重新发布**；为此在 `projectAssetDetail` 增加了 `versions[]` 与 `publishedBomVersion`（`server/index.js`） |
 
-另外确认了一条**可用能力**：规则流支持按 Boolean 字段做排他分支（`shared/assets.js:657 flowConditionValue` 明确处理 `Boolean → text === 'true'`；`:665 flowConditionMatches`）。这条能力让 A′ 可以做到"全程只用决策表"。
+另外确认了一条**可用能力**：规则集支持按 Boolean 字段做排他分支（`shared/assets.js:657 flowConditionValue` 明确处理 `Boolean → text === 'true'`；`:665 flowConditionMatches`）。这条能力让 A′ 可以做到"全程只用决策表"。
 
 > F1 让 A′ 从"一张表"变成"**一张主表 + 一层预处理**"。已按决策 D1① 定稿：阈值比较放在仓端中控，以 4 个布尔入参进入规则。
 
@@ -26,7 +26,7 @@
 | # | 决议 | 后果 |
 |---|---|---|
 | D1 | **① 阈值比较在仓端中控预处理成布尔量**，决策表保持"一张业务表" | 规则只做逻辑、可回放；§2.3 预处理算法纳入集成验收 |
-| D2 | **① "结束"由规则流承载** | 结束语义成为可治理、可审计的资产行为 |
+| D2 | **① "结束"由规则集承载** | 结束语义成为可治理、可审计的资产行为 |
 | D3 | **① `paused` 保留为决策表行 + 中控侧也短路** | 双保险，暂停成为可测试的规则行为 |
 | D4 | **① 停用现网 `project-7c12c971` 的 3 条迁移语句** | 阶段事件只有一个来源 |
 | D5 | **API 种子 + 页面发 Release** | 见 §7.0 |
@@ -39,7 +39,7 @@
 | # | 早期设计 | 实际落地 | 原因 |
 |---|---|---|---|
 | **A1** | 表 A 只写 `nextPhase`/`reason`，设备态由独立的"设备态表"按 `phase` 给出 | **设备指令与迁移写在表 A 同一行** | 已实测（V1）：平台不允许 output 回填 input，步骤间传递的是 `nextPhase`；若后续步骤按 `phase` 选行，会读到**迁移前**的阶段 → `FILLING→CIRCULATION` 时给出"充氮阀 OPEN"（开错阀门） |
-| **A2** | 规则流用 `endReached` 排他网关分出两条分支 | **两个公共步骤（A → B），无网关** | 平台要求每个分支至少一步，空默认分支非法；而"未到结束时间"分支本就不需要额外步骤 |
+| **A2** | 规则集用 `endReached` 排他网关分出两条分支 | **两个公共步骤（A → B），无网关** | 平台要求每个分支至少一步，空默认分支非法；而"未到结束时间"分支本就不需要额外步骤 |
 | **A3** | "设备态表"是第三个资产 | **取消该资产**（已归档） | 设备态并入表 A 后不再需要 |
 | **A4** | 决策表承载状态迁移、阈值由中控预处理成布尔信号 | **改用 BAL 规则（11 条），阈值比较写在规则内、阈值作为 facts 参数传入** | 客户要求阈值"随时调整"。决策表单元格只接受字面量，写死会随 Release 冻结、改一次要重新发布部署；BAL 的 `raw` 条件可写 `nitrogenPct >= maxPct`，阈值来自参数 → **改参数立即生效，无需重新发布**。两处旧决策表已移到 `deprecated.nitrogen` 包（仍在 `nitrogen` 包里会被 Rule Group 一并编译而报 BOM 版本过期） |
 
@@ -54,7 +54,7 @@ Layer C 安全告警（CEP / Esper）—— 与控制解耦，独立通道
 
 Layer A 控制主链路（rules / Drools）
   ┌ 决策表 A：主状态迁移（7 行，一张表读完全部迁移）
-  └ 规则流：公共步骤[A] → 排他网关(endReached) → { 结束决策表 B | 常规决策表 B' }
+  └ 规则集：公共步骤[A] → 排他网关(endReached) → { 结束决策表 B | 常规决策表 B' }
                                         ↑ 复用 Boolean 分支能力（F3 已核实）
 
 Layer B 契约（不是资产，是要写进接口文档的规范；两套 BOM 各自独立）
@@ -64,7 +64,7 @@ Layer B 契约（不是资产，是要写进接口文档的规范；两套 BOM �
   └─ 输出契约：nextPhase + 4 路设备指令 + reason，怎么下发与回执
 ```
 
-**为什么把"结束处理"拆成第二张表**：因为 F1 让 `now >= endAt` 无法进决策表条件，而"结束优先级最高"又必须保证。用**规则流网关**在同一发布物内完成，比让中控额外判一次更内聚，也让"任何阶段到点即结束"成为一个可测试的资产行为。
+**为什么把"结束处理"拆成第二张表**：因为 F1 让 `now >= endAt` 无法进决策表条件，而"结束优先级最高"又必须保证。用**规则集网关**在同一发布物内完成，比让中控额外判一次更内聚，也让"任何阶段到点即结束"成为一个可测试的资产行为。
 
 ---
 
@@ -80,7 +80,7 @@ Layer B 契约（不是资产，是要写进接口文档的规范；两套 BOM �
 | 项目 | **新建** `engine=rules`（如"粮库自动充氮控制（Drools）"） | 复用/新建 `engine=cep`（现网 `project-7c12c971`） |
 | BOM 文件 | `bom-<rulesProjectId>.json` | `bom-<cepProjectId>.json` |
 | BOM 内容 | `NitrogenControl`（9 入参）+ `NitrogenCommand`（6 出参） | `NitrogenReading`（事件类型）+ `NitrogenPhase`（输出枚举） |
-| 资产 | 决策表 A/B/B′ + 规则流 + 测试套件 | EventStream（越限联锁 + 断流检测） |
+| 资产 | 决策表 A/B/B′ + 规则集 + 测试套件 | EventStream（越限联锁 + 断流检测） |
 | 编译 | Drools `/compile`（8788） | Esper `/compile`（8791） |
 | 运行 | RES `/execute`（8790） | CEP Runtime `/events/{releaseId}`（8792） |
 | Release | `engine:{type:'drools'}` schemaVersion 1 | `engine:{type:'esper'}` schemaVersion 2 |
@@ -290,7 +290,7 @@ for round in 1..4:
 
 ---
 
-## 4. Layer A 之二：规则流（Rule Group 整包执行）
+## 4. Layer A 之二：规则集（Rule Group 整包执行）
 
 ```
 [唯一步骤] 规则组：nitrogen（Rule Group，含 11 条规则）
@@ -299,7 +299,7 @@ for round in 1..4:
 - 步骤类型 `rule-group`，`selector = { packageName: "nitrogen", includeChildren: false }`。
 - 快照会把成员规则合成为**完整 DRL**（实测 4986 字符），执行方式与单条规则一致。
 - **不要把已废弃的决策表留在 `nitrogen` 包里**：决策表也按 `category` 归包，会被 Rule Group 拉进来一并编译，
-  而其产物冻结的 BOM 版本可能已过期 → 规则流编译报"使用 BOM vN，当前为 vM"。本方案已把两个废弃决策表
+  而其产物冻结的 BOM 版本可能已过期 → 规则集编译报"使用 BOM vN，当前为 vM"。本方案已把两个废弃决策表
   移到 `deprecated.nitrogen` 包。
 
 ### 4.1 平台缺口修复：RES 原先不接受 `rule-group` 步骤
@@ -415,10 +415,10 @@ POST http://127.0.0.1:8790/execute
 
 | # | 验证项 | 状态 | 证据 |
 |---|---|---|---|
-| **V1** | 规则流步骤间 facts 传递：后续步骤读到的是表 A 执行后的值 | ✅ **已验证，并据此改了设计** | 实测确认 `phase` **不会**被更新（只能传 `nextPhase`），故按 §0.2 A1 把设备指令并入表 A |
+| **V1** | 规则集步骤间 facts 传递：后续步骤读到的是表 A 执行后的值 | ✅ **已验证，并据此改了设计** | 实测确认 `phase` **不会**被更新（只能传 `nextPhase`），故按 §0.2 A1 把设备指令并入表 A |
 | **V2** | 表 A / 表 B 的输出字段重叠是受控的 | ✅ 通过 | 两表都写 `nextPhase` 与设备指令；覆盖方向单一（仅 `endReached=true` 时表 B 覆盖），已在流程 `description` 写明 |
 | **V3** | `endReached == true` 条件能正确选中表 B | ✅ 通过 | 实测命中「充氮结束处理表 第1行」，`nextPhase=COMPLETED`、全关 |
-| **V4** | **两套 BOM 确实独立** | ✅ 通过 | 给 CEP BOM 加 `safetyMaxPct`（v2→v3）后，Drools 侧：门禁仍 **16/16**、BOM 仍 v6、决策表 `analyze` 正常（DRL 4906 字符）、规则流 `compile` 通过、控制 demo 正常执行 |
+| **V4** | **两套 BOM 确实独立** | ✅ 通过 | 给 CEP BOM 加 `safetyMaxPct`（v2→v3）后，Drools 侧：门禁仍 **16/16**、BOM 仍 v6、决策表 `analyze` 正常（DRL 4906 字符）、规则集 `compile` 通过、控制 demo 正常执行 |
 
 ### 7.1.3 端到端落地实测（2026-10-02）
 
@@ -426,14 +426,14 @@ POST http://127.0.0.1:8790/execute
 |---|---|
 | 项目 / BOM | `project-63dbe140`（engine=rules），BOM v6，10 入参 / 6 出参 |
 | 决策表 | 「充氮状态迁移表」10 行 + 「充氮结束处理表」1 行，均 v3 已发布，真实 Drools 编译通过 |
-| 规则流 | 「自动充氮控制规则流」两个公共步骤，v1 已发布，编译通过 |
+| 规则集 | 「自动充氮控制规则集」两个公共步骤，v1 已发布，编译通过 |
 | 测试套件 | 「自动充氮状态机回归（发布门禁）」16 条用例，`required=true` |
 | Release | `f105f634-ea24-4262-a0d1-52604821ac68`（`project-63dbe140/nitrogen-control` v1），**门禁 16/16 通过**，已部署 RES :8790 |
 | 控制闭环 | 经 demo 真实驱动：`FILLING → CIRCULATION → HOLDING → REPLENISHING → CIRCULATION → HOLDING → … → COMPLETED`，12 条设备指令，**阀门互斥全程无违规**，结束时间正确收口 |
 | 暂停语义 | 暂停 8 秒（虚拟 8 分钟）期间 `circAccumMs` 冻结在 4680000ms 不变、设备全关；继续后从累计值续算 |
 | Layer C 联锁 | 事件流「充氮安全告警（联锁 + 断流）」v1，Esper 8.8.0 编译通过，Release `1f232f3e-…`（`project-7c12c971/n2-safety-alarm`）部署 CEP Runtime :8792；实测注入 99.5% 命中 `N2SafetyInterlock`、注入 92% 不命中 |
 
-### 7.2 规则流端到端回放（一次 `sequence` 里的多轮 facts）
+### 7.2 规则集端到端回放（一次 `sequence` 里的多轮 facts）
 
 按 §2.3 的预处理算法在测试侧手算 `circAccumMs`/`endReached`，构造一条完整环路：
 
@@ -447,7 +447,7 @@ PENDING → FILLING → CIRCULATION → HOLDING → REPLENISHING → CIRCULATION
 
 | 项 | 说明 |
 |---|---|
-| 现有 rules 项目全链路 | BAL/决策表/规则流/套件/Release 全部不受影响（本次不新增平台能力，只需回归） |
+| 现有 rules 项目全链路 | BAL/决策表/规则集/套件/Release 全部不受影响（本次不新增平台能力，只需回归） |
 | 现网 CEP 项目 | `project-7c12c971` 停用迁移语句后，安全告警语句仍需可编译 + 可发布 |
 | 决策表既有告警 | 表 A 的"重叠"提示需在资产 `description` 说明，不得为了让提示消失而改坏优先级 |
 
@@ -459,7 +459,7 @@ PENDING → FILLING → CIRCULATION → HOLDING → REPLENISHING → CIRCULATION
 | ├ BOM v6 | `NitrogenControl`（**10 入参**，含 5 个布尔信号）+ `NitrogenCommand`（6 出参） |
 | ├ 决策表「充氮状态迁移表」v3 | **10 行**，每行 = 迁移目标 + 原因 + 4 路设备指令 |
 | ├ 决策表「充氮结束处理表」v3 | 1 行，`endReached=true` 收口为 `COMPLETED` + 全关 |
-| ├ 规则流「自动充氮控制规则流」v1 | **两个公共步骤**（迁移表 → 结束表），无网关 |
+| ├ 规则集「自动充氮控制规则集」v1 | **两个公共步骤**（迁移表 → 结束表），无网关 |
 | ├ 测试套件「自动充氮状态机回归（发布门禁）」 | **16 条用例**，`required=true`，Release 门禁实测 16/16 |
 | └ Release `f105f634-…` | `project-63dbe140/nitrogen-control` v1，已部署 RES :8790 |
 | **CEP 项目** `project-7c12c971`（复用，`engine=cep`） | 安全告警链路，独立 BOM |
@@ -467,7 +467,7 @@ PENDING → FILLING → CIRCULATION → HOLDING → REPLENISHING → CIRCULATION
 | ├ EventStream「充氮安全告警（联锁 + 断流）」v1 | 越限联锁 + 时间驱动断流检测，Esper 8.8.0 编译通过 |
 | └ Release `1f232f3e-…` | `project-7c12c971/n2-safety-alarm` v1，已部署 CEP Runtime :8792 |
 | 接口文档 | §2 + §6.1 的两套契约、预处理算法、安全兜底、O1–O5 义务（**给中控/集成商**） |
-| **种子脚本**（`rules/scripts/`） | `seed-nitrogen-control.mjs`（项目/BOM/决策表，幂等）<br>`seed-nitrogen-flow.mjs`（规则流草稿）<br>`seed-nitrogen-suite.mjs`（16 条门禁用例）<br>`seed-nitrogen-alarm.mjs`（CEP 安全告警，`--publish` 可发布） |
+| **种子脚本**（`rules/scripts/`） | `seed-nitrogen-control.mjs`（项目/BOM/决策表，幂等）<br>`seed-nitrogen-flow.mjs`（规则集草稿）<br>`seed-nitrogen-suite.mjs`（16 条门禁用例）<br>`seed-nitrogen-alarm.mjs`（CEP 安全告警，`--publish` 可发布） |
 | **演示应用** | `dograin/n2-control/`，见 §7.5 |
 | 平台改动 | `projectAssetDetail` 增加 `versions[]` / `publishedBomVersion`（`server/index.js`）——发布产物冻结的 BOM 版本原先不可见，导致"资产内容没变却需要重发"无法判断 |
 
@@ -504,7 +504,7 @@ PENDING → FILLING → CIRCULATION → HOLDING → REPLENISHING → CIRCULATION
 | # | 决策 | 决议 | 理由 |
 |---|---|---|---|
 | **D1** | 阈值比较放哪（F1 的直接后果） | **① 仓端中控预处理成布尔量**；否决 ② BAL `raw`、否决 ③ 纳入平台 | 规则只做逻辑、算术留给调用方 → 可回放、可断言、发布物与环境解耦、能用决策表行覆盖率；否决 ② 因阈值进 Release 会绑定参数，否决 ③ 因等于回到路线 B（5–8 周） |
-| **D2** | "结束"用规则流网关承载，还是中控侧判掉 | **① 规则流双表**（表 B/B′，内聚可测） | 结束语义属于业务规则，应可治理、可审计；由中控判等于把一条关键规则搬到平台外 |
+| **D2** | "结束"用规则集网关承载，还是中控侧判掉 | **① 规则集双表**（表 B/B′，内聚可测） | 结束语义属于业务规则，应可治理、可审计；由中控判等于把一条关键规则搬到平台外 |
 | **D3** | `paused` 是否进决策表 | **① 进表 A（第 7 行）+ 中控侧同时短路** | 双保险；让"暂停"成为可测试的规则行为 |
 | **D4** | 现网 `project-7c12c971` 的 3 条迁移语句 | **① 停用**（不删除，保留历史 Release 可追溯） | 保留会让 `NitrogenPhaseEvent` 有两个来源，运行期必然冲突 |
 | **D7** | 阈值判断放哪 | **① 放规则内（BAL `raw` 跨字段比较），阈值作为 facts 参数** | 客户要求阈值"随时调整"：放代码要改代码重启；放决策表字面量会随 Release 冻结。放规则内 + 参数化 = 改参数立即生效，且判定语义归规则治理 |

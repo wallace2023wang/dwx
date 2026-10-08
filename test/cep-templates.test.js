@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import { CEP_TEMPLATES, buildCepTemplate, normalizeCepOperator, renderCepTemplateDescription } from '../shared/cep-templates.js';
-import { compileEventStreamDraft, normalizeEventStreamDraft } from '../shared/event-streams.js';
+import { compileEventStreamDraft, eventStreamDependencies, eventStreamDependencyImpact, normalizeEventStreamDraft } from '../shared/event-streams.js';
 
 const bom = {
   version: 1,
@@ -265,6 +265,35 @@ test('CEP validation accepts time-driven patterns and same-stream derived events
   }, bom);
   assert.equal(periodic.status, 200, periodic.error || '');
   assert.deepEqual(periodic.result.module.statements[0].eventTypes, []);
+});
+
+test('EventStream dependency graph reports derived consumers and removal impact', () => {
+  const draft = {
+    name: '依赖检测',
+    statements: [
+      { name: 'ProduceAlarm', epl: 'insert into AlarmEvent select * from NH3Reading' },
+      { name: 'EscalateAlarm', epl: 'insert into EscalatedEvent select * from AlarmEvent' },
+      { name: 'MaintainAlarm', epl: 'insert into AlarmEvent select * from AlarmEvent' },
+    ],
+  };
+  const graph = eventStreamDependencies(draft);
+  assert.deepEqual(graph.outputs, [
+    { eventType: 'AlarmEvent', statements: ['ProduceAlarm', 'MaintainAlarm'] },
+    { eventType: 'EscalatedEvent', statements: ['EscalateAlarm'] },
+  ]);
+  assert.deepEqual(graph.dependencies, [
+    { eventType: 'AlarmEvent', consumer: 'EscalateAlarm', producers: ['ProduceAlarm', 'MaintainAlarm'], selfReference: false },
+    { eventType: 'AlarmEvent', consumer: 'MaintainAlarm', producers: ['ProduceAlarm', 'MaintainAlarm'], selfReference: true },
+  ]);
+
+  assert.deepEqual(eventStreamDependencyImpact(draft, {
+    ...draft,
+    statements: draft.statements.filter(statement => statement.name !== 'ProduceAlarm'),
+  }), []);
+  assert.deepEqual(eventStreamDependencyImpact(draft, {
+    ...draft,
+    statements: draft.statements.filter(statement => statement.name === 'EscalateAlarm'),
+  }), [{ eventType: 'AlarmEvent', removedProducers: ['ProduceAlarm', 'MaintainAlarm'], consumers: ['EscalateAlarm'] }]);
 });
 
 test('CEP template baseline fixture stays aligned with builders', async () => {

@@ -1,14 +1,15 @@
-import { AlertTriangle, ArrowDown, ArrowUp, CheckCircle2, Circle, Code2, FileClock, GripVertical, LoaderCircle, Plus, RadioTower, Save, Send, Sparkles, Trash2, Wand2, XCircle, Zap } from 'lucide-react'
+import { AlertTriangle, ArchiveRestore, ArrowDown, ArrowUp, CheckCircle2, Circle, Code2, FileClock, GripVertical, LoaderCircle, Plus, RadioTower, Save, Send, Sparkles, Trash2, Wand2, XCircle, Zap } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { useBom } from '../../api/bom'
 import Modal from '../../components/Modal'
 import MonacoTextEditor from '../../components/assets/MonacoTextEditor'
-import { useCompileEventStream, useCreateEventStream, useDeleteEventStream, useEventStream, useEventStreams, usePublishEventStream, useSaveEventStream, type EplStatement, type EventStreamDraft } from '../../api/eventStreams'
+import { useCompileEventStream, useCreateEventStream, useDeleteEventStream, useEventStream, useEventStreams, usePublishEventStream, useRestoreEventStream, useSaveEventStream, type EplStatement, type EventStreamDraft } from '../../api/eventStreams'
 import { useCreateTestSuite } from '../../api/tests'
 import { buildCepTemplate, CEP_TEMPLATES, defaultCepParams, describeCepTemplate, fieldsForEventType, numericFields, type CepOutputField, type CepTemplateId, type CepTemplateParams } from '../../lib/cepTemplates'
 import { buildCepTestSkeleton } from '../../lib/cepTemplates'
 import type { BomModel } from '../../types'
+import { useSessionStore } from '../../store/session'
 
 type EditorOperation = 'save' | 'compile' | 'test' | 'publish'
 
@@ -79,6 +80,7 @@ export default function EventStreamsTab() {
   const [searchParams, setSearchParams] = useSearchParams()
   const selectedId = searchParams.get('stream') || undefined
   const { data: streams = [], isPending } = useEventStreams(projectId)
+  const { data: archivedStreams = [] } = useEventStreams(projectId, true)
   const { data: bom, isPending: bomPending } = useBom(projectId)
   const active = streams.find(stream => stream.id === selectedId) || streams[0]
   const { data: detail } = useEventStream(projectId, active?.id)
@@ -87,6 +89,7 @@ export default function EventStreamsTab() {
   const deleteStream = useDeleteEventStream(projectId, detail?.id)
   const compileStream = useCompileEventStream(projectId, detail?.id)
   const publishStream = usePublishEventStream(projectId, detail?.id)
+  const restoreStream = useRestoreEventStream(projectId)
   const createTestSuite = useCreateTestSuite(projectId)
   const [draft, setDraft] = useState<EventStreamDraft | null>(null)
   const [selectedStatement, setSelectedStatement] = useState(0)
@@ -96,8 +99,11 @@ export default function EventStreamsTab() {
   const [descriptionOverwriteIndex, setDescriptionOverwriteIndex] = useState<number | null>(null)
   const [deleteAssetOpen, setDeleteAssetOpen] = useState(false)
   const [deleteStatementIndex, setDeleteStatementIndex] = useState<number | null>(null)
+  const [archiveOpen, setArchiveOpen] = useState(false)
   const [activeOperation, setActiveOperation] = useState<EditorOperation | null>(null)
   const [draggedStatement, setDraggedStatement] = useState<number | null>(null)
+  const user = useSessionStore(state => state.user)
+  const canEditAdvancedEpl = Boolean(user?.roles.includes('admin') || user?.roles.includes('cep-developer') || user?.permissions?.includes('*') || user?.permissions?.includes('advanced-epl'))
   const [compiledFingerprint, setCompiledFingerprint] = useState('')
   const [failedFingerprint, setFailedFingerprint] = useState('')
   const currentDraft = draft || detail?.draft || null
@@ -139,6 +145,15 @@ export default function EventStreamsTab() {
     setCompiledFingerprint('')
     setFailedFingerprint('')
     setDeleteAssetOpen(false)
+  }
+
+  const restoreAsset = async (streamId: string, revision: number) => {
+    const restored = await restoreStream.mutateAsync({ streamId, revision })
+    setSearchParams({ stream: restored.id })
+    setDraft(restored.draft)
+    setSelectedStatement(0)
+    setArchiveOpen(false)
+    setLocalNotice(`事件流已恢复为草稿，历史版本保留；需重新发布后才能用于新 Release。`)
   }
 
   const clearFeedback = () => {
@@ -280,6 +295,7 @@ export default function EventStreamsTab() {
 
   const addAdvancedStatement = () => {
     if (!currentDraft) return
+    if (!canEditAdvancedEpl) { setLocalNotice('当前角色没有高级 EPL 编辑权限。'); return }
     updateStatements(statements => [...statements, { name: `Statement${statements.length + 1}`, enabled: true, mode: 'advanced', epl: `select * from ${firstEventType}` }])
     setSelectedStatement(currentDraft.statements.length)
   }
@@ -331,6 +347,7 @@ export default function EventStreamsTab() {
 
   const switchToAdvanced = () => {
     if (!currentStatement) return
+    if (!canEditAdvancedEpl) { setLocalNotice('当前角色没有高级 EPL 编辑权限。'); return }
     const generatedEpl = generatedEplForStatement(currentStatement)
     if (generatedEpl && currentStatement.epl.trim() !== generatedEpl.trim()) {
       setTemplateConflict({ index: selectedStatement, generatedEpl })
@@ -389,7 +406,7 @@ export default function EventStreamsTab() {
   return (
     <div className="flex h-full min-h-0 flex-col bg-white lg:flex-row">
       <aside className="max-h-64 w-full shrink-0 overflow-auto border-b border-ink-border p-3 lg:max-h-none lg:w-72 lg:border-b-0 lg:border-r">
-        <div className="mb-3 flex items-center justify-between"><h2 className="text-xs font-semibold">事件流资产</h2><button className="primary-button h-8" onClick={() => void create()} disabled={createStream.isPending || bomPending}>{createStream.isPending ? <LoaderCircle size={13} className="animate-spin" /> : <Plus size={13} />}新建</button></div>
+        <div className="mb-3 flex items-center justify-between"><h2 className="text-xs font-semibold">事件流资产</h2><div className="flex gap-1"><button type="button" className="inline-flex size-8 items-center justify-center border border-ink-border text-ink-2 disabled:opacity-40" disabled={!archivedStreams.length} onClick={() => setArchiveOpen(true)} title={`归档事件流（${archivedStreams.length}）`}><ArchiveRestore size={13} /></button><button className="primary-button h-8" onClick={() => void create()} disabled={createStream.isPending || bomPending}>{createStream.isPending ? <LoaderCircle size={13} className="animate-spin" /> : <Plus size={13} />}新建</button></div></div>
         {isPending ? <p className="text-xs text-ink-3">加载中...</p> : streams.length ? streams.map(stream => {
           const selected = active?.id === stream.id
           const locallyDirty = selected && isDirty
@@ -410,7 +427,7 @@ export default function EventStreamsTab() {
           <label className="block text-xs"><span className="mb-1 flex items-center justify-between text-[11px] text-ink-3"><span>事件流说明</span><span className={(currentDraft.description?.length || 0) > 500 ? 'text-[#da1e28]' : ''}>{currentDraft.description?.length || 0} / 500</span></span><textarea aria-label="事件流说明" className={`min-h-16 w-full resize-y border p-2 text-xs outline-none ${(currentDraft.description?.length || 0) > 500 ? 'border-[#da1e28]' : 'border-ink-border focus:border-brand-primary'}`} placeholder="说明整个事件流的业务目标、输入和输出范围" value={currentDraft.description || ''} onChange={event => setDraft({ ...currentDraft, description: event.target.value })} />{(currentDraft.description?.length || 0) > 500 && <span className="mt-1 block text-[10px] text-[#da1e28]">事件流说明不能超过 500 字</span>}</label>
           <div className="grid gap-4 xl:grid-cols-[280px_minmax(360px,1fr)_420px]">
             <div className="border border-ink-border p-3 text-xs">
-              <div className="mb-2 flex gap-2"><button className="h-8 flex-1 border border-brand-primary text-brand-primary" onClick={() => setTemplatePickerOpen(!templatePickerOpen)}><Wand2 size={13} />从向导新建</button><button className="inline-flex size-8 items-center justify-center border border-ink-border" onClick={addAdvancedStatement} title="新建高级 EPL 语句"><Code2 size={13} /></button></div>
+              <div className="mb-2 flex gap-2"><button className="h-8 flex-1 border border-brand-primary text-brand-primary" onClick={() => setTemplatePickerOpen(!templatePickerOpen)}><Wand2 size={13} />从向导新建</button><button className="inline-flex size-8 items-center justify-center border border-ink-border disabled:cursor-not-allowed disabled:opacity-40" disabled={!canEditAdvancedEpl} onClick={addAdvancedStatement} title={canEditAdvancedEpl ? '新建高级 EPL 语句' : '需要 advanced-epl 权限'}><Code2 size={13} /></button></div>
               {currentStatement && <div className="mb-3 flex h-8 items-center border border-ink-border bg-[#fafafa] px-2"><label className="flex items-center gap-1.5 text-[10px] text-ink-2"><input type="checkbox" checked={currentStatement.enabled !== false} onChange={event => patchStatement(selectedStatement, { enabled: event.target.checked })} />启用当前语句</label></div>}
               {templatePickerOpen && <div className="mb-3 space-y-2">{CEP_TEMPLATES.map(template => <button key={template.id} className="w-full border border-ink-border p-2 text-left hover:border-brand-primary" onClick={() => addTemplateStatement(template.id)}><div className="font-semibold">{template.name}</div><div className="mt-1 text-[11px] text-ink-3">{template.summary}</div></button>)}</div>}
               <datalist id="event-stream-groups">{knownGroups.map(group => <option key={group} value={group} />)}</datalist>
@@ -428,7 +445,7 @@ export default function EventStreamsTab() {
               })}</div>
             </div>
             <div className="border border-ink-border p-3 text-xs">
-              {currentStatement ? <div className="space-y-3"><label className="block"><span className="mb-1 block text-[11px] text-ink-3">语句分组</span><input className="control-input" list="event-stream-groups" maxLength={80} placeholder="未分组" value={currentStatement.group || ''} onChange={event => patchStatement(selectedStatement, { group: event.target.value || undefined })} /></label><label className="block"><span className="mb-1 flex items-center justify-between text-[11px] text-ink-3"><span>业务说明</span><span className={(currentStatement.description?.length || 0) > 500 ? 'text-[#da1e28]' : ''}>{currentStatement.description?.length || 0} / 500</span></span><textarea aria-label="业务说明" className={`min-h-20 w-full resize-y border p-2 text-xs outline-none ${(currentStatement.description?.length || 0) > 500 ? 'border-[#da1e28]' : 'border-ink-border focus:border-brand-primary'}`} placeholder="说明该语句检测什么、适用场景以及命中后的业务结果" value={currentStatement.description || ''} onChange={event => patchStatement(selectedStatement, { description: event.target.value })} />{(currentStatement.description?.length || 0) > 500 && <span className="mt-1 block text-[10px] text-[#da1e28]">业务说明不能超过 500 字</span>} {!currentStatement.description?.trim() && <span className="mt-1 block text-[10px] text-[#a15c00]">建议补充业务说明，便于评审和运维理解。</span>}{currentSummary && <button type="button" className="mt-2 h-7 border border-ink-border px-2 text-[10px]" onClick={() => generateDescription(selectedStatement)}>按当前配置生成说明</button>}</label>{currentStatement.mode === 'guided' && currentStatement.template ? <GuidedForm statement={currentStatement} bom={bom} onChange={statement => patchStatement(selectedStatement, statement)} onAdvanced={switchToAdvanced} /> : <AdvancedEditor statement={currentStatement} bom={bom} onChange={statement => patchStatement(selectedStatement, statement)} onRegenerate={currentStatement.template ? regenerateGuided : undefined} />}</div> : <p className="text-ink-3">请选择语句。</p>}
+              {currentStatement ? <div className="space-y-3"><label className="block"><span className="mb-1 block text-[11px] text-ink-3">语句分组</span><input className="control-input" list="event-stream-groups" maxLength={80} placeholder="未分组" value={currentStatement.group || ''} onChange={event => patchStatement(selectedStatement, { group: event.target.value || undefined })} /></label><label className="block"><span className="mb-1 flex items-center justify-between text-[11px] text-ink-3"><span>业务说明</span><span className={(currentStatement.description?.length || 0) > 500 ? 'text-[#da1e28]' : ''}>{currentStatement.description?.length || 0} / 500</span></span><textarea aria-label="业务说明" className={`min-h-20 w-full resize-y border p-2 text-xs outline-none ${(currentStatement.description?.length || 0) > 500 ? 'border-[#da1e28]' : 'border-ink-border focus:border-brand-primary'}`} placeholder="说明该语句检测什么、适用场景以及命中后的业务结果" value={currentStatement.description || ''} onChange={event => patchStatement(selectedStatement, { description: event.target.value })} />{(currentStatement.description?.length || 0) > 500 && <span className="mt-1 block text-[10px] text-[#da1e28]">业务说明不能超过 500 字</span>} {!currentStatement.description?.trim() && <span className="mt-1 block text-[10px] text-[#a15c00]">建议补充业务说明，便于评审和运维理解。</span>}{currentSummary && <button type="button" className="mt-2 h-7 border border-ink-border px-2 text-[10px]" onClick={() => generateDescription(selectedStatement)}>按当前配置生成说明</button>}</label>{currentStatement.mode === 'guided' && currentStatement.template ? <GuidedForm statement={currentStatement} bom={bom} onChange={statement => patchStatement(selectedStatement, statement)} onAdvanced={switchToAdvanced} canEditAdvanced={canEditAdvancedEpl} /> : <AdvancedEditor statement={currentStatement} bom={bom} onChange={statement => patchStatement(selectedStatement, statement)} onRegenerate={currentStatement.template ? regenerateGuided : undefined} readOnly={!canEditAdvancedEpl} />}</div> : <p className="text-ink-3">请选择语句。</p>}
             </div>
             <div className="border border-ink-border p-3 text-xs">
               <div className="mb-2 flex items-center justify-between"><span className="font-semibold">EPL 预览</span>{currentStatement?.mode === 'guided' && <span className="rounded bg-brand-primary-l px-2 py-1 text-[10px] text-brand-primary"><Sparkles size={12} />引导生成</span>}</div>
@@ -437,6 +454,7 @@ export default function EventStreamsTab() {
               <div className="mt-3 flex items-start gap-2 rounded border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-800"><AlertTriangle size={14} />当前 #time 窗口与 timer 使用 Esper 处理时间，不按 eventTime 回放；部署运行时的 timer 输出可由 webhook 异步接收。</div>
             </div>
           </div>
+          {detail?.dependencyGraph?.dependencies?.length ? <div className="border border-ink-border p-3 text-xs"><div className="mb-2 font-semibold">语句依赖</div><div className="space-y-1.5">{detail.dependencyGraph.dependencies.map((dependency, index) => <div key={`${dependency.eventType}-${dependency.consumer}-${index}`} className="flex flex-wrap items-center gap-2 border border-ink-border bg-[#fafafa] px-2 py-1.5"><span className="font-mono text-brand-primary">{dependency.producers.join(' / ')}</span><span className="text-ink-3">产生</span><span className="font-mono">{dependency.eventType}</span><span className="text-ink-3">供</span><span className="font-mono text-[#7b4ea3]">{dependency.consumer}</span><span className="text-ink-3">使用{dependency.selfReference ? '（含自引用）' : ''}</span></div>)}</div></div> : null}
           {detail?.versions?.length ? <div className="border border-ink-border p-3 text-xs"><div className="mb-2 flex items-center gap-2 font-semibold"><FileClock size={14} />版本历史</div><div className="space-y-2">{detail.versions.slice().reverse().map(version => <div key={version.number} className="flex items-center justify-between border border-ink-border bg-[#fafafa] px-2 py-1"><span>v{version.number} · rev {version.assetRevision || '-'}</span><span className="text-ink-3">{version.createdBy || 'Team Server'} · {version.createdAt ? new Date(version.createdAt).toLocaleString() : '-'}</span></div>)}</div></div> : null}
           {(notice || compileStream.error || saveStream.error || deleteStream.error || publishStream.error || createTestSuite.error || detail?.validationError) && <div className="rounded border border-ink-border bg-ink-bg p-2 text-xs">{notice || errorMessage(compileStream.error) || errorMessage(saveStream.error) || errorMessage(deleteStream.error) || errorMessage(publishStream.error) || errorMessage(createTestSuite.error) || detail?.validationError}</div>}
         </div>}
@@ -467,16 +485,20 @@ export default function EventStreamsTab() {
         <div className="p-4 text-xs leading-5">确定删除“{labelOf(currentDraft.statements[deleteStatementIndex])}”吗？保存事件流后该修改才会生效。</div>
         <footer className="flex justify-end gap-2 border-t border-ink-border bg-[#fafafa] p-3"><button className="h-8 border border-ink-border bg-white px-3 text-[11px]" onClick={() => setDeleteStatementIndex(null)}>取消</button><button className="h-8 bg-[#da1e28] px-3 text-[11px] text-white" onClick={removeStatement}>确认删除</button></footer>
       </Modal>}
+      {archiveOpen && <Modal title="归档事件流" onClose={() => setArchiveOpen(false)}>
+        <div className="space-y-2 p-4 text-xs">{archivedStreams.length ? archivedStreams.map(stream => <div key={stream.id} className="flex items-center justify-between gap-3 border border-ink-border p-3"><div className="min-w-0"><div className="truncate font-semibold">{stream.name}</div><div className="mt-1 text-[10px] text-ink-3">r{stream.revision} · 历史版本 {stream.version}</div></div><button type="button" className="h-8 shrink-0 border border-brand-primary px-3 text-[11px] text-brand-primary disabled:opacity-40" disabled={restoreStream.isPending} onClick={() => void restoreAsset(stream.id, stream.revision)}><ArchiveRestore size={12} />恢复为草稿</button></div>) : <p className="text-ink-3">暂无归档事件流。</p>}{restoreStream.error && <p className="text-[#da1e28]">{restoreStream.error.message}</p>}</div>
+        <footer className="flex justify-end border-t border-ink-border bg-[#fafafa] p-3"><button className="h-8 border border-ink-border bg-white px-3 text-[11px]" onClick={() => setArchiveOpen(false)}>关闭</button></footer>
+      </Modal>}
     </div>
   )
 }
 
-function AdvancedEditor({ statement, bom, onChange, onRegenerate }: { statement: EplStatement; bom: BomModel | undefined; onChange: (patch: Partial<EplStatement>) => void; onRegenerate?: () => void }) {
+function AdvancedEditor({ statement, bom, onChange, onRegenerate, readOnly }: { statement: EplStatement; bom: BomModel | undefined; onChange: (patch: Partial<EplStatement>) => void; onRegenerate?: () => void; readOnly: boolean }) {
   const suggestions = [...(bom?.eventTypes || []).map(item => item.name), ...(bom?.factTypes || []).flatMap(item => item.fields.map(field => field.key))]
-  return <div className="space-y-3"><div className="flex items-center justify-between"><div><div className="font-semibold">高级 EPL</div>{statement.template && <div className="mt-1 text-[11px] text-amber-700">已从模板分叉，重新生成前会要求确认。</div>}</div>{onRegenerate && <button className="h-8 border border-ink-border px-3 text-[11px]" onClick={onRegenerate}>用模板重新生成</button>}</div><input className="control-input" value={statement.name} onChange={event => onChange({ name: event.target.value })} /><div className="border border-ink-border"><MonacoTextEditor height={320} value={statement.epl} onChange={epl => onChange({ epl, mode: 'advanced' })} readOnly={false} language="epl" suggestions={suggestions} /></div></div>
+  return <div className="space-y-3"><div className="flex items-center justify-between"><div><div className="font-semibold">高级 EPL</div>{readOnly && <div className="mt-1 text-[11px] text-amber-700">当前角色只能查看高级 EPL。</div>}{statement.template && <div className="mt-1 text-[11px] text-amber-700">已从模板分叉，重新生成前会要求确认。</div>}</div>{onRegenerate && !readOnly && <button className="h-8 border border-ink-border px-3 text-[11px]" onClick={onRegenerate}>用模板重新生成</button>}</div><input className="control-input" value={statement.name} disabled={readOnly} onChange={event => onChange({ name: event.target.value })} /><div className="border border-ink-border"><MonacoTextEditor height={320} value={statement.epl} onChange={epl => onChange({ epl, mode: 'advanced' })} readOnly={readOnly} language="epl" suggestions={suggestions} /></div></div>
 }
 
-function GuidedForm({ statement, bom, onChange, onAdvanced }: { statement: EplStatement; bom: ReturnType<typeof useBom>['data']; onChange: (patch: Partial<EplStatement>) => void; onAdvanced: () => void }) {
+function GuidedForm({ statement, bom, onChange, onAdvanced, canEditAdvanced }: { statement: EplStatement; bom: ReturnType<typeof useBom>['data']; onChange: (patch: Partial<EplStatement>) => void; onAdvanced: () => void; canEditAdvanced: boolean }) {
   const templateId = statement.template as CepTemplateId
   const params = { ...((statement.params as unknown as Partial<CepTemplateParams>) || {}), statementName: statement.name, label: statement.label || '' } as CepTemplateParams
   const fields = fieldsForEventType(bom, params.eventType || '')
@@ -494,7 +516,7 @@ function GuidedForm({ statement, bom, onChange, onAdvanced }: { statement: EplSt
   const needsWindow = !['single-threshold', 'consecutive-count', 'periodic'].includes(templateId)
   const isPattern = ['absence', 'event-sequence'].includes(templateId)
   return <div className="space-y-3">
-    <div className="flex items-center justify-between"><div><div className="font-semibold">{CEP_TEMPLATES.find(template => template.id === templateId)?.name}</div><div className="mt-1 text-[11px] text-ink-3">模板参数表单</div></div><button className="h-8 border border-ink-border px-3 text-[11px]" onClick={onAdvanced}>切换高级模式</button></div>
+    <div className="flex items-center justify-between"><div><div className="font-semibold">{CEP_TEMPLATES.find(template => template.id === templateId)?.name}</div><div className="mt-1 text-[11px] text-ink-3">模板参数表单</div></div><button className="h-8 border border-ink-border px-3 text-[11px] disabled:cursor-not-allowed disabled:opacity-40" disabled={!canEditAdvanced} title={canEditAdvanced ? '切换高级模式' : '需要 advanced-epl 权限'} onClick={onAdvanced}>切换高级模式</button></div>
     <label className="block"><span className="mb-1 block text-[11px] text-ink-3">中文检测名</span><input className="control-input" value={params.label || ''} onChange={event => update({ label: event.target.value })} /></label>
     <label className="block"><span className="mb-1 block text-[11px] text-ink-3">语句 ID</span><input className="control-input" value={params.statementName || ''} onChange={event => update({ statementName: event.target.value })} /></label>
     <label className="block"><span className="mb-1 block text-[11px] text-ink-3">事件源</span><select className="control-input" value={params.eventType || ''} onChange={event => update({ eventType: event.target.value, field: undefined, groupField: undefined, outputFields: undefined })}>{bom?.eventTypes?.map(eventType => <option key={eventType.name} value={eventType.name}>{eventType.label || eventType.name}</option>)}</select></label>

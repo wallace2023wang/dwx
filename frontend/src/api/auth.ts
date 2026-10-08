@@ -5,6 +5,7 @@ import { http } from './client'
 const roleMap: Record<string, UserRole> = {
   admin: 'admin',
   author: 'author',
+  'cep-developer': 'cep-developer',
   reviewer: 'reviewer',
   'release-manager': 'deployer',
   viewer: 'viewer',
@@ -25,6 +26,7 @@ function userFromPrincipal(principal: ServerPrincipal): User {
     email: principal.email || `${principal.name}@company.com`,
     initials,
     roles: roles.length > 0 ? roles : ['viewer'],
+    permissions: principal.permissions,
   }
 }
 

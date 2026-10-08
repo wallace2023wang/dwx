@@ -31,7 +31,7 @@ export function useRuleFlow(projectId: string | undefined, rulesetId: string | u
 
 function requestError(error: unknown): Error {
   if (axios.isAxiosError<{ error?: string }>(error)) return new Error(error.response?.data?.error || error.message)
-  return error instanceof Error ? error : new Error('规则流操作失败')
+  return error instanceof Error ? error : new Error('规则集操作失败')
 }
 
 export function useCreateFlow(projectId: string | undefined) {
@@ -52,7 +52,7 @@ export function useSaveFlow(projectId: string | undefined, flowId: string | unde
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async ({ revision, draft }: { revision: number; draft: FlowDraft }) => {
-      if (!projectId || !flowId) throw new Error('规则流不存在')
+      if (!projectId || !flowId) throw new Error('规则集不存在')
       try {
         const { data } = await http.put<FlowDetail>(
           `/projects/${encodeURIComponent(projectId)}/flows/${encodeURIComponent(flowId)}`,
@@ -71,7 +71,7 @@ export function useSaveFlow(projectId: string | undefined, flowId: string | unde
 export function useCompileFlow(projectId: string | undefined, flowId: string | undefined) {
   return useMutation({
     mutationFn: async ({ revision, draft }: { revision: number; draft: FlowDraft }) => {
-      if (!projectId || !flowId) throw new Error('规则流不存在')
+      if (!projectId || !flowId) throw new Error('规则集不存在')
       try {
         const { data } = await http.post<{ engineVersion: string; stepCount: number; branchCount: number; bomVersion: number }>(
           `/projects/${encodeURIComponent(projectId)}/flows/${encodeURIComponent(flowId)}/compile`,
@@ -87,7 +87,7 @@ export function usePublishFlow(projectId: string | undefined, flowId: string | u
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: async (revision: number) => {
-      if (!projectId || !flowId) throw new Error('规则流不存在')
+      if (!projectId || !flowId) throw new Error('规则集不存在')
       try {
         const { data } = await http.post<FlowDetail>(
           `/projects/${encodeURIComponent(projectId)}/flows/${encodeURIComponent(flowId)}/publish`,
