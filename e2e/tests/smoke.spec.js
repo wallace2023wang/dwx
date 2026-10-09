@@ -8,7 +8,7 @@ installFailureRecorder(test)
 test('smoke-login 登录页渲染', async ({ page }) => {
   const col = createCollector(page)
   await page.goto('/login', { waitUntil: 'networkidle' })
-  await expect(page.getByRole('heading', { name: 'Decision Workbench' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'DWX' })).toBeVisible()
   await expect(page.getByRole('button', { name: /登\s*录/ })).toBeVisible()
   const shots = [await saveShot(page, 'smoke-login', '登录页')]
   const issues = col.stop()

@@ -382,6 +382,18 @@ BOM `domains[]` 保存 `{ id, label, values[] }` 版本化动态域，Enum 字�
 
 编译器把“初始分 + 每个特征命中分值”冻结为确定性的嵌套条件表达式，并为每个结果分段生成一条规则。全部分段共享 `scorecard:<assetId>` activation group，按显示顺序生成 salience，确保一次执行只选择一个结果分段；总分 setter 使用受信任的内部表达式通道，普通规则 API 仍禁止注入任意 DRL。计分卡结构、生成 DRL、BOM 快照与结果分段标识随资产版本和 Release checksum 一并冻结，运行测试按结果分段计算覆盖率。
 
+### 规则模板资产
+
+规则模板以 `kind: "rule-template"` 的结构化草稿存入既有 `tables` 资产集合，复用决策资产的修订、审批、发布、Rule Group、测试和 Release 管线。草稿由 1–20 个强类型参数、条件/动作蓝图和 1–200 个实例组成；参数类型限定为 Integer、Decimal、Boolean、String、Enum 和 Date，并必须与绑定的 BOM 字段语义类型一致。
+
+编译器按实例显示顺序将每个启用实例展开为一条普通 BAL 规则，实例参数替换为经过 BOM 类型校验的字面值，并复用现有规则校验与 DRL 生成器。运行时不解析模板；发布版本和 Release 冻结已展开的确定性 DRL，测试覆盖率按模板实例统计。首版 UI 只开放参数槽，领域模型保留固定值能力；不支持嵌套条件树、动作表达式、项目变量参数化或模板嵌套。
+
+### DWX 资产包导入导出
+
+资产包使用 `format: "dwx-asset-package"`、`schemaVersion: 1` 的版本化 JSON 作为稳定交换格式。预览阶段标准化 Project、Package、资产和 Ruleset，调用各资产已有领域校验器验证 BOM 与结构，并计算规范化清单的 SHA-256；确认阶段要求客户端回传 checksum，并在项目写锁内重新执行冲突和幂等分析，防止预览后的并发变化被静默覆盖。
+
+五类结构化资产写入既有 `rules`/`tables` 集合且保持未发布状态；Ruleset 转换为由 Package Rule Group 组成的规则集草稿。外层 `migration` 元数据保存 DWX 来源 ID、项目名、源版本、资产包 checksum 和导入时间，JSON 与 PostgreSQL 存储均持久化该字段；相同 `sourceId` 再次导入时跳过，不按名称猜测覆盖关系。同包同名但来源不同、结构校验失败或不支持的自由 IRL/DRL 会阻止整批导入。导出覆盖未归档的五类资产和纯 Rule Group 规则集；复杂规则集不能无损表示时记录警告并跳过。完整契约见 `docs/dwx-asset-package.md`。
+
 项目记录持久化审核策略，Change Set 在提交时保存策略快照和逐人批准记录；1/2 人审核使用串行评审锁与乐观修订，只有最后一票触发发布。后续存储工作包括 Change Set 与 Release 强制关联；大型测试数据、构建日志和制品可迁移到对象存储，并补充备份恢复流程。
 
 资产外层记录 `ownerId/ownerName` 草稿负责人，不进入规则草稿、发布版本、Release 内容或运行时校验和。创建时绑定可信 principal；历史资产首次编辑原子认领；转交与内容写入共用资产写队列和乐观修订，避免旧负责人用过期页面覆盖新负责人的草稿。`local` 模式保留单机自编辑能力，OIDC 模式执行负责人/管理员门禁。

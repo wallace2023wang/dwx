@@ -1,5 +1,5 @@
 // RTS 模块 1：资产仓库与版本管理
-// 对标 JRules RTS：草稿/已发布分离、版本快照、恢复历史、归档、发布门禁。
+// 对标 传统规则平台 RTS：草稿/已发布分离、版本快照、恢复历史、归档、发布门禁。
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { startTestEnv } from './helpers.js';

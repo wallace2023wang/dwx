@@ -1,4 +1,4 @@
-# BAL 编辑器需求与设计（Decision Workbench）
+# BAL 编辑器需求与设计（DWX）
 
 
 
@@ -6,7 +6,7 @@
 | -- | ---------------------------------- |
 | 版本 | v1.0                               |
 | 日期 | 2026-09-29                         |
-| 对标 | IBM ODM Decision Center BAL Editor |
+| 产品能力 | DWX BAL Editor |
 | 状态 | 给 codex 的修正需求，P0                   |
 
 

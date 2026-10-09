@@ -9,7 +9,7 @@
 
 ## 1. 项目背景
 
-Decision Workbench 是复刻 IBM iLOG JRules RTS/RES 的规则与决策管理平台，采用**双引擎**架构：rules 项目（Drools RES）与 CEP 项目（Esper 容器）隔离。
+DWX 是复刻 传统规则治理与执行平台 的规则与决策管理平台，采用**双引擎**架构：rules 项目（Drools RES）与 CEP 项目（Esper 容器）隔离。
 
 本次验收对象为**自动充氮控制**客户 Demo（路径 B：CEP 项目 → BOM → EventStream → 测试 → Release → 部署 → 业务 demo 对接），并按客户新要求完成三项改造：
 

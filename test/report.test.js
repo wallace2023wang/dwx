@@ -144,3 +144,20 @@ test('REPORT-07: 项目报告统计并行分支和聚合节点', () => {
   assert.equal(report.flows[0].parallelCount, 1);
   assert.equal(report.flows[0].joinCount, 1);
 });
+
+test('REPORT-08: 项目报告显示高级决策资产类型', () => {
+  const packages = [{ id: 'advanced', name: 'advanced', label: '高级决策', assets: [
+    { id: 'tree', name: '准入分支', type: 'decision-tree', status: 'published', version: '1' },
+    { id: 'scorecard', name: '授信评分', type: 'scorecard', status: 'published', version: '1' },
+    { id: 'template', name: '年龄变体', type: 'rule-template', status: 'draft', version: '1' },
+  ] }];
+  const html = renderProjectReport(
+    { id: 'advanced', name: '高级决策项目' },
+    { rules: [], tables: [], flows: [], releases: [], testSuites: [], bom: { version: 1, factTypes: [] } },
+    packages,
+    'tester',
+  );
+  assert.match(html, />决策树</);
+  assert.match(html, />计分卡</);
+  assert.match(html, />规则模板</);
+});

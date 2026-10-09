@@ -1,5 +1,5 @@
 // RTS 模块 3：Release 构建与门禁
-// 对标 JRules RTS：不可变 Release、校验和、版本递增、发布门禁。
+// 对标 传统规则平台 RTS：不可变 Release、校验和、版本递增、发布门禁。
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { startTestEnv } from './helpers.js';

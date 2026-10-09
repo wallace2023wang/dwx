@@ -1,4 +1,4 @@
-# Decision Workbench Frontend
+# DWX Frontend
 
 Rule Team Server 新版 React 前端。当前完成 Sprint 1-3：登录、全局顶栏、决策服务库、项目资产三栏工作区、Monaco 只读 DRL 编辑器、决策表网格，以及 BOM/业务词汇和自动生成 DRL 预览。数据由 `src/api/` 的 TanStack Query mock 提供。
 

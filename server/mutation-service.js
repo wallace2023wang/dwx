@@ -73,6 +73,25 @@ export function createMutationService({
     return pending;
   }
 
+  function mutateRuleProjectImport(operation, projectId = 'default') {
+    const pending = queue.then(async () => {
+      const [rules, tables, flows, packages] = await Promise.all([
+        readRules(projectId), readAssets('tables', projectId), readAssets('flows', projectId), readPackageRecords(projectId),
+      ]);
+      const collections = { rules, tables, flows, packages };
+      const result = await operation(collections);
+      if (result?.changed) {
+        await writeRules(rules, projectId);
+        await writeAssets('tables', tables, projectId);
+        await writeAssets('flows', flows, projectId);
+        await writePackageRecords(projectId, packages);
+      }
+      return result;
+    });
+    queue = pending.catch(() => {});
+    return pending;
+  }
+
   function mutateReleases(operation, projectId = 'default') {
     const pending = queue.then(async () => {
       const releases = await readReleases(projectId);
@@ -112,6 +131,7 @@ export function createMutationService({
     mutate,
     mutateAssets,
     mutateProjectAssets,
+    mutateRuleProjectImport,
     mutateReleases,
     mutateTestSuites,
     mutateChangeSets,

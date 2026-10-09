@@ -1,4 +1,4 @@
-# 决策表编辑器需求与设计（Decision Workbench）
+# 决策表编辑器需求与设计（DWX）
 
 
 
@@ -6,7 +6,7 @@
 | -- | --------------------------------------------- |
 | 版本 | v1.0                                          |
 | 日期 | 2026-09-29                                    |
-| 对标 | IBM ODM Decision Center Decision Table Editor |
+| 产品能力 | DWX Decision Table Editor |
 | 状态 | 给 codex 的需求，P0                                |
 
 

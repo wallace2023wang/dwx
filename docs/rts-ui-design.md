@@ -4,7 +4,7 @@
 |---|---|
 | 版本 | v0.2 |
 | 日期 | 2026-09-29 |
-| 对标 | IBM ODM Decision Workbench Business Console |
+| 对标 | 传统商业规则平台 DWX Business Console |
 | 原型 | `docs/design-rts/rts-prototype.html`（浏览器直接打开） |
 | 状态 | 高保真原型，可点击走通主流程 |
 
@@ -12,7 +12,7 @@
 
 ## 1. 设计原则
 
-1. **三栏工作区**：左资产树 + 中资产列表 + 右编辑器，复刻 ODM Business Console。
+1. **三栏工作区**：左资产树 + 中资产列表 + 右编辑器，复刻 传统商业平台 Business Console。
 2. **BAL 自然语言规则**：规则作者写"如果 申请人年龄 < 18 那么 拒绝"，业务术语蓝色虚线下划线，值灰底等宽。
 3. **JSON-as-fact**：无 Java POJO / 无 XOM 映射层，HTTP JSON 直接作为事实插入 KieSession，BOM 变更自动生成 DRL `declare` 块。
 4. **不可变 Release**：每次发布冻结 DRL + BOM + 校验和，部署到环境后不可修改。
@@ -24,7 +24,7 @@
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│ 深蓝顶栏: [R] Decision Workbench   主页|库|浏览|管理   🔔 👤 │
+│ 深蓝顶栏: [R] DWX   主页|库|浏览|管理   🔔 👤 │
 ├──────────────────────────────────────────────────────────┤
 │ 子导航: 主页 / 库 / 浏览 / 管理                            │
 ├──────────────────────────────────────────────────────────┤
@@ -108,7 +108,7 @@
 
 ## 4. 关键概念映射
 
-| ODM 概念 | 本平台对应 | UI 位置 |
+| 传统商业平台 概念 | 本平台对应 | UI 位置 |
 |---|---|---|
 | Rule Project | 决策服务（Miniloan 贷款审批） | 库 → 项目卡片 |
 | Rule Package | 资产树节点（validation/eligibility/underwriting） | 左栏树 |
@@ -117,7 +117,7 @@
 | RuleFlow | 流程图（Start→Gateway→RuleTask→End） | 规则集 Tab 画布 |
 | BOM | 对象模型 + 业务词汇 | BOM/词汇 Tab |
 | Release | 不可变发布包 | 发布 Tab |
-| RuleApp | RES 部署归档（预留 M4） | 暂未实现 |
+| 应用包 | RES 部署归档（预留 M4） | 暂未实现 |
 | Environment | dev/test/staging/prod | 管理 → 环境 |
 
 ---
@@ -174,4 +174,4 @@
 
 ### 仍未实现
 
-- [ ] RuleApp 多 Ruleset 打包部署。当前 Release 以决策服务 / 规则集为单位，没有 RuleApp 级打包与部署概念。证据：`shared/releases.js`、`server/index.js` 的 Release 构建路径中不存在 RuleApp。
+- [ ] 应用包多规则集打包部署。当前 Release 以决策服务 / 规则集为单位，没有应用包级打包与部署概念。证据：`shared/releases.js`、`server/index.js` 的 Release 构建路径中不存在应用包。

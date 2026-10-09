@@ -99,7 +99,7 @@ function StepEditor({ step, index, count, assets, packages, subflows, fields, on
             {packages.map(entry => <option key={`group:${entry.name}`} value={`rule-group:${entry.name}`}>{entry.label} · {entry.publishedRuleCount + entry.publishedTableCount} 个已发布资产</option>)}
           </optgroup>
           <optgroup label="单个资产">
-          {assets.map(asset => <option key={`${asset.type}:${asset.id}`} value={`${asset.type}:${asset.id}`}>{asset.name} · {asset.assetKind === 'decision-tree' ? '决策树' : asset.assetKind === 'scorecard' ? '计分卡' : asset.type === 'table' ? '决策表' : '规则'} v{asset.version}</option>)}
+          {assets.map(asset => <option key={`${asset.type}:${asset.id}`} value={`${asset.type}:${asset.id}`}>{asset.name} · {asset.assetKind === 'decision-tree' ? '决策树' : asset.assetKind === 'scorecard' ? '计分卡' : asset.assetKind === 'rule-template' ? '规则模板' : asset.type === 'table' ? '决策表' : '规则'} v{asset.version}</option>)}
           </optgroup>
           <optgroup label="子流程">
             {subflows.map(flow => <option key={`subflow:${flow.id}`} value={`subflow:${flow.id}`}>{flow.name} · v{flow.version}</option>)}
@@ -701,7 +701,7 @@ export default function FlowEditor({ detail, fields, busy, onSave, onCompile, on
               {palettePackages.map(entry => <PaletteItem key={entry.name} icon={Layers3} title={entry.label} detail={`${entry.name} · ${entry.publishedRuleCount} 规则 / ${entry.publishedTableCount} 表`} payload={{ type: 'rule-group', packageName: entry.name }} />)}
               {!palettePackages.length && <p className="px-3 py-3 text-[10px] text-ink-3">没有匹配的规则包</p>}
               <div className="border-y border-ink-border bg-[#f4f4f4] px-2.5 py-1.5 text-[10px] font-semibold text-ink-2">单个资产</div>
-              {paletteAssets.map(asset => <PaletteItem key={`${asset.type}:${asset.id}`} icon={asset.type === 'table' ? Table2 : FileText} title={asset.name} detail={`${asset.assetKind === 'decision-tree' ? '决策树' : asset.assetKind === 'scorecard' ? '计分卡' : asset.category} · v${asset.version}`} payload={{ type: asset.type, id: asset.id }} />)}
+              {paletteAssets.map(asset => <PaletteItem key={`${asset.type}:${asset.id}`} icon={asset.type === 'table' ? Table2 : FileText} title={asset.name} detail={`${asset.assetKind === 'decision-tree' ? '决策树' : asset.assetKind === 'scorecard' ? '计分卡' : asset.assetKind === 'rule-template' ? '规则模板' : asset.category} · v${asset.version}`} payload={{ type: asset.type, id: asset.id }} />)}
               <div className="border-y border-ink-border bg-[#f4f4f4] px-2.5 py-1.5 text-[10px] font-semibold text-ink-2">子流程</div>
               {paletteSubflows.map(flow => <PaletteItem key={flow.id} icon={Network} title={flow.name} detail={`已发布 v${flow.version} · 发布时内联冻结`} payload={{ type: 'subflow', id: flow.id }} />)}
               {!paletteSubflows.length && <p className="px-3 py-3 text-[10px] text-ink-3">没有可引用的已发布子流程</p>}

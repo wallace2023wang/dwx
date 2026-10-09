@@ -1,4 +1,4 @@
-# Decision Workbench 双引擎架构需求设计（规则引擎 + CEP 事件引擎）
+# DWX 双引擎架构需求设计（规则引擎 + CEP 事件引擎）
 
 > 文档版本：v1.4（2026-10-01）
 > 状态：
@@ -26,7 +26,7 @@
 
 ### 1.1 产品定位
 
-**Decision Workbench** 是复刻 IBM ILOG JRules / ODM（Operational Decision Manager）的规则与决策管理平台。当前产品形态：
+**DWX** 是复刻 传统商业规则平台（Operational Decision Manager）的规则与决策管理平台。当前产品形态：
 
 
 
@@ -50,7 +50,7 @@
 
 ### 1.3 产品线先例（架构依据）
 
-IBM ODM（JRules 后继产品）本身就是**双引擎并行**架构：
+传统商业规则平台（传统规则平台 后继产品）本身就是**双引擎并行**架构：
 
 
 
@@ -58,7 +58,7 @@ IBM ODM（JRules 后继产品）本身就是**双引擎并行**架构：
 
 * **Decision Server Events**（业务事件处理层 BEP，源自 ILOG Business Events）：独立的事件引擎，做跨时间和序列的事件模式检测、关联、聚合事件，自有 Designer/Tester/Replay 工具链
 
-因此，**"Team Server 统一管理 + 规则项目路由到 Drools/RES、CEP 项目路由到 Esper"** 是复刻 JRules 产品线的正确产品形态，并非过度设计。
+因此，**"Team Server 统一管理 + 规则项目路由到 Drools/RES、CEP 项目路由到 Esper"** 是复刻 传统规则平台 产品线的正确产品形态，并非过度设计。
 
 ### 1.4 引擎选型：Esper
 
@@ -114,7 +114,7 @@ IBM ODM（JRules 后继产品）本身就是**双引擎并行**架构：
 
 
 
-* CEP 项目的 Event Flow（事件流编排，对应 ODM Event Flow）→ v2
+* CEP 项目的 Event Flow（事件流编排，对应 传统商业平台 Event Flow）→ v2
 
 * Esper 高可用（EsperHA/Enterprise）→ 按需
 

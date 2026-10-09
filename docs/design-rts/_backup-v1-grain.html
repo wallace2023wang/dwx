@@ -524,9 +524,9 @@ function renderReleases(c){
 function renderRes(c){
   c.innerHTML=`
     <div class="crumb">RES 控制台</div>
-    <div class="page-head"><div><h1>RuleApp 部署状态</h1><div class="sub">Rule Execution Server @ 8790 · 最近心跳 2 秒前</div></div></div>
+    <div class="page-head"><div><h1>应用包部署状态</h1><div class="sub">Rule Execution Server @ 8790 · 最近心跳 2 秒前</div></div></div>
     <table class="data-table">
-      <thead><tr><th>RuleApp</th><th>Ruleset</th><th>版本</th><th>环境</th><th>状态</th><th>今日调用</th><th>平均耗时</th><th></th></tr></thead>
+      <thead><tr><th>应用包</th><th>Ruleset</th><th>版本</th><th>环境</th><th>状态</th><th>今日调用</th><th>平均耗时</th><th></th></tr></thead>
       <tbody>
         <tr><td>temperature-alarm</td><td>decisionService</td><td><span class="ver">1.2.3</span></td><td>Production</td><td><span class="status-dot running"></span>Running</td><td>12,482</td><td>38ms</td><td><button class="btn sm">执行追踪</button></td></tr>
         <tr><td>temperature-alarm</td><td>decisionService</td><td><span class="ver">1.2.3-shadow</span></td><td>Shadow</td><td><span class="status-dot running"></span>Running（不推状态）</td><td>12,482</td><td>41ms</td><td><button class="btn sm">差异报告</button></td></tr>

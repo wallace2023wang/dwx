@@ -18,6 +18,7 @@ import { createProjectEventStreamHandler } from './routes/project-event-streams.
 import { createProjectFlowHandler } from './routes/project-flows.js';
 import { createProjectRuleHandler } from './routes/project-rules.js';
 import { createProjectAssetHandler } from './routes/project-assets.js';
+import { createProjectImportHandler } from './routes/project-imports.js';
 import { createProjectHandlers } from './routes/projects.js';
 import { flowPackageSelectors, flowReferencesPackage, projectAssetDetail, projectBomModel, projectEventStreamDetail, projectEventStreamSummary, projectFlowDetail, projectPackages, projectRuleset, projectTestSuite } from './project-presenters.js';
 import { createProjectBuildService } from './project-build-service.js';
@@ -104,6 +105,7 @@ const {
   mutate,
   mutateAssets,
   mutateProjectAssets,
+  mutateRuleProjectImport,
   mutateReleases,
   mutateTestSuites,
   mutateChangeSets,
@@ -349,6 +351,13 @@ const handleProjectAssets = createProjectAssetHandler({
   actorOf,
 });
 
+const handleProjectImports = createProjectImportHandler({
+  mutateRuleProjectImport,
+  initializeAssetRevision,
+  appendAuditEvent,
+  canAccessAsset,
+});
+
 const {
   handleProjectCollection,
   handleProjectLifecycle,
@@ -387,6 +396,7 @@ const handleProjects = createProjectRouter({
   handleReleases,
   handleProjectRules,
   handleProjectAssets,
+  handleProjectImports,
   readProjectRecords,
   projectData,
   readPackageRecords,

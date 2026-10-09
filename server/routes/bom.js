@@ -1,6 +1,9 @@
 import { diffBom, validateBom } from '../../shared/bom.js';
 import { flowBranches, flowSteps } from '../../shared/assets.js';
+import { isDecisionTree } from '../../shared/decision-trees.js';
+import { isRuleTemplate } from '../../shared/rule-templates.js';
 import { ruleConditions } from '../../shared/rules.js';
+import { isScorecard } from '../../shared/scorecards.js';
 import { StorageConflictError } from '../postgres-store.js';
 import { bodyOf, expectedRevision, reply } from '../http-utils.js';
 
@@ -55,7 +58,36 @@ export function createBomHandlers({
       add(item, 'rule', used);
     }
     for (const item of tables.filter(table => !table.archived)) {
-      const used = [...(item.draft?.conditions || []), ...(item.draft?.actions || [])].some(entry => entry.field === fieldKey);
+      const draft = item.draft || {};
+      if (isRuleTemplate(draft)) {
+        const used = [...(draft.blueprint?.conditions || []), ...(draft.blueprint?.actions || [])]
+          .some(entry => entry.field === fieldKey);
+        add(item, 'rule-template', used);
+        continue;
+      }
+      if (isScorecard(draft)) {
+        const used = draft.scoreOutputField === fieldKey
+          || (draft.characteristics || []).some(characteristic => characteristic.field === fieldKey)
+          || (draft.bands || []).some(band => (band.actions || []).some(action => action.field === fieldKey || expressionUses(action.valueExpression, fieldKey, bom)));
+        add(item, 'scorecard', used);
+        continue;
+      }
+      if (isDecisionTree(draft)) {
+        const nodeUses = node => {
+          if (!node) return false;
+          if (node.type === 'condition') {
+            return node.condition?.field === fieldKey
+              || (node.condition?.valueSource === 'field' && node.condition.valueField === fieldKey)
+              || nodeUses(node.trueChild)
+              || nodeUses(node.falseChild);
+          }
+          return (node.actions || []).some(action => action.field === fieldKey || expressionUses(action.valueExpression, fieldKey, bom));
+        };
+        add(item, 'decision-tree', nodeUses(draft.root));
+        continue;
+      }
+      const used = [...(draft.conditions || []), ...(draft.actions || [])].some(entry => entry.field === fieldKey)
+        || (draft.rows || []).some(row => (row.conditions || []).some(cell => cell?.valueSource === 'field' && cell.valueField === fieldKey));
       add(item, 'decision-table', used);
     }
     for (const item of flows.filter(flow => !flow.archived)) {

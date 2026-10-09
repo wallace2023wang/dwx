@@ -2,6 +2,7 @@ import { generateDrl, validateRule } from '../shared/rules.js';
 import { flowBranches, flowGateways, flowSnapshot, flowSteps, tableDrl, validateTable } from '../shared/assets.js';
 import { decisionTreeDrl, isDecisionTree, validateDecisionTree } from '../shared/decision-trees.js';
 import { isScorecard, scorecardDrl, validateScorecard } from '../shared/scorecards.js';
+import { isRuleTemplate, ruleTemplateDrl, validateRuleTemplate } from '../shared/rule-templates.js';
 import { compileEventStreamDraft } from '../shared/event-streams.js';
 import { canonicalRuleSetVariables, normalizeRuleSetVariables, validateRuleSetVariables } from '../shared/ruleset-variables.js';
 import { advanceAssetRevision, isActiveAsset, normalizePackageReferences } from './domain-utils.js';
@@ -20,12 +21,14 @@ export function createProjectBuildService({
   function validateStructuredAsset(draft, bom, variables) {
     if (isDecisionTree(draft)) return validateDecisionTree(draft, bom, variables);
     if (isScorecard(draft)) return validateScorecard(draft, bom, variables);
+    if (isRuleTemplate(draft)) return validateRuleTemplate(draft, bom);
     return validateTable(draft, bom, variables).error;
   }
 
   function structuredAssetDrl(draft, bom, executionKey, variables) {
     if (isDecisionTree(draft)) return decisionTreeDrl(draft, bom, executionKey, variables);
     if (isScorecard(draft)) return scorecardDrl(draft, bom, executionKey, variables);
+    if (isRuleTemplate(draft)) return ruleTemplateDrl(draft, bom);
     return tableDrl(draft, bom, executionKey, variables);
   }
 

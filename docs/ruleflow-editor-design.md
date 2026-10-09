@@ -1,6 +1,6 @@
 # 规则集编辑器（RuleFlow Editor v2）需求与设计
 
-> 产品：Decision Workbench（复刻 IBM ILOG JRules / ODM Rule Team Server）
+> 产品：DWX（复刻 传统商业规则平台 Rule Team Server）
 > 版本：v2.1
 > 日期：2026-09-30
 > 状态：开发基线

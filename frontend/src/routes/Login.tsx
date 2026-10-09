@@ -48,7 +48,7 @@ export default function Login() {
         <div className="mb-6 flex items-center gap-[10px]">
           <span className="flex h-9 min-w-11 items-center justify-center rounded-[4px] bg-brand-primary px-1.5 text-xs font-bold text-white">DW</span>
           <div>
-            <h1 className="text-[15px] font-semibold leading-5">Decision Workbench</h1>
+            <h1 className="text-[15px] font-semibold leading-5">DWX</h1>
             <p className="text-[11px] text-ink-3">规则团队管理控制台</p>
           </div>
         </div>

@@ -1,6 +1,6 @@
 # 规则平台落地问题清单与改进需求
 
-> 产品：Decision Workbench（复刻 IBM ILOG JRules / ODM）
+> 产品：DWX（复刻 传统商业规则平台）
 > 来源：粮库温控告警规则集全流程真实落地（BOM → 包 → BAL/决策表 → 规则集 → 测试套件 → Release → RES）过程中实测发现
 > 状态：2026-09-30 已完成本轮修复与回归；当前待办以 0.2 节为准，后续章节为历史追溯与回归基准
 > 关联：`bom-editor-design.md`、`decision-table-design.md`、`project-package-crud-design.md`、`report-design.md`
@@ -50,6 +50,7 @@
 |---|---|---|---|
 | 大规模规则项目容量专项 | P3（最低） | 当前全量接口、非虚拟化列表、同步组合编译适合中小规模；不影响当前 CEP 交付 | 暂缓；后续再做 1k/5k/10k 基准、分页、虚拟列表、异步编译与 RES 缓存 |
 | 同字段多步骤输出归并策略 | P3（最低） | 现状是确定性的后写覆盖；归并意味着最大值/优先级/聚合等新的运行语义 | 暂缓；独立领域设计并明确审批、版本与运行语义后开发 |
+| 决策树画布与计分卡多维表格设计器 | P3（最终优先级） | 当前结构化编辑器已覆盖创建、校验、编译、测试、审批、发布和执行，仅缺少画布化与多维表格交互体验 | 不阻塞当前交付；排在其他功能、稳定性及企业运行任务之后再优化 |
 | 双引擎项目路由（rules / cep） | 已完成真实 Esper 集成 | 项目 `engine`、四路端点、EventStream、CEP TestSuite、Release v2、报告与 UI 分支已落地；`cep-build:8791` 与 `cep-res:8792` 已接入 Esper 8.8.0；CEP 容器 backlog（`/events/{releaseId}`、webhook fired/cleared、`CEP_API_KEY`、`/openapi.json`、`/metrics`）已落地；pattern/timer 时间驱动语句 P0 已落地 | 保持 rules 全链路回归；未来对外分发再补商业授权或替换引擎评估 |
 | 自动充氮控制 | Demo 范围 | 属于规则侧状态机 + 定时器 + 暂停/继续，不是产品运行期计划能力 | 保留历史 demo 设计，不作为产品待办；平台缺口文档仅作追溯 |
 | Rule Group 部署支持 | **P0（已完成）** | `res/ResServer.java` 允许 `rule`/`table`/`rule-group`，OpenAPI 已同步 | JUnit 覆盖部署、执行和非法 mapping；见 `requirements-platform-gaps-nitrogen.md` R1 |
@@ -58,7 +59,7 @@
 | 规则间中间结果传递 | P1（已完成） | RES 支持受限 `settle` 多轮执行和显式 `output -> input` 反馈映射，返回逐轮轨迹并有 20 轮硬上限 | 见 `requirements-platform-gaps-nitrogen.md` R4 |
 | 未赋值 Boolean 的 null 语义 | P1（已完成） | 新发布产物将 Integer/Double/Boolean 生成为 Java 包装类型，未传保持 `null`；必填字段仍在 Team Server 与 RES 拒绝 | JUnit 覆盖可选 Boolean 的 null 守卫；见 `requirements-platform-gaps-nitrogen.md` R5 |
 | 规则参数化与运行期调参 | 已完成（规则侧）/ Demo 调参不纳入产品 | BAL、决策表和运行期变量已支持；计划实例热调参属于 demo 调度能力，不在产品范围 | 保持规则变量治理与发布校验；不实现 demo 计划实例 |
-| CEP 高级模板与 EPL 工具 | P1（已完成首批） | 已实现四类高级模板、真实 Esper 回归、Monaco、中文注释、BOM 补全、诊断位置、依赖图、独立高级 EPL 权限和归档恢复 | 后续保留状态迁移和多流关联模板 |
+| CEP 高级模板与 EPL 工具 | P1（已完成） | 11 类模板全部交付：四类高级模板加状态迁移、多流关联均通过真实 Esper 编译与样例执行基线；Monaco、中文注释、BOM 补全、诊断位置、依赖图、独立高级 EPL 权限和归档恢复均已落地 | 新增或修改模板时同步 `test/fixtures/cep-template-baseline.json`，并保持前后端生成 EPL 一致 |
 | Esper 合规评估 | 已确认当前可接受 | 已按需求引入 Esper 8.8.0；项目方确认当前不做商用应用 | 若未来涉及对外分发，再补商业授权或替换引擎评估 |
 | BOM Event Profile | 已完成 | 采用统一 BOM Core + `eventTypes[]` 事件视图；规则侧仍用 `factType/factTypes`，CEP 侧优先用 Event Profile 生成 Esper schema | 后续可补前端 Event Profile 专用编辑 UI |
 
@@ -129,7 +130,7 @@
 - **影响**：这是平台级语义问题，不只决策表。规则集步骤顺序决定输出覆盖方向，业务上"严重>告警>恢复"的优先级必须靠**步骤顺序**或**引擎外归并**保证。
 - **建议**：
   - 平台文档明确"同字段多写 = 顺序覆盖"语义
-  - 提供**归并策略配置**（取最大/最后/聚合），对应 JRules 多命中归并（粮库设计 §4.5）
+  - 提供**归并策略配置**（取最大/最后/聚合），对应 传统规则平台 多命中归并（粮库设计 §4.5）
   - 规则集设计器在连接线上提示"此步骤将覆盖输出字段 X"
 
 ---
@@ -161,14 +162,14 @@
 - **设计与容量边界**：见 `docs/ruleflow-editor-design.md`。成员预览分页、千级规则编译基准及成员级命中轨迹仍归入“大规模规则项目容量专项”，不回退 Rule Group 的快照语义。
 
 ### 4.0.1 【P1】项目级引擎路由：规则项目（rules/Drools）与 CEP 事件项目（cep/Esper）双引擎并行
-- **背景**：客户新增自动充氮（状态机+定时）与传感器流监控（跨事件时间关联）需求；IBM ODM 产品线本身为 Decision Server（规则）+ Decision Server Events（事件）双引擎并行架构，本平台应还原该形态。
+- **背景**：客户新增自动充氮（状态机+定时）与传感器流监控（跨事件时间关联）需求；传统商业规则平台 产品线本身为 Decision Server（规则）+ Decision Server Events（事件）双引擎并行架构，本平台应还原该形态。
 - **现状**：`server/index.js:19` 为全局单引擎 URL（`ENGINE_URL || 8788`）；项目模型（约 450-460 行）无 engine 字段；资产类型枚举（changes.js）仅 rule/table/flow。
 - **设计**：见 `docs/dual-engine-architecture-design.md`（引擎路由模型、EventStream 资产、BOM→Esper schema、编译/测试/发布/报告分支、4 步开发拆分、验收清单）。
 - **状态**：设计已完成评审；需按 `docs/dual-engine-architecture-design.md` 中的端点拆分、Release schema、BOM mapping、CEP 测试套件 envelope 修订后再开发。
 
 ### 4.1 【P1】流程步骤只接受已发布资产
 - **现象**：首次 PUT 流程引用草稿决策表，报"引用的资产不存在或未发布"；发布 9 条规则后才成功。
-- **影响**：开发流程被强制"先发布资产再编排流程"，与 JRules"草稿可编排、发布时校验"不符，阻断迭代。
+- **影响**：开发流程被强制"先发布资产再编排流程"，与 传统规则平台"草稿可编排、发布时校验"不符，阻断迭代。
 - **建议**：草稿步骤允许引用草稿资产（仅 compile/publish 时校验已发布），或提供"发布前自动发布依赖资产"选项。
 
 ### 4.2 【P1】发布规则集后 revision 联动自增，需重新 compile/publish
@@ -220,7 +221,7 @@
 
 | 项 | 级别 | 说明 |
 |---|---|---|
-| 3 处 "Decision Center" 残留（TopBar.tsx:42 / Login.tsx:41 / index.html title） | P1 | 产品名应为 Decision Workbench |
+| 前端历史品牌文本残留（TopBar / Login / HTML title） | P1 | 产品名应统一为 DWX |
 | BOM tab 只读 | P1 | 需按 bom-editor-design.md 落地可编辑 |
 | `useBom()` 对非 default 项目硬编码 mock | P1 | 真实项目应走 API（粮库项目已验证 API 可返回 factTypes[]） |
 | 决策表编辑器入口 | P2 | 资产页已有决策表类型展示，但编辑器是否可打开/编辑未验证 |

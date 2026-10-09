@@ -41,7 +41,7 @@ export default function TestsTab() {
       .filter(asset => asset.status === 'published' && asset.type !== 'flow')
       .map(asset => ({
         id: asset.id, name: asset.name,
-        type: ['decision-table', 'decision-tree', 'scorecard'].includes(asset.type) ? 'table' as const : 'rule' as const,
+        type: ['decision-table', 'decision-tree', 'scorecard', 'rule-template'].includes(asset.type) ? 'table' as const : 'rule' as const,
         version: asset.version,
       })),
     ...rulesets.filter(ruleset => ruleset.status === 'published').map(ruleset => ({

@@ -1,6 +1,6 @@
 import type { BomField, BomModel } from '../types'
 
-export type CepTemplateId = 'single-threshold' | 'window-average' | 'window-fluctuation' | 'event-count' | 'window-sum' | 'absence' | 'event-sequence' | 'consecutive-count' | 'periodic'
+export type CepTemplateId = 'single-threshold' | 'window-average' | 'window-fluctuation' | 'event-count' | 'window-sum' | 'absence' | 'event-sequence' | 'consecutive-count' | 'periodic' | 'state-transition' | 'multi-stream-join'
 export type CepTemplateCategory = 'threshold' | 'window' | 'pattern' | 'timer'
 
 export interface CepTemplate {
@@ -29,6 +29,9 @@ export interface CepTemplateParams {
   secondField?: string
   secondOperator?: string
   secondValue?: string | number | boolean
+  stateField?: string
+  currentState?: string
+  nextState?: string
 }
 
 export type CepOutputField =
@@ -46,6 +49,8 @@ export const CEP_TEMPLATES: CepTemplate[] = [
   { id: 'event-sequence', name: '双事件时序', category: 'pattern', summary: '起始事件后在时限内收到同键后续事件' },
   { id: 'consecutive-count', name: '连续次数', category: 'pattern', summary: '同一关联键连续满足条件达到次数' },
   { id: 'periodic', name: '周期触发', category: 'timer', summary: '按固定周期触发，不依赖输入事件' },
+  { id: 'state-transition', name: '状态迁移', category: 'pattern', summary: '事件的当前状态命中时输出下一状态' },
+  { id: 'multi-stream-join', name: '多流关联', category: 'pattern', summary: '两类事件按业务键和时间范围关联' },
   { id: 'single-threshold', name: '单点阈值', category: 'threshold', summary: '单条事件字段超过阈值即告警' },
   { id: 'window-average', name: '窗口均值', category: 'window', summary: '时间窗口内字段均值超阈值' },
   { id: 'window-fluctuation', name: '窗口波动', category: 'window', summary: '时间窗口内最大值与最小值差值超阈值' },
@@ -157,6 +162,18 @@ export function buildCepTemplate(id: CepTemplateId, params: CepTemplateParams) {
     const count = consecutiveCount(params.count)
     return `insert into ${name}Event select correlationKey as ${groupField}, matchedCount as cnt from ${eventType} match_recognize (partition by ${groupField} measures A[0].${groupField} as correlationKey, ${count} as matchedCount after match skip past last row pattern (A{${count}}) define A as coalesce(A.${field} ${op(params.operator || '>=')} ${literal(params.value)}, false))`
   }
+  if (id === 'state-transition') {
+    const watched = requireIdentifier(params.stateField, '状态字段', true)
+    return `insert into ${name}Event select *, ${outputLiteral(params.nextState)} as nextState from ${eventType} where ${watched} = ${literal(params.currentState)}`
+  }
+  if (id === 'multi-stream-join') {
+    const second = requireIdentifier(params.secondEventType, '关联事件源')
+    const firstKey = requireIdentifier(params.groupField, '分组字段', true)
+    const secondKey = requireIdentifier(params.secondGroupField || params.groupField, '关联事件字段', true)
+    const size = positiveInteger(params.windowSize || 5, '关联窗口')
+    const timeUnit = params.windowUnit || 'seconds'
+    return `insert into ${name}Event select a.${firstKey} as correlationKey, current_timestamp() as correlatedAt from ${eventType}#time(${size} ${timeUnit}) as a, ${second}#time(${size} ${timeUnit}) as b where a.${firstKey} = b.${secondKey}`
+  }
   if (id === 'single-threshold') return `insert into ${name}Event select ${selectClause(params.outputFields)} from ${eventType} where ${field} ${op(params.operator || '>=')} ${literal(params.value)}`
   if (id === 'window-average') return `insert into ${name}Event select ${groupField}, avg(${field}) as avg_${field} from ${eventType}${windowClause(params)} group by ${groupField} having avg(${field}) ${op(params.operator || '>=', ['>', '>=', '<', '<=', '='])} ${literal(params.value)}`
   if (id === 'window-fluctuation') return `insert into ${name}Event select ${groupField}, max(${field}) as max_${field}, min(${field}) as min_${field} from ${eventType}${windowClause(params)} group by ${groupField} having max(${field}) - min(${field}) >= ${finiteNumber(params.delta ?? params.value, '差值阈值')}`
@@ -172,6 +189,8 @@ export function describeCepTemplate(id: CepTemplateId, params: CepTemplateParams
   if (id === 'absence') return `每次 ${params.eventType}.${params.field} ${op(params.operator || '>=')} ${literal(params.value)} 后，若 ${interval(params)} 内未收到同关联键 ${params.groupField} 的 ${secondFilter(params)}，输出 ${label}；没有起始事件不计时。`
   if (id === 'event-sequence') return `每次 ${params.eventType}.${params.field} ${op(params.operator || '>=')} ${literal(params.value)} 后，在 ${interval(params)} 内收到首个同关联键 ${params.groupField} 的 ${secondFilter(params)} 时输出 ${label}；超时取消本次匹配。`
   if (id === 'consecutive-count') return `按 ${params.groupField} 独立检测 ${params.eventType}，连续 ${consecutiveCount(params.count)} 次 ${params.field} ${op(params.operator || '>=')} ${literal(params.value)} 输出 ${label}；同键不满足条件即重置，其他键不打断；每满一组输出一次，不重叠计数。`
+  if (id === 'state-transition') return `当 ${params.eventType}.${requireIdentifier(params.stateField, '状态字段', true)} 等于 ${literal(params.currentState)} 时，将状态迁移为 ${outputLiteral(params.nextState)} 并输出 ${label}`
+  if (id === 'multi-stream-join') return `在 ${params.windowSize || 5} ${unit}窗口内按 ${params.eventType}.${requireIdentifier(params.groupField, '分组字段', true)} = ${params.secondEventType}.${requireIdentifier(params.secondGroupField || params.groupField, '关联事件字段', true)} 关联两类事件，输出 ${label}`
   if (id === 'single-threshold') return `当 ${params.eventType}.${params.field} ${op(params.operator || '>=')} ${literal(params.value)} 时，输出检测 ${label}`
   if (id === 'window-average') return `当 ${params.eventType} 在 ${params.windowSize || 3} ${unit}${windowLabel}窗口内按 ${params.groupField} 分组的 ${params.field} 均值 ${op(params.operator || '>=')} ${literal(params.value)} 时，输出检测 ${label}`
   if (id === 'window-fluctuation') return `当 ${params.eventType} 在 ${params.windowSize || 3} ${unit}${windowLabel}窗口内按 ${params.groupField} 分组的 ${params.field} 波动 >= ${finiteNumber(params.delta ?? params.value, '差值阈值')} 时，输出检测 ${label}`
@@ -200,25 +219,29 @@ export function defaultCepParams(id: CepTemplateId, bom: BomModel | undefined, i
   const businessFields = fields.filter(field => field.group !== '信封字段')
   const valueField = numericFields(businessFields)[0]?.key || numbers[0]?.key || businessFields[0]?.key || fields.find(field => field.key !== 'eventId')?.key || 'value'
   const group = fields.find(field => ['eventKey', 'warehouseId', 'sensorId', 'source'].includes(field.key))?.key || fields[0]?.key || 'eventKey'
-  const baseName = ({ 'single-threshold': 'SingleThreshold', 'window-average': 'WindowAverage', 'window-fluctuation': 'WindowFluctuation', 'event-count': 'EventCount', 'window-sum': 'WindowSum', absence: 'Absence', 'event-sequence': 'EventSequence', 'consecutive-count': 'Consecutive', periodic: 'Periodic' } as const)[id]
+  const baseName = ({ 'single-threshold': 'SingleThreshold', 'window-average': 'WindowAverage', 'window-fluctuation': 'WindowFluctuation', 'event-count': 'EventCount', 'window-sum': 'WindowSum', absence: 'Absence', 'event-sequence': 'EventSequence', 'consecutive-count': 'Consecutive', periodic: 'Periodic', 'state-transition': 'StateTransition', 'multi-stream-join': 'MultiStreamJoin' } as const)[id]
+  const stateField = businessFields.find(field => field.type === 'String')?.key || group
   return {
     statementName: `${baseName}${index}`,
     label: CEP_TEMPLATES.find(template => template.id === id)?.name || baseName,
     eventType,
-    field: ['event-count', 'periodic'].includes(id) ? undefined : valueField,
-    groupField: ['single-threshold', 'periodic'].includes(id) ? undefined : group,
+    field: ['event-count', 'periodic', 'state-transition', 'multi-stream-join'].includes(id) ? undefined : valueField,
+    groupField: ['single-threshold', 'periodic', 'state-transition'].includes(id) ? undefined : group,
     operator: '>=',
-    value: ['event-count', 'periodic'].includes(id) ? undefined : 25,
+    value: ['event-count', 'periodic', 'state-transition', 'multi-stream-join'].includes(id) ? undefined : 25,
     delta: id === 'window-fluctuation' ? 10 : undefined,
     count: ['event-count', 'consecutive-count'].includes(id) ? 3 : undefined,
-    windowType: ['single-threshold', 'periodic', 'absence', 'event-sequence'].includes(id) ? undefined : 'sliding',
-    windowSize: id === 'single-threshold' ? undefined : 3,
-    windowUnit: ['absence', 'event-sequence', 'periodic'].includes(id) ? 'seconds' : 'minutes',
-    secondEventType: ['absence', 'event-sequence'].includes(id) ? eventType : undefined,
-    secondGroupField: ['absence', 'event-sequence'].includes(id) ? group : undefined,
+    windowType: ['single-threshold', 'periodic', 'absence', 'event-sequence', 'state-transition', 'multi-stream-join'].includes(id) ? undefined : 'sliding',
+    windowSize: id === 'single-threshold' || id === 'state-transition' ? undefined : id === 'multi-stream-join' ? 5 : 3,
+    windowUnit: ['absence', 'event-sequence', 'periodic', 'multi-stream-join'].includes(id) ? 'seconds' : 'minutes',
+    secondEventType: ['absence', 'event-sequence', 'multi-stream-join'].includes(id) ? eventType : undefined,
+    secondGroupField: ['absence', 'event-sequence', 'multi-stream-join'].includes(id) ? group : undefined,
     secondField: ['absence', 'event-sequence'].includes(id) ? valueField : undefined,
     secondOperator: ['absence', 'event-sequence'].includes(id) ? '>=' : undefined,
     secondValue: ['absence', 'event-sequence'].includes(id) ? 0 : undefined,
+    stateField: id === 'state-transition' ? stateField : undefined,
+    currentState: id === 'state-transition' ? 'idle' : undefined,
+    nextState: id === 'state-transition' ? 'running' : undefined,
   }
 }
 
@@ -281,6 +304,7 @@ export function buildCepTestSkeleton(statement: { name: string; epl: string; lab
     const data: Record<string, string | number | boolean> = {}
     for (const field of fields.filter(field => field.group !== '信封字段')) data[field.key] = sampleValueForField(field, params, ordinal)
     if (params.field) data[params.field] = passingFieldValue(templateId, params, ordinal) ?? ''
+    if (templateId === 'state-transition' && params.stateField) data[params.stateField] = String(params.currentState ?? '')
     if (templateId === 'event-sequence' && index === 1 && params.secondField) data[params.secondField] = Number(params.secondValue || 0) + 1
     return {
       id: `${statement.name}-${ordinal}`,

@@ -3,6 +3,7 @@ import { generateDrl } from '../shared/rules.js';
 import { applyFlowMappings, flowBranches, flowGateways, isFlowGraph, selectFlowBranch, tableCollectedHits, tableDrl, tableExecutionTrace } from '../shared/assets.js';
 import { decisionTreeDrl, decisionTreeExecutionTrace, decisionTreeLeaves, isDecisionTree } from '../shared/decision-trees.js';
 import { isScorecard, scorecardDrl, scorecardExecutionTrace } from '../shared/scorecards.js';
+import { isRuleTemplate, ruleTemplateDrl, ruleTemplateExecutionTrace } from '../shared/rule-templates.js';
 import { inputFields, outputFields } from '../shared/bom.js';
 import { evaluateCepTestCase, evaluateTestCase, expandTestCases, validateTestSuite } from '../shared/test-suites.js';
 import { validateEventPayloads } from '../shared/event-streams.js';
@@ -40,7 +41,9 @@ export function createTestExecutionService({
       const table = version.draft || item.published;
       return {
         type: target.type, item, version: version.number, bom, table, project,
-        drl: version.drl || (isScorecard(table)
+        drl: version.drl || (isRuleTemplate(table)
+          ? ruleTemplateDrl(table, bom)
+          : isScorecard(table)
           ? scorecardDrl(table, bom, item.id, project.variables || [])
           : isDecisionTree(table)
           ? decisionTreeDrl(table, bom, item.id, project.variables || [])
@@ -288,7 +291,10 @@ export function createTestExecutionService({
     }
     const checked = await engine('/test', { drl: resolved.drl, facts });
     if (checked.error) return { ...checked, targetVersion: resolved.version, bom: resolved.bom };
-    const result = resolved.type === 'table' && isScorecard(resolved.table) ? {
+    const result = resolved.type === 'table' && isRuleTemplate(resolved.table) ? {
+      ...checked.result,
+      ruleTemplateTrace: ruleTemplateExecutionTrace(resolved.table, checked.result.fired),
+    } : resolved.type === 'table' && isScorecard(resolved.table) ? {
       ...checked.result,
       scorecardTrace: scorecardExecutionTrace(resolved.table, checked.result.fired, facts, resolved.bom),
     } : resolved.type === 'table' && isDecisionTree(resolved.table) ? {
@@ -315,6 +321,10 @@ export function createTestExecutionService({
       return { kind: 'rule', items: [{ id: resolved.item.id, label: rule?.name || resolved.item.id }] };
     }
     if (resolved.type === 'table') {
+      if (isRuleTemplate(resolved.table)) return {
+        kind: 'template-instance',
+        items: resolved.table.instances.filter(instance => instance.enabled !== false).map(instance => ({ id: `instance:${instance.id}`, label: instance.name })),
+      };
       if (isScorecard(resolved.table)) return {
         kind: 'scorecard-band',
         items: resolved.table.bands.map(band => ({ id: `band:${band.id}`, label: band.label })),
@@ -359,6 +369,9 @@ export function createTestExecutionService({
   function coverageHits(resolved, executionResult) {
     if (resolved.type === 'rule') return executionResult.fired?.length ? [resolved.item.id] : [];
     if (resolved.type === 'table') {
+      if (isRuleTemplate(resolved.table)) return (executionResult.ruleTemplateTrace || [])
+        .filter(entry => entry.fired)
+        .map(entry => `instance:${entry.instanceId}`);
       if (isScorecard(resolved.table)) return executionResult.scorecardTrace?.firedBandId ? [`band:${executionResult.scorecardTrace.firedBandId}`] : [];
       if (isDecisionTree(resolved.table)) return (executionResult.decisionTreeTrace || [])
         .filter(entry => entry.leafId)

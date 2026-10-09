@@ -7,6 +7,7 @@ import { canonicalRuleSetVariables, normalizeRuleSetVariables, validateRuleSetVa
 import { DomainError } from './errors.js';
 import { decisionTreeDrl, decisionTreeRules, isDecisionTree } from './decision-trees.js';
 import { isScorecard, scorecardDrl, scorecardRules } from './scorecards.js';
+import { isRuleTemplate, ruleTemplateDrl, ruleTemplateRules } from './rule-templates.js';
 
 export const RELEASE_SCHEMA_VERSION = 1;
 export const DROOLS_VERSION = '10.2.0';
@@ -161,6 +162,8 @@ function regenerateFlowStep(step, rules, tables, model, variables) {
     if (source) {
       const drl = step.type === 'rule'
         ? generateDrl([source], version?.bom || model, variables)
+        : isRuleTemplate(source)
+          ? ruleTemplateDrl(source, version?.bom || model)
         : isScorecard(source)
           ? scorecardDrl(source, version?.bom || model, asset.id, variables)
           : isDecisionTree(source)
@@ -178,7 +181,9 @@ function regenerateFlowStep(step, rules, tables, model, variables) {
     const source = version?.rule || version?.draft || memberAsset?.published;
     if (!source) return [];
     if (member.type === 'rule') return [{ ...source, name: `${source.name} [${member.id}]` }];
-    const generated = isScorecard(source)
+    const generated = isRuleTemplate(source)
+      ? ruleTemplateRules(source, version?.bom || model)
+      : isScorecard(source)
       ? scorecardRules(source, version?.bom || model, member.id, variables)
       : isDecisionTree(source)
       ? decisionTreeRules(source, version?.bom || model, member.id, variables)
@@ -250,12 +255,16 @@ export function buildRelease({ id, request, rules, tables, flows, eventStreams =
       assetId: targetAsset.id,
       assetVersion: version.number,
       drl: projectVariables.length
-        ? (isScorecard(targetAsset.published)
+        ? (isRuleTemplate(targetAsset.published)
+            ? ruleTemplateDrl(targetAsset.published, model)
+            : isScorecard(targetAsset.published)
             ? scorecardDrl(targetAsset.published, model, targetAsset.id, projectVariables)
             : isDecisionTree(targetAsset.published)
             ? decisionTreeDrl(targetAsset.published, model, targetAsset.id, projectVariables)
             : tableDrl(targetAsset.published, model, targetAsset.id, projectVariables))
-        : version.drl || (isScorecard(targetAsset.published)
+        : version.drl || (isRuleTemplate(targetAsset.published)
+            ? ruleTemplateDrl(targetAsset.published, model)
+            : isScorecard(targetAsset.published)
             ? scorecardDrl(targetAsset.published, model, targetAsset.id, projectVariables)
             : isDecisionTree(targetAsset.published)
             ? decisionTreeDrl(targetAsset.published, model, targetAsset.id, projectVariables)

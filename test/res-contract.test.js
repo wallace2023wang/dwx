@@ -1,5 +1,5 @@
 // RES 模块 1：Team Server ↔ RES 部署/执行契约测试
-// 对标 JRules RES：部署幂等、校验和校验、版本路由、执行轨迹、错误隔离。
+// 对标 传统规则平台 RES：部署幂等、校验和校验、版本路由、执行轨迹、错误隔离。
 // 这些用例通过 mock RES 验证 Team Server 侧的协议正确；RES 自身行为见 res-test-cases.md。
 import test from 'node:test';
 import assert from 'node:assert/strict';

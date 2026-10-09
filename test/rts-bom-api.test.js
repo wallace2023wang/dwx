@@ -1,5 +1,5 @@
 // RTS 模块 2：BOM / 业务词汇管理
-// 对标 JRules RTS：BOM 编辑、字段校验、影响分析、与规则/决策表联动。
+// 对标 传统规则平台 RTS：BOM 编辑、字段校验、影响分析、与规则/决策表联动。
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { startTestEnv } from './helpers.js';

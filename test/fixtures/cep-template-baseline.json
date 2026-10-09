@@ -271,6 +271,42 @@
           "NH3HumidityTotalEvent"
         ]
       }
+    },
+    {
+      "template": "state-transition",
+      "statementName": "StateChanged",
+      "outputEventType": "StateChangedEvent",
+      "epl": "insert into StateChangedEvent select *, 'running' as nextState from NH3Reading where sensorId = 'idle'",
+      "esper": {
+        "ok": true,
+        "engine": "Esper",
+        "version": "8.8.0"
+      },
+      "sampleExecution": {
+        "ok": true,
+        "detectionCount": 1,
+        "eventTypes": [
+          "StateChangedEvent"
+        ]
+      }
+    },
+    {
+      "template": "multi-stream-join",
+      "statementName": "ReadingCorrelation",
+      "outputEventType": "ReadingCorrelationEvent",
+      "epl": "insert into ReadingCorrelationEvent select a.warehouseId as correlationKey, current_timestamp() as correlatedAt from NH3Reading#time(5 seconds) as a, NH3Reading#time(5 seconds) as b where a.warehouseId = b.warehouseId",
+      "esper": {
+        "ok": true,
+        "engine": "Esper",
+        "version": "8.8.0"
+      },
+      "sampleExecution": {
+        "ok": true,
+        "detectionCount": 4,
+        "eventTypes": [
+          "ReadingCorrelationEvent"
+        ]
+      }
     }
   ]
 }

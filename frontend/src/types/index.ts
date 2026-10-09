@@ -38,7 +38,7 @@ export interface ApprovalPolicy {
   allowedReviewerRoles: Array<'reviewer' | 'admin'>
 }
 
-export type AssetType = 'rule' | 'decision-table' | 'decision-tree' | 'scorecard' | 'flow' | 'event-stream'
+export type AssetType = 'rule' | 'decision-table' | 'decision-tree' | 'scorecard' | 'rule-template' | 'flow' | 'event-stream'
 export type AssetStatus = 'draft' | 'in-review' | 'rejected' | 'published' | 'deprecated' | 'archived'
 
 export interface AssetOwner {
@@ -242,7 +242,44 @@ export interface ScorecardDraft {
   bands: ScorecardBandDraft[]
 }
 
-export type AssetDraft = RuleDraft | DecisionTableDraft | DecisionTreeDraft | ScorecardDraft
+export type RuleTemplateParameterType = 'Integer' | 'Decimal' | 'Boolean' | 'String' | 'Enum' | 'Date'
+
+export interface RuleTemplateParameterDraft {
+  id: string
+  name: string
+  label: string
+  type: RuleTemplateParameterType
+  defaultValue: string
+  enum?: string[]
+}
+
+export interface RuleTemplateSlotDraft {
+  field: string
+  operator?: string
+  parameter?: string
+  value?: string
+}
+
+export interface RuleTemplateInstanceDraft {
+  id: string
+  name: string
+  enabled: boolean
+  priorityOffset: number
+  values: Record<string, string>
+}
+
+export interface RuleTemplateDraft {
+  kind: 'rule-template'
+  name: string
+  description: string
+  category: string
+  priority: number
+  parameters: RuleTemplateParameterDraft[]
+  blueprint: { conditions: RuleTemplateSlotDraft[]; actions: RuleTemplateSlotDraft[] }
+  instances: RuleTemplateInstanceDraft[]
+}
+
+export type AssetDraft = RuleDraft | DecisionTableDraft | DecisionTreeDraft | ScorecardDraft | RuleTemplateDraft
 
 export interface AssetDetail extends Asset {
   packageId: string
@@ -550,7 +587,7 @@ export interface FlowAssetOption {
   id: string
   name: string
   type: 'rule' | 'table'
-  assetKind?: 'decision-table' | 'decision-tree' | 'scorecard'
+  assetKind?: 'decision-table' | 'decision-tree' | 'scorecard' | 'rule-template'
   category: string
   version: number
   outputFields?: string[]

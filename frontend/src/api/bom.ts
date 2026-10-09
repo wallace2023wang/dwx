@@ -37,7 +37,7 @@ export interface FlatBomModel {
 export interface BomReference {
   id: string
   name: string
-  type: 'rule' | 'decision-table' | 'decision-tree' | 'scorecard' | 'flow'
+  type: 'rule' | 'decision-table' | 'decision-tree' | 'scorecard' | 'rule-template' | 'flow'
   status: 'draft' | 'published'
 }
 

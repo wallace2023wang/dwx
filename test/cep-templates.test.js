@@ -39,7 +39,7 @@ const cases = [
 ];
 
 test('CEP P0 templates generate stable insert-into EPL', () => {
-  assert.equal(CEP_TEMPLATES.length, 9);
+  assert.equal(CEP_TEMPLATES.length, 11);
   for (const [templateId, params] of cases) {
     const epl = buildCepTemplate(templateId, params);
     assert.match(epl, new RegExp(`^insert into ${params.statementName}Event select `));
@@ -57,6 +57,8 @@ test('advanced CEP templates generate validated EPL', () => {
     ['event-sequence', { statementName: 'AckAfterAlarm', eventType: 'NH3Reading', field: 'ammoniaPpm', operator: '>=', value: 25, groupField: 'warehouseId', secondEventType: 'NH3Reading', secondGroupField: 'warehouseId', secondField: 'leakagePpm', secondOperator: '>=', secondValue: 0, windowSize: 5, windowUnit: 'seconds' }],
     ['consecutive-count', { statementName: 'ThreeHigh', eventType: 'NH3Reading', field: 'ammoniaPpm', operator: '>=', value: 25, groupField: 'warehouseId', count: 3 }],
     ['periodic', { statementName: 'Heartbeat', windowSize: 5, windowUnit: 'seconds' }],
+    ['state-transition', { statementName: 'StateChanged', eventType: 'NH3Reading', stateField: 'sensorId', currentState: 'idle', nextState: 'running' }],
+    ['multi-stream-join', { statementName: 'ReadingCorrelation', eventType: 'NH3Reading', secondEventType: 'NH3Reading', groupField: 'warehouseId', secondGroupField: 'warehouseId', windowSize: 5, windowUnit: 'seconds' }],
   ];
   for (const [templateId, params] of advanced) {
     const epl = buildCepTemplate(templateId, params);
@@ -64,6 +66,28 @@ test('advanced CEP templates generate validated EPL', () => {
     const compiled = compileEventStreamDraft({ name: '高级模板', statements: [{ name: params.statementName, epl }] }, bom);
     assert.equal(compiled.status, 200, `${templateId}: ${compiled.error || ''}`);
   }
+});
+
+test('state-transition and multi-stream-join match the recorded Esper baseline', () => {
+  const stateTransition = { statementName: 'StateChanged', eventType: 'NH3Reading', stateField: 'sensorId', currentState: 'idle', nextState: 'running' };
+  assert.equal(
+    buildCepTemplate('state-transition', stateTransition),
+    "insert into StateChangedEvent select *, 'running' as nextState from NH3Reading where sensorId = 'idle'",
+  );
+  assert.equal(
+    renderCepTemplateDescription('state-transition', stateTransition),
+    "当 NH3Reading.sensorId 等于 'idle' 时，将状态迁移为 'running' 并输出 StateChanged",
+  );
+
+  const multiStream = { statementName: 'ReadingCorrelation', eventType: 'NH3Reading', secondEventType: 'NH3Reading', groupField: 'warehouseId', secondGroupField: 'warehouseId', windowSize: 5, windowUnit: 'seconds' };
+  assert.equal(
+    buildCepTemplate('multi-stream-join', multiStream),
+    'insert into ReadingCorrelationEvent select a.warehouseId as correlationKey, current_timestamp() as correlatedAt from NH3Reading#time(5 seconds) as a, NH3Reading#time(5 seconds) as b where a.warehouseId = b.warehouseId',
+  );
+  assert.equal(
+    renderCepTemplateDescription('multi-stream-join', multiStream),
+    '在 5 seconds 窗口内按 NH3Reading.warehouseId = NH3Reading.warehouseId 关联两类事件，输出 ReadingCorrelation',
+  );
 });
 
 test('guided EventStream metadata must reproduce the persisted EPL', () => {
@@ -298,7 +322,10 @@ test('EventStream dependency graph reports derived consumers and removal impact'
 
 test('CEP template baseline fixture stays aligned with builders', async () => {
   const fixture = JSON.parse(await fs.readFile(new URL('./fixtures/cep-template-baseline.json', import.meta.url), 'utf8'));
-  assert.equal(fixture.cases.length, 15);
+  assert.equal(fixture.cases.length, 17);
+  const coveredTemplates = new Set(fixture.cases.map(item => item.template));
+  assert.ok(coveredTemplates.has('state-transition'));
+  assert.ok(coveredTemplates.has('multi-stream-join'));
   for (const item of fixture.cases) {
     assert.equal(item.outputEventType, `${item.statementName}Event`);
     assert.equal(item.esper.ok, true);

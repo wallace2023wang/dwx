@@ -59,7 +59,7 @@ export default function TopBar() {
         aria-label="进入决策服务库"
       >
         <span className="flex h-[22px] min-w-[28px] items-center justify-center rounded-[2px] bg-brand-primary px-1 text-[10px] font-bold">DW</span>
-        <span className="whitespace-nowrap">Decision Workbench</span>
+        <span className="whitespace-nowrap">DWX</span>
       </button>
 
       <nav ref={navigationRef} className="ml-10 flex h-full min-w-0 items-stretch overflow-x-auto" aria-label="全局导航">

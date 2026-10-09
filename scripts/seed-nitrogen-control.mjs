@@ -10,7 +10,7 @@
  *   并调用真实 Drools Build Service 做编译校验。
  *
  *   本脚本**不做**：创建 Release、部署到 RES。
- *   这两步必须由人在 Decision Workbench 页面完成（治理动作 + 演示动作）。
+ *   这两步必须由人在 DWX 页面完成（治理动作 + 演示动作）。
  *
  * 用法：
  *   node seed-nitrogen-control.mjs                # 完整种子（幂等：已存在则跳过创建，只做校验）

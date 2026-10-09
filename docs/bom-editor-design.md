@@ -1,4 +1,4 @@
-# BOM 编辑器需求与设计（Decision Workbench）
+# BOM 编辑器需求与设计（DWX）
 
 
 
@@ -6,7 +6,7 @@
 | -- | --------------------------------------------------- |
 | 版本 | v1.0                                                |
 | 日期 | 2026-09-29                                          |
-| 对标 | IBM ODM Decision Center BOM / Business Model Editor |
+| 产品能力 | DWX BOM / Business Model Editor |
 | 状态 | P0，先于 BAL 和决策表开发                                    |
 
 
@@ -445,7 +445,7 @@ end
 
 * 改类型 → DRL 类型跟着变（Integer → String）
 
-* 枚举 → DRL 里用 String（ODM 风格，枚举值在规则里做校验）
+* 枚举 → DRL 里用 String（传统商业平台 风格，枚举值在规则里做校验）
 
 
 

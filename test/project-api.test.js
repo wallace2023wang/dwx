@@ -274,6 +274,139 @@ test('scorecards survive create, compile, publish, ruleset, and release freezing
   }
 });
 
+test('rule templates expand instances through publish, ruleset, and release freezing', async () => {
+  const env = await startTestEnv();
+  try {
+    const created = await env.request('/api/projects/default/rules', 'POST', {
+      type: 'rule-template', name: '年龄风险模板', category: 'templates',
+    });
+    assert.equal(created.status, 201);
+    assert.equal(created.body.type, 'rule-template');
+    assert.equal(created.body.draft.kind, 'rule-template');
+
+    const draft = {
+      ...created.body.draft,
+      name: '年龄风险模板',
+      parameters: [
+        { id: 'minimum-age', name: 'minimumAge', label: '最低年龄', type: 'Integer', defaultValue: '18' },
+        { id: 'risk-level', name: 'risk', label: '风险等级', type: 'Enum', enum: ['低', '中', '高'], defaultValue: '低' },
+      ],
+      blueprint: {
+        conditions: [{ field: 'customerAge', operator: '>=', parameter: 'minimumAge' }],
+        actions: [{ field: 'riskLevel', parameter: 'risk' }],
+      },
+      instances: [
+        { id: 'adult', name: '成年人', enabled: true, priorityOffset: 0, values: { minimumAge: '18', risk: '低' } },
+        { id: 'senior', name: '老年客户', enabled: true, priorityOffset: 1, values: { minimumAge: '65', risk: '中' } },
+      ],
+    };
+    const saved = await env.request(`/api/projects/default/rules/${created.body.id}`, 'PUT', {
+      revision: created.body.revision, draft,
+    });
+    assert.equal(saved.status, 200);
+    assert.equal(saved.body.type, 'rule-template');
+    assert.deepEqual(saved.body.draft.instances, draft.instances);
+    const ageReferences = await env.request('/api/projects/default/bom/references?field=customerAge');
+    assert.equal(ageReferences.status, 200);
+    assert.ok(ageReferences.body.some(reference => reference.id === created.body.id && reference.type === 'rule-template'));
+    const riskReferences = await env.request('/api/projects/default/bom/references?field=riskLevel');
+    assert.equal(riskReferences.status, 200);
+    assert.ok(riskReferences.body.some(reference => reference.id === created.body.id && reference.type === 'rule-template'));
+
+    const compiled = await env.request(`/api/projects/default/rules/${created.body.id}/compile`, 'POST', {
+      revision: saved.body.revision, draft: saved.body.draft,
+    });
+    assert.equal(compiled.status, 200);
+    assert.match(compiled.body.drl, /年龄风险模板 \/ 成年人/);
+    assert.match(compiled.body.drl, /customerAge >= 65/);
+    assert.match(compiled.body.drl, /setRiskLevel\("中"\)/);
+
+    const published = await env.request(`/api/projects/default/rules/${created.body.id}/publish`, 'POST', { revision: saved.body.revision });
+    assert.equal(published.status, 200);
+    const flow = await publishProjectRuleset(env, 'default', created.body.id, '规则模板规则集', 'table');
+    const release = await env.request('/api/projects/default/releases', 'POST', {
+      decisionService: 'rule-template-service', name: '规则模板 Release', description: '', target: { type: 'flow', id: flow.id },
+    });
+    assert.equal(release.status, 201);
+    assert.match(release.body.steps[0].drl, /年龄风险模板 \/ 老年客户/);
+    assert.match(release.body.steps[0].drl, /customerAge >= 65/);
+    assert.match(release.body.checksum, /^sha256:/);
+  } finally {
+    await env.stop();
+  }
+});
+
+test('DWX asset package exports, previews, and imports draft assets and rulesets under the project write lock', async () => {
+  const env = await startTestEnv();
+  try {
+    const manifest = {
+      format: 'dwx-asset-package', schemaVersion: 1,
+      project: { name: '贷款决策项目', version: '1.0.0' },
+      packages: [{ name: 'asset_import', label: '导入资产' }],
+      assets: [
+        {
+          sourceId: 'rule/adult', type: 'bal', name: '导入成年客户', package: 'asset_import',
+          draft: {
+            name: 'ignored', description: '从 BAL 转换', category: 'ignored', priority: 10,
+            conditions: [{ field: 'customerAge', operator: '>=', value: '18' }],
+            actions: [{ field: 'riskLevel', value: '低' }],
+          },
+        },
+        {
+          sourceId: 'table/risk', type: 'decision-table', name: '导入风险矩阵', package: 'asset_import',
+          draft: {
+            name: 'ignored', description: '', category: 'ignored', priority: 0, hitPolicy: 'FIRST',
+            conditions: [{ field: 'creditScore', operator: '<' }], actions: [{ field: 'riskLevel' }],
+            rows: [{ enabled: true, priority: 0, conditions: ['600'], actions: ['高'] }],
+          },
+        },
+      ],
+      rulesets: [{ sourceId: 'ruleset/loan', name: '导入贷款决策', description: '资产包规则集', packages: ['asset_import'] }],
+    };
+    const before = await env.request('/api/projects/default/packages');
+    const preview = await env.request('/api/projects/default/imports/dwx', 'POST', { mode: 'preview', manifest });
+    assert.equal(preview.status, 200);
+    assert.equal(preview.body.valid, true);
+    assert.deepEqual(preview.body.summary.assets.byType, { rule: 1, 'decision-table': 1, 'decision-tree': 0, scorecard: 0, 'rule-template': 0 });
+    assert.equal((await env.request('/api/projects/default/packages')).body.length, before.body.length);
+
+    const imported = await env.request('/api/projects/default/imports/dwx', 'POST', {
+      mode: 'import', manifest, checksum: preview.body.checksum,
+    });
+    assert.equal(imported.status, 201);
+    assert.equal(imported.body.created.length, 3);
+    const packages = await env.request('/api/projects/default/packages');
+    const pkg = packages.body.find(item => item.id === 'asset_import');
+    assert.equal(pkg.assets.length, 2);
+    assert.ok(pkg.assets.every(asset => asset.status === 'draft'));
+    const rulesets = await env.request('/api/projects/default/rulesets');
+    const ruleset = rulesets.body.find(item => item.name === '导入贷款决策');
+    assert.ok(ruleset);
+    const detail = await env.request(`/api/projects/default/flows/${ruleset.id}`);
+    assert.deepEqual(detail.body.draft.steps, [{
+      nodeId: 'dwx-group-1', type: 'rule-group', selector: { packageName: 'asset_import', includeChildren: true },
+    }]);
+
+    const exported = await env.request('/api/projects/default/exports/dwx');
+    assert.equal(exported.status, 200);
+    assert.equal(exported.body.format, 'dwx-asset-package');
+    assert.ok(exported.body.assets.some(asset => asset.name === '导入成年客户'));
+    assert.ok(exported.body.rulesets.some(item => item.name === '导入贷款决策'));
+
+    const repeatedPreview = await env.request('/api/projects/default/imports/dwx', 'POST', { mode: 'preview', manifest });
+    assert.equal(repeatedPreview.status, 200);
+    assert.equal(repeatedPreview.body.summary.assets.skip, 2);
+    assert.equal(repeatedPreview.body.summary.rulesets.skip, 1);
+    const repeated = await env.request('/api/projects/default/imports/dwx', 'POST', {
+      mode: 'import', manifest, checksum: repeatedPreview.body.checksum,
+    });
+    assert.equal(repeated.status, 201);
+    assert.equal(repeated.body.created.length, 0);
+  } finally {
+    await env.stop();
+  }
+});
+
 test('BOM methods and dynamic domains persist and freeze into rule releases', async () => {
   const env = await startTestEnv();
   try {

@@ -73,7 +73,7 @@ async function submitAsset(projectId: string, assetId: string, revision: number)
   }
 }
 
-async function createAsset(projectId: string, payload: { type: 'rule' | 'decision-table' | 'decision-tree' | 'scorecard'; name?: string; category?: string; conditionFields?: string[]; actionFields?: string[]; hitPolicy?: string }): Promise<AssetDetail> {
+async function createAsset(projectId: string, payload: { type: 'rule' | 'decision-table' | 'decision-tree' | 'scorecard' | 'rule-template'; name?: string; category?: string; conditionFields?: string[]; actionFields?: string[]; hitPolicy?: string }): Promise<AssetDetail> {
   try {
     const { data } = await http.post<AssetDetail>(`/projects/${encodeURIComponent(projectId)}/rules`, payload)
     return data
@@ -157,7 +157,7 @@ export function useAssetDetail(projectId: string | undefined, assetId: string | 
 export function useCreateAsset(projectId: string | undefined) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (payload: { type: 'rule' | 'decision-table' | 'decision-tree' | 'scorecard'; name?: string; category?: string; conditionFields?: string[]; actionFields?: string[]; hitPolicy?: string }) => {
+    mutationFn: (payload: { type: 'rule' | 'decision-table' | 'decision-tree' | 'scorecard' | 'rule-template'; name?: string; category?: string; conditionFields?: string[]; actionFields?: string[]; hitPolicy?: string }) => {
       if (!projectId) throw new Error('项目不存在')
       return createAsset(projectId, payload)
     },
@@ -241,6 +241,74 @@ export interface CreateProjectInput {
   engine?: Project['engine']
   bomTemplate: 'blank' | 'loan' | 'risk' | 'grain' | 'copy'
   copyProjectId?: string
+}
+
+export type DwxImportAction = 'create' | 'reuse' | 'skip' | 'error'
+
+export interface DwxImportPreview {
+  valid: boolean
+  checksum: string | null
+  manifest: { project: { name: string; version: string | null } } | null
+  summary: {
+    packages: { create: number; reuse: number }
+    assets: { create: number; skip: number; byType: Record<string, number> }
+    rulesets: { create: number; skip: number }
+  } | null
+  packages: Array<{ name: string; label: string; parentId: string | null; action: DwxImportAction }>
+  assets: Array<{ sourceId: string; type: string; typeLabel: string; name: string; package: string; action: DwxImportAction; existingId: string | null; errors: string[] }>
+  rulesets: Array<{ sourceId: string; name: string; packages: string[]; action: DwxImportAction; existingId: string | null; errors: string[] }>
+  errors: string[]
+  warnings: string[]
+}
+
+export interface DwxImportResult {
+  ok: true
+  checksum: string
+  summary: NonNullable<DwxImportPreview['summary']>
+  created: Array<{ id: string; sourceId: string; type: string; name: string }>
+  warnings: string[]
+}
+
+export function useDwxImport(projectId: string | undefined) {
+  const queryClient = useQueryClient()
+  const preview = useMutation({
+    mutationFn: async (manifest: unknown) => {
+      if (!projectId) throw new Error('项目不存在')
+      try { return (await http.post<DwxImportPreview>(`/projects/${encodeURIComponent(projectId)}/imports/dwx`, { mode: 'preview', manifest })).data }
+      catch (error) { throw requestError<DwxImportPreview>(error) }
+    },
+  })
+  const execute = useMutation({
+    mutationFn: async ({ manifest, checksum }: { manifest: unknown; checksum: string }) => {
+      if (!projectId) throw new Error('项目不存在')
+      try { return (await http.post<DwxImportResult>(`/projects/${encodeURIComponent(projectId)}/imports/dwx`, { mode: 'import', manifest, checksum })).data }
+      catch (error) { throw requestError(error) }
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'packages'] }),
+        queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'rulesets'] }),
+        queryClient.invalidateQueries({ queryKey: ['projects', projectId] }),
+      ])
+    },
+  })
+  return { preview, execute }
+}
+
+export async function downloadDwxAssetPackage(projectId: string, projectName: string) {
+  try {
+    const response = await http.get(`/projects/${encodeURIComponent(projectId)}/exports/dwx`, { responseType: 'blob' })
+    const url = URL.createObjectURL(response.data)
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `${projectName}-DWX资产包-${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1_000)
+  } catch {
+    throw new Error('DWX 资产包导出失败')
+  }
 }
 
 export function useCreateProject() {

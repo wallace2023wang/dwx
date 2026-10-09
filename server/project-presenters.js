@@ -2,6 +2,7 @@ import { generateDrl, ruleConditions } from '../shared/rules.js';
 import { conditionCellExportValue, flowBranches, flowGateways, flowSteps, resolveRuleGroupMembers, ruleGroupFingerprint, tableDrl, validateTable } from '../shared/assets.js';
 import { decisionTreeDrl, decisionTreeLeaves, isDecisionTree, validateDecisionTree } from '../shared/decision-trees.js';
 import { isScorecard, scorecardDrl, validateScorecard } from '../shared/scorecards.js';
+import { isRuleTemplate, ruleTemplateDrl, validateRuleTemplate } from '../shared/rule-templates.js';
 import { findField, inferSemanticType, resolvedBomFields } from '../shared/bom.js';
 import { compileEventStreamDraft, eventStreamDependencies } from '../shared/event-streams.js';
 import { canonicalPackageName, packageLabel } from '../shared/packages.js';
@@ -26,6 +27,7 @@ function effectiveDateLabel(item) {
 }
 
 function assetBomIssue(draft, type, bom) {
+  if (isRuleTemplate(draft)) return validateRuleTemplate(draft, bom);
   if (isScorecard(draft)) {
     const scoreField = findField(bom, draft.scoreOutputField);
     if (!scoreField || scoreField.kind !== 'output' || !['Integer', 'Decimal'].includes(inferSemanticType(scoreField))) return '总分输出字段不存在或不是数值输出字段';
@@ -128,7 +130,7 @@ function projectAssetSummaryWithReview(item, type, bom, changeSets = []) {
   return {
     id: item.id,
     name: item.draft.name,
-    type: type === 'table' ? (isScorecard(item.draft) ? 'scorecard' : isDecisionTree(item.draft) ? 'decision-tree' : 'decision-table') : 'rule',
+    type: type === 'table' ? (isRuleTemplate(item.draft) ? 'rule-template' : isScorecard(item.draft) ? 'scorecard' : isDecisionTree(item.draft) ? 'decision-tree' : 'decision-table') : 'rule',
     modifiedBy: 'Team Server',
     status: assetWorkflowStatus(item, changeSets),
     version: String(item.versions.at(-1)?.number || item.revision || 1),
@@ -213,6 +215,12 @@ export function projectAssetDetail(item, type, bom, changeSets = [], projectVari
     catch (error) { detail.content = `// 当前草稿无法生成 DRL：${error.message}`; }
     return detail;
   }
+  if (isRuleTemplate(draft)) {
+    detail.validationWarnings = [];
+    try { detail.content = ruleTemplateDrl(draft, bom); }
+    catch (error) { detail.content = `// 当前草稿无法生成 DRL：${error.message}`; }
+    return detail;
+  }
   const variables = projectVariables?.length ? projectVariables : [];
   const validation = validateTable(draft, bom, variables);
   detail.validationWarnings = validation.warnings;
@@ -263,6 +271,11 @@ export function projectBomModel({ rules, tables, flows }, bom) {
     for (const action of rule?.actions || []) { count(action.field); scanExpression(action.valueExpression); }
   };
   const scanTable = table => {
+    if (isRuleTemplate(table)) {
+      for (const condition of table.blueprint?.conditions || []) count(condition.field);
+      for (const action of table.blueprint?.actions || []) count(action.field);
+      return;
+    }
     if (isScorecard(table)) {
       count(table.scoreOutputField);
       for (const characteristic of table.characteristics || []) count(characteristic.field);
@@ -361,7 +374,9 @@ export function projectTestSuite(suite, { rules, tables, flows, eventStreams = [
 
 function projectFlowAssets({ rules, tables }) {
   const treeActions = tree => decisionTreeLeaves(tree).flatMap(leaf => leaf.actions || []);
-  const structuredActions = draft => isScorecard(draft)
+  const structuredActions = draft => isRuleTemplate(draft)
+    ? draft.blueprint?.actions || []
+    : isScorecard(draft)
     ? [{ field: draft.scoreOutputField }, ...(draft.bands || []).flatMap(band => band.actions || [])]
     : isDecisionTree(draft) ? treeActions(draft) : draft.actions || [];
   return [
@@ -373,7 +388,7 @@ function projectFlowAssets({ rules, tables }) {
     ...tables.filter(item => item.published).map(item => ({
       id: item.id, name: item.draft.name, type: 'table', category: item.draft.category || '未分类',
       version: item.versions.at(-1)?.number || 1,
-      assetKind: isScorecard(item.published) ? 'scorecard' : isDecisionTree(item.published) ? 'decision-tree' : 'decision-table',
+      assetKind: isRuleTemplate(item.published) ? 'rule-template' : isScorecard(item.published) ? 'scorecard' : isDecisionTree(item.published) ? 'decision-tree' : 'decision-table',
       outputFields: [...new Set(structuredActions(item.published).map(action => action.field))],
     })),
   ];
@@ -392,7 +407,9 @@ export function flowReferencesPackage(flow, packageName) {
 }
 
 function projectFlowPackages(data) {
-  const structuredActions = draft => isDecisionTree(draft)
+  const structuredActions = draft => isRuleTemplate(draft)
+    ? draft.blueprint?.actions || []
+    : isDecisionTree(draft)
     ? decisionTreeLeaves(draft).flatMap(leaf => leaf.actions || [])
     : isScorecard(draft)
       ? [{ field: draft.scoreOutputField }, ...(draft.bands || []).flatMap(band => band.actions || [])]

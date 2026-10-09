@@ -1,6 +1,6 @@
 # 规则项目报告（Report）功能需求设计
 
-> 产品：Decision Workbench（复刻 IBM ILOG JRules / ODM）
+> 产品：DWX（复刻 传统商业规则平台）
 > 模块：规则项目知识资产报告 —— HTML / PDF 双格式导出
 > 状态：已实现（`shared/report.js` 生成 HTML、`GET /api/projects/{projectId}/report` 提供项目级权限接口、前端项目报告页 `frontend/src/routes/project/Report.tsx` 与 `frontend/src/api/report.ts` 负责下载与打印，测试见 `test/report.test.js`）
 > 关联文档：
@@ -23,9 +23,9 @@
 
 ## 1. 背景与目标
 
-JRules/ODM 提供「规则项目报告」能力：把规则库的知识资产（BOM、规则、决策表、规则集、测试、发布）聚合为一份结构化报告，导出后供客户 / 业务方直观了解规则资产全貌，也作为治理沟通的载体。
+传统规则平台 提供「规则项目报告」能力：把规则库的知识资产（BOM、规则、决策表、规则集、测试、发布）聚合为一份结构化报告，导出后供客户 / 业务方直观了解规则资产全貌，也作为治理沟通的载体。
 
-**目标**：为 Decision Workbench 增加「规则项目报告」功能，支持 **HTML 与 PDF 双格式**导出：
+**目标**：为 DWX 增加「规则项目报告」功能，支持 **HTML 与 PDF 双格式**导出：
 
 
 
@@ -153,7 +153,7 @@ JRules/ODM 提供「规则项目报告」能力：把规则库的知识资产（
 | 最近更新人 / 最近更新时间        | `projectSummary.updatedAt`（+ updatedBy）       |
 | 生成时间 / 生成人            | 报告生成上下文                                       |
 
-**布局**：顶部品牌头（深蓝渐变 + Decision Workbench Logo，`brand.primary`），下方 6 张 KPI 卡（资产总数、规则数、决策表数、测试通过率、发布版本、部署环境），再下元信息行。
+**布局**：顶部品牌头（深蓝渐变 + DWX Logo，`brand.primary`），下方 6 张 KPI 卡（资产总数、规则数、决策表数、测试通过率、发布版本、部署环境），再下元信息行。
 
 ### ② BOM 资产总览
 
@@ -435,7 +435,7 @@ export function aggregateReportData(project, data, packages) {
 
 * [ ] 无新增 npm 依赖（PDF 走打印方案）
 
-* [ ] 前端 3 处历史遗留「Decision Center」文本不新增（沿用 Decision Workbench）
+* [ ] 前端历史品牌文本统一使用 DWX
 
 
 

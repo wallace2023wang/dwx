@@ -98,7 +98,7 @@ export default function ReleasesTab() {
 
   const build = async (draft: ReleaseDraft, assetSummary: string) => {
     const selected = releasePackages.flatMap(packageNode => packageNode.assets).find(asset => asset.id === draft.assetIds[0])
-    const targetType = selected && ['decision-table', 'decision-tree', 'scorecard'].includes(selected.type) ? 'table' : selected?.type
+    const targetType = selected && ['decision-table', 'decision-tree', 'scorecard', 'rule-template'].includes(selected.type) ? 'table' : selected?.type
     const previous = releases.find(release => release.target?.id === selected?.id && release.target?.type === targetType)
     const target = selected ? { ...selected, decisionService: previous?.decisionService } : undefined
     const release = await createRelease.mutateAsync({ draft, assetSummary, target })

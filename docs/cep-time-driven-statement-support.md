@@ -12,7 +12,7 @@
 
 ## 一、项目背景
 
-Decision Workbench 复刻 IBM ILOG JRules/ODM 的产品线中，CEP（复杂事件处理）作为第二引擎（Esper 8.8.0）与 Drools 规则引擎并行。CEP 项目资产链路为：**BOM（eventTypes）→ EventStream（EPL 语句）→ 编译验证 → 测试套件 → Release → 部署（CEP Runtime）→ execute**。
+DWX 复刻 传统商业规则平台 的产品线中，CEP（复杂事件处理）作为第二引擎（Esper 8.8.0）与 Drools 规则引擎并行。CEP 项目资产链路为：**BOM（eventTypes）→ EventStream（EPL 语句）→ 编译验证 → 测试套件 → Release → 部署（CEP Runtime）→ execute**。
 
 本文档源自 "粮库自动充氮控制" 客户 demo 的路径 B 落地验证：在现有产品内用 **BOM + Esper 规则**组织 "充氮 / 环流 / 保氮 / 补氮" 状态迁移逻辑。验证过程中发现：**现有 EventStream 编译链路不支持时间驱动类语句（**`timer:interval`**&#x20;/&#x20;**`pattern`**）**，导致 "环流满 4 小时 → 保氮" 这类**纯时间条件**无法在引擎内表达。该缺口非自动充氮个性化需求，而是**所有周期巡检、时序检测、定时采样类 CEP 规则的通用前置能力**。
 

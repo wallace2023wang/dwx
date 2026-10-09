@@ -160,7 +160,7 @@ public final class ResServer {
     ObjectNode root = JSON.createObjectNode();
     root.put("openapi", "3.0.3");
     ObjectNode info = root.putObject("info");
-    info.put("title", "Decision Workbench Rule Execution Server");
+    info.put("title", "DWX Rule Execution Server");
     info.put("version", "1.0.0");
     ObjectNode paths = root.putObject("paths");
     for (String path : List.of("/deploy", "/activate", "/undeploy", "/execute", "/services/{decisionService}/execute")) {

@@ -404,7 +404,7 @@ public final class CepServer {
     if (!method(exchange, "GET")) return;
     send(exchange, 200, Map.of(
       "openapi", "3.0.3",
-      "info", Map.of("title", "Decision Workbench CEP Runtime", "version", "1.0.0"),
+      "info", Map.of("title", "DWX CEP Runtime", "version", "1.0.0"),
       "paths", Map.ofEntries(
         Map.entry("/health", Map.of("get", Map.of("summary", "Health check"))),
         Map.entry("/compile", Map.of("post", Map.of("summary", "Compile CEP module"))),

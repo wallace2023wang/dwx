@@ -114,7 +114,7 @@ export function useCreateRelease(projectId: string | undefined) {
           version: draft.version,
           name: `v${draft.version} ${target.name}`,
           description: draft.notes,
-          target: { type: ['decision-table', 'decision-tree', 'scorecard'].includes(target.type) ? 'table' : target.type, id: target.id },
+          target: { type: ['decision-table', 'decision-tree', 'scorecard', 'rule-template'].includes(target.type) ? 'table' : target.type, id: target.id },
         })
         return transformRelease(data, projectId)
       } catch (error) {

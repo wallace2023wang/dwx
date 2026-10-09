@@ -2,6 +2,8 @@ node_modules/
 dist/
 target/
 data/
+data.bak-*/
+.qoder/
 .DS_Store
 .env
 .env.*

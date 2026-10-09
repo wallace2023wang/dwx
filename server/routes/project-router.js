@@ -16,6 +16,7 @@ export function createProjectRouter({
   handleReleases,
   handleProjectRules,
   handleProjectAssets,
+  handleProjectImports,
   readProjectRecords,
   projectData,
   readPackageRecords,
@@ -47,7 +48,7 @@ export function createProjectRouter({
     if ([4, 5].includes(segments.length) && segments[3] === 'collaboration') {
       return handleCollaboration(req, res, projectId, data, url, segments[4]);
     }
-    if (projectEngine === 'cep' && ['rules', 'tables', 'flows', 'rulesets'].includes(segments[3])) {
+    if (projectEngine === 'cep' && ['rules', 'tables', 'flows', 'rulesets', 'imports', 'exports'].includes(segments[3])) {
       const message = 'CEP 项目不支持规则资产、决策表或规则集';
       return reply(res, req.method === 'GET' ? 404 : 403, { error: message });
     }
@@ -63,6 +64,9 @@ export function createProjectRouter({
     }
     if (segments.length === 5 && segments[3] === 'assets' && segments[4] === 'batch') {
       return handleProjectAssets(req, res, projectId, data, packageRecords);
+    }
+    if (segments[3] === 'imports' || segments[3] === 'exports') {
+      return handleProjectImports(req, res, segments, projectId, data, packageRecords);
     }
     if (segments.length === 4 && segments[3] === 'bom' && req.method === 'GET') return reply(res, 200, projectBomModel(data, data.bom));
     if (segments.length === 4 && segments[3] === 'bom' && req.method === 'PUT') return updateProjectBom(req, res, projectId, data.bom);

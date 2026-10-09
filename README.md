@@ -1,6 +1,6 @@
 # DWX 决策工作台
 
-DWX（Decision Workbench X）是一个面向规则、决策流和复杂事件处理的双引擎决策工作台原型。项目统一管理 BOM、规则、决策表、RuleFlow、CEP EventStream、测试套件、Change Set、Release、部署和审计，并按项目将规则请求路由到 Drools、将 CEP 事件流请求路由到 Esper。
+DWX（DWX）是一个面向规则、决策流和复杂事件处理的双引擎决策工作台原型。项目统一管理 BOM、规则、决策表、RuleFlow、CEP EventStream、测试套件、Change Set、Release、部署和审计，并按项目将规则请求路由到 Drools、将 CEP 事件流请求路由到 Esper。
 
 规则侧使用 Drools 10.2.0，CEP 侧使用 Esper 8.8.0。当前项目用于本地研发、产品验证和客户 Demo，不是面向公网的商用部署方案。
 

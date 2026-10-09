@@ -176,6 +176,24 @@ function consecutiveCount(params) {
   return count;
 }
 
+function stateTransitionParams(params) {
+  const source = eventType(params);
+  const watched = field(params, 'stateField');
+  const current = literal(params.currentState);
+  const next = outputLiteral(params.nextState);
+  return { source, watched, current, next };
+}
+
+function multiStreamParams(params) {
+  const first = eventType(params);
+  const second = requireIdentifier(params.secondEventType, '关联事件源');
+  const firstKey = groupField(params);
+  const secondKey = requireIdentifier(params.secondGroupField || params.groupField, '关联事件字段', true);
+  const size = positiveInteger(params.windowSize || params.window, '关联窗口');
+  const timeUnit = unit(params.windowUnit || params.unit || 'seconds');
+  return { first, second, firstKey, secondKey, size, timeUnit };
+}
+
 export const CEP_TEMPLATES = Object.freeze([
   {
     id: 'absence', name: '缺席检测', category: 'pattern',
@@ -219,6 +237,30 @@ export const CEP_TEMPLATES = Object.freeze([
     },
     describe(params) {
       return `从部署开始，每 ${interval(params)} 输出 ${labelOf(params)}；不需要输入事件，首次输出在一个完整周期之后，重新部署重新计时。`;
+    },
+  },
+  {
+    id: 'state-transition', name: '状态迁移', category: 'pattern',
+    params: ['statementName', 'eventType', 'stateField', 'currentState', 'nextState'],
+    build(params) {
+      const { source, watched, current, next } = stateTransitionParams(params);
+      return `insert into ${outputEvent(params)} select *, ${next} as nextState from ${source} where ${watched} = ${current}`;
+    },
+    describe(params) {
+      const { source, watched, current, next } = stateTransitionParams(params);
+      return `当 ${source}.${watched} 等于 ${current} 时，将状态迁移为 ${next} 并输出 ${labelOf(params)}`;
+    },
+  },
+  {
+    id: 'multi-stream-join', name: '多流关联', category: 'pattern',
+    params: ['statementName', 'eventType', 'secondEventType', 'groupField', 'secondGroupField', 'windowSize', 'windowUnit'],
+    build(params) {
+      const { first, second, firstKey, secondKey, size, timeUnit } = multiStreamParams(params);
+      return `insert into ${outputEvent(params)} select a.${firstKey} as correlationKey, current_timestamp() as correlatedAt from ${first}#time(${size} ${timeUnit}) as a, ${second}#time(${size} ${timeUnit}) as b where a.${firstKey} = b.${secondKey}`;
+    },
+    describe(params) {
+      const { first, second, firstKey, secondKey, size, timeUnit } = multiStreamParams(params);
+      return `在 ${size} ${timeUnit} 窗口内按 ${first}.${firstKey} = ${second}.${secondKey} 关联两类事件，输出 ${labelOf(params)}`;
     },
   },
   {

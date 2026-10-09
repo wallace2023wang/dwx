@@ -3,6 +3,7 @@ import { newRule } from '../../shared/rules.js';
 import { newTable, tableDrl, validateTable } from '../../shared/assets.js';
 import { decisionTreeDrl, isDecisionTree, newDecisionTree, validateDecisionTree } from '../../shared/decision-trees.js';
 import { isScorecard, newScorecard, scorecardDrl, validateScorecard } from '../../shared/scorecards.js';
+import { isRuleTemplate, newRuleTemplate, ruleTemplateDrl, validateRuleTemplate } from '../../shared/rule-templates.js';
 import { inputFields, outputFields } from '../../shared/bom.js';
 import { snapshotChangeItem } from '../../shared/changes.js';
 import { canonicalPackageName, packageLabel, PACKAGE_NAME_RE } from '../../shared/packages.js';
@@ -43,9 +44,11 @@ export function createProjectRuleHandler({
     }
     if (segments.length === 4 && segments[3] === 'rules' && req.method === 'POST') {
       const payload = await bodyOf(req);
-      const type = ['decision-table', 'table', 'decision-tree', 'tree', 'scorecard'].includes(payload?.type) ? 'table' : 'rule';
+      const type = ['decision-table', 'table', 'decision-tree', 'tree', 'scorecard', 'rule-template'].includes(payload?.type) ? 'table' : 'rule';
       const now = new Date().toISOString();
-      const draft = payload?.type === 'scorecard'
+      const draft = payload?.type === 'rule-template'
+        ? newRuleTemplate(data.bom)
+        : payload?.type === 'scorecard'
         ? newScorecard(data.bom)
         : payload?.type === 'decision-tree' || payload?.type === 'tree'
         ? newDecisionTree(data.bom)
@@ -76,7 +79,7 @@ export function createProjectRuleHandler({
       const result = type === 'table'
         ? await mutateAssets('tables', assets => { assets.unshift(initial); return { item: initial }; }, projectId)
         : await mutate(rules => { rules.unshift(initial); return { item: initial }; }, projectId);
-      const assetLabel = isScorecard(draft) ? '计分卡' : isDecisionTree(draft) ? '决策树' : type === 'table' ? '决策表' : '规则';
+      const assetLabel = isRuleTemplate(draft) ? '规则模板' : isScorecard(draft) ? '计分卡' : isDecisionTree(draft) ? '决策树' : type === 'table' ? '决策表' : '规则';
       await appendAuditEvent('asset.created', type, result.item.id, `创建${assetLabel}：${draft.name}`, { revision: 1 }, req);
       return reply(res, 201, projectAssetDetail(result.item, type, data.bom, data.changeSets, data.project?.variables));
     }
@@ -100,7 +103,7 @@ export function createProjectRuleHandler({
       if (locked) return reply(res, locked.status, { error: locked.error, changeSetId: locked.changeSetId });
       const result = await saveProjectAsset(id, type, await bodyOf(req), projectId, data.bom, data.project, req.principal);
       if (result.error) return reply(res, result.status, operationError(result));
-      const assetLabel = isScorecard(result.item.draft) ? '计分卡' : isDecisionTree(result.item.draft) ? '决策树' : type === 'rule' ? '规则' : '决策表';
+      const assetLabel = isRuleTemplate(result.item.draft) ? '规则模板' : isScorecard(result.item.draft) ? '计分卡' : isDecisionTree(result.item.draft) ? '决策树' : type === 'rule' ? '规则' : '决策表';
       await appendAuditEvent('asset.saved', type, id, `保存${assetLabel}：${result.item.draft.name}`, { revision: result.item.revision }, req);
       return reply(res, 200, projectAssetDetail(result.item, type, data.bom, data.changeSets, data.project?.variables));
     }
@@ -261,13 +264,17 @@ export function createProjectRuleHandler({
       }
       if (action === 'analyze' && type === 'table') {
         const draft = normalizePackageReferences(structuredClone(payload?.draft || item.draft));
-        const validation = isScorecard(draft)
+        const validation = isRuleTemplate(draft)
+          ? { error: validateRuleTemplate(draft, data.bom), warnings: [] }
+          : isScorecard(draft)
           ? { error: validateScorecard(draft, data.bom, data.project?.variables || []), warnings: [] }
           : isDecisionTree(draft)
           ? { error: validateDecisionTree(draft, data.bom, data.project?.variables || []), warnings: [] }
           : validateTable(draft, data.bom, data.project?.variables || []);
         let drl = null;
-        if (!validation.error) drl = isScorecard(draft)
+        if (!validation.error) drl = isRuleTemplate(draft)
+          ? ruleTemplateDrl(draft, data.bom)
+          : isScorecard(draft)
           ? scorecardDrl(draft, data.bom, item.id, data.project?.variables || [])
           : isDecisionTree(draft)
           ? decisionTreeDrl(draft, data.bom, item.id, data.project?.variables || [])
@@ -332,7 +339,7 @@ export function createProjectRuleHandler({
         if (locked) return reply(res, locked.status, { error: locked.error, changeSetId: locked.changeSetId });
         const result = await publishProjectAsset(id, type, payload?.revision, projectId, data.bom, data.project, req.principal);
         if (result.error) return reply(res, result.status, operationError(result));
-        const assetLabel = isScorecard(result.item.draft) ? '计分卡' : isDecisionTree(result.item.draft) ? '决策树' : type === 'rule' ? '规则' : '决策表';
+        const assetLabel = isRuleTemplate(result.item.draft) ? '规则模板' : isScorecard(result.item.draft) ? '计分卡' : isDecisionTree(result.item.draft) ? '决策树' : type === 'rule' ? '规则' : '决策表';
         await appendAuditEvent('asset.publish', type, id, `发布${assetLabel}：${result.item.draft.name}`, {
           revision: result.item.revision, version: result.item.versions.at(-1)?.number || null,
         }, req);

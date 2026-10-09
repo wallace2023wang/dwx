@@ -17,7 +17,7 @@ pctAtLeastMax == true
 
 如果把 `pctAtLeastMax`、`phaseCandidate` 等技术字段加入 BOM，会污染业务事实模型，也会让调用方误以为这些字段需要传入。因此平台需要提供 **Ruleset Variable**：由规则集内部声明、由规则执行期间维护的临时变量。
 
-Ruleset Variable 对应 JRules 等规则平台中的规则集上下文变量，不是运行期任务参数，也不是 BOM 字段。
+Ruleset Variable 对应 传统规则平台 等规则平台中的规则集上下文变量，不是运行期任务参数，也不是 BOM 字段。
 
 ## 2. 目标与边界
 

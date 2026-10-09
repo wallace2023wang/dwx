@@ -6,6 +6,7 @@ import { DomainError } from './errors.js';
 import { canonicalRuleSetVariables, findRuleSetVariable, normalizeRuleSetVariables, validateRuleSetVariables, variableDrlValue } from './ruleset-variables.js';
 import { decisionTreeDrl, decisionTreeRules, isDecisionTree } from './decision-trees.js';
 import { isScorecard, scorecardDrl, scorecardRules } from './scorecards.js';
+import { isRuleTemplate, ruleTemplateDrl, ruleTemplateRules } from './rule-templates.js';
 
 const DEFAULT_BOM = defaultBom();
 
@@ -1361,7 +1362,9 @@ export function flowSnapshot(flow, rules, tables, bom = DEFAULT_BOM, packages = 
         if (member.type === 'rule') {
           return [{ ...structuredClone(published), name: `${published.name} [${member.id}]` }];
         }
-        const generated = isScorecard(published)
+        const generated = isRuleTemplate(published)
+          ? ruleTemplateRules(published, bom)
+          : isScorecard(published)
           ? scorecardRules(published, bom, member.id, variables)
           : isDecisionTree(published)
           ? decisionTreeRules(published, bom, member.id, variables)
@@ -1395,6 +1398,8 @@ export function flowSnapshot(flow, rules, tables, bom = DEFAULT_BOM, packages = 
       variables,
       drl: step.type === 'rule'
         ? generateDrl([asset.published], bom, variables)
+        : isRuleTemplate(asset.published)
+          ? ruleTemplateDrl(asset.published, bom)
         : isScorecard(asset.published)
           ? scorecardDrl(asset.published, bom, asset.id, variables)
           : isDecisionTree(asset.published)
