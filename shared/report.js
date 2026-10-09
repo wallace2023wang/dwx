@@ -24,6 +24,14 @@ const cepModeLabel = { guided: '引导', advanced: 'EPL' };
 const hitPolicyLabel = { FIRST: '首个命中', PRIORITY: '按优先级', COLLECT: '收集全部命中', ALL: '全部命中' };
 const decisionValuePrefix = /^(>=|<=|!=|==|>|<)/;
 const decisionOpLabel = { '>=': '大于等于', '<=': '小于等于', '!=': '不等于', '==': '等于', '>': '大于', '<': '小于' };
+const isFlowGraph = flow => Boolean(flow?.graph && Array.isArray(flow.graph.nodes));
+const flowGateways = flow => isFlowGraph(flow)
+  ? flow.graph.nodes.filter(node => node.type === 'gateway')
+  : Array.isArray(flow.gateways)
+    ? flow.gateways
+    : (flow.branches || []).length
+      ? [{ id: 'gateway', name: '排他网关', afterStep: (flow.steps || []).length, branches: flow.branches }]
+      : [];
 
 /**
  * 把决策表单元格值格式化成客户可读的中文：
@@ -180,18 +188,24 @@ export function aggregateReportData(project, data, packages = [], generatedBy = 
   const assetNames = new Map([...rules, ...tables].map(item => [item.id, item.draft?.name || item.id]));
   const flowReports = flows.map(flow => {
     const source = flow.published && typeof flow.published === 'object' ? flow.published : (flow.draft || {});
-    const branches = source.branches || [];
-    const steps = [
-      ...(source.steps || []).map((step, index) => ({ ...step, branchName: null, order: index + 1 })),
-      ...branches.flatMap(branch => (branch.steps || []).map((step, index) => ({ ...step, branchName: branch.name, order: index + 1 }))),
-    ];
+    const gateways = flowGateways(source);
+    const branches = gateways.flatMap(gateway => (gateway.branches || []).map(branch => ({ ...branch, gatewayName: gateway.name })));
+    const parallelNodes = isFlowGraph(source) ? source.graph.nodes.filter(node => node.type === 'parallel') : [];
+    const steps = isFlowGraph(source)
+      ? source.graph.nodes.filter(node => node.type === 'step').map((node, index) => ({ ...node.step, branchName: '图节点', order: index + 1 }))
+      : [
+          ...(source.steps || []).map((step, index) => ({ ...step, branchName: null, order: index + 1 })),
+          ...branches.flatMap(branch => (branch.steps || []).map((step, index) => ({ ...step, branchName: gateways.length > 1 ? `${branch.gatewayName} / ${branch.name}` : branch.name, order: index + 1 }))),
+        ];
     return {
       id: flow.id,
       name: source.name || flow.draft?.name || flow.id,
       status: flow.published ? '已发布' : '草稿',
       version: latestVersion(flow),
       stepCount: steps.length,
-      branchCount: branches.length,
+      branchCount: branches.length + parallelNodes.reduce((total, node) => total + node.branches.length, 0),
+      parallelCount: parallelNodes.length,
+      joinCount: isFlowGraph(source) ? source.graph.nodes.filter(node => node.type === 'join').length : 0,
       hitPolicy: source.hitPolicy || '—',
       steps: steps.map(step => ({
         order: step.order,

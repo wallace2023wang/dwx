@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { http } from './client'
+import { requestError } from './errors'
 
 export interface EplStatement {
   name: string
@@ -37,6 +38,11 @@ export interface EventStreamSummary {
   statementLabels?: string[]
   updatedAt?: string
   modifiedBy?: string
+  owner?: { id: string; name: string } | null
+  tags?: string[]
+  effectiveFrom?: string | null
+  effectiveTo?: string | null
+  effectiveStatus?: 'scheduled' | 'effective' | 'expired'
 }
 export interface EventStreamRecord extends EventStreamSummary {
   draft: EventStreamDraft
@@ -52,16 +58,6 @@ export interface EventStreamCompileResult { diagnostics?: Array<{ statement?: st
 
 export async function loadEventStreams(projectId: string, archived = false): Promise<EventStreamSummary[]> {
   return (await http.get<EventStreamSummary[]>(`/projects/${encodeURIComponent(projectId)}/event-streams`, { params: archived ? { archived: 'true' } : undefined })).data
-}
-
-function requestError(error: unknown) {
-  if (error && typeof error === 'object' && 'response' in error) {
-    const response = (error as { response?: { data?: { error?: string; details?: unknown } } }).response
-    const next = new Error(response?.data?.error || '请求失败') as Error & { details?: unknown }
-    next.details = response?.data?.details
-    return next
-  }
-  return error instanceof Error ? error : new Error('请求失败')
 }
 
 export function useEventStreams(projectId: string | undefined, archived = false) {
@@ -113,6 +109,21 @@ export function useSaveEventStream(projectId: string | undefined, streamId: stri
     mutationFn: async ({ revision, draft }: { revision: number; draft: EventStreamDraft }) => {
       if (!projectId || !streamId) throw new Error('缺少事件流')
       try { return (await http.put<EventStreamRecord>(`/projects/${encodeURIComponent(projectId)}/event-streams/${encodeURIComponent(streamId)}`, { revision, draft })).data }
+      catch (error) { throw requestError(error) }
+    },
+    onSuccess: detail => {
+      queryClient.setQueryData(['projects', projectId, 'event-streams', streamId], detail)
+      queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'event-streams'] })
+    },
+  })
+}
+
+export function useTransferEventStreamOwner(projectId: string | undefined, streamId: string | undefined) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ revision, ownerId, ownerName }: { revision: number; ownerId: string; ownerName?: string }) => {
+      if (!projectId || !streamId) throw new Error('缺少事件流')
+      try { return (await http.post<EventStreamRecord>(`/projects/${encodeURIComponent(projectId)}/event-streams/${encodeURIComponent(streamId)}/transfer-owner`, { revision, ownerId, ownerName })).data }
       catch (error) { throw requestError(error) }
     },
     onSuccess: detail => {

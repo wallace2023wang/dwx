@@ -30,6 +30,21 @@ export interface ReleaseTarget {
   decisionService?: string
 }
 
+export interface CepAlert {
+  id: string
+  releaseId: string
+  statement: string
+  eventType: string
+  key: string
+  correlationKey: string
+  status: 'ACTIVE' | 'ACKED' | 'CLEARED'
+  lastFiredAt: string
+  ackedBy?: string
+  ackedAt?: string
+  clearedAt?: string
+  detection?: { data?: Record<string, unknown> }
+}
+
 function transformRelease(release: ServerRelease, projectId: string): ReleaseRecord {
   const checksum = release.checksum.startsWith('sha256:')
     ? `${release.checksum.slice(0, 15)}…${release.checksum.slice(-8)}`
@@ -99,7 +114,7 @@ export function useCreateRelease(projectId: string | undefined) {
           version: draft.version,
           name: `v${draft.version} ${target.name}`,
           description: draft.notes,
-          target: { type: target.type === 'decision-table' ? 'table' : target.type, id: target.id },
+          target: { type: ['decision-table', 'decision-tree', 'scorecard'].includes(target.type) ? 'table' : target.type, id: target.id },
         })
         return transformRelease(data, projectId)
       } catch (error) {
@@ -184,6 +199,35 @@ export function useConfigureReleaseWebhook(projectId: string | undefined) {
     onSuccess: release => queryClient.setQueryData<ReleaseRecord[]>(
       ['projects', projectId, 'releases'],
       (current = []) => current.map(item => item.id === release.id ? release : item),
+    ),
+  })
+}
+
+export function useReleaseAlerts(projectId: string | undefined, releaseId: string | undefined) {
+  return useQuery({
+    queryKey: ['projects', projectId, 'releases', releaseId, 'alerts'],
+    enabled: Boolean(projectId && releaseId),
+    refetchInterval: 5_000,
+    queryFn: async () => {
+      try {
+        return (await http.get<CepAlert[]>(`/projects/${encodeURIComponent(projectId ?? '')}/releases/${encodeURIComponent(releaseId ?? '')}/alerts`)).data
+      } catch (error) { throw requestError(error) }
+    },
+  })
+}
+
+export function useAcknowledgeReleaseAlert(projectId: string | undefined, releaseId: string | undefined) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (alertId: string) => {
+      if (!projectId || !releaseId) throw new Error('缺少 CEP Release')
+      try {
+        return (await http.post<CepAlert>(`/projects/${encodeURIComponent(projectId)}/releases/${encodeURIComponent(releaseId)}/alerts`, { alertId, action: 'ack' })).data
+      } catch (error) { throw requestError(error) }
+    },
+    onSuccess: alert => queryClient.setQueryData<CepAlert[]>(
+      ['projects', projectId, 'releases', releaseId, 'alerts'],
+      (current = []) => current.map(item => item.id === alert.id ? alert : item),
     ),
   })
 }

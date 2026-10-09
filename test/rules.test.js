@@ -83,6 +83,90 @@ test('BAL quantifiers and OR connectors generate Drools conditional elements', (
   assert.match(generateDrl([base]), /forall\( RuleInput\(\) RuleInput\( customerAge < 18 \) \)/);
 });
 
+test('nested condition groups preserve explicit boolean precedence', () => {
+  const rule = newRule();
+  rule.conditions = [];
+  rule.conditionTree = {
+    type: 'group',
+    operator: 'or',
+    children: [
+      {
+        type: 'group', operator: 'and', children: [
+          { type: 'condition', condition: { field: 'customerAge', operator: '>=', value: '18' } },
+          { type: 'condition', condition: { field: 'creditScore', operator: '>=', value: '600' } },
+        ],
+      },
+      {
+        type: 'group', operator: 'and', children: [
+          { type: 'condition', condition: { field: 'customerType', operator: '==', value: '企业' } },
+          { type: 'condition', condition: { field: 'overdue', operator: '==', value: 'false' } },
+        ],
+      },
+    ],
+  };
+
+  assert.equal(validateRule(rule), null);
+  const drl = generateDrl([rule]);
+  assert.match(drl, /\(\n        \(\n            RuleInput\( this == \$input, customerAge >= 18 \)\n            and\n            RuleInput\( this == \$input, creditScore >= 600 \)\n        \)\n        or/);
+  assert.match(drl, /RuleInput\( this == \$input, customerType == "企业" \)/);
+  assert.match(drl, /RuleInput\( this == \$input, overdue == false \)/);
+});
+
+test('nested condition groups reject malformed and overly deep trees', () => {
+  const rule = newRule();
+  rule.conditionTree = { type: 'group', operator: 'xor', children: [] };
+  assert.match(validateRule(rule), /运算符/);
+
+  let tree = { type: 'condition', condition: rule.conditions[0] };
+  for (let index = 0; index < 6; index += 1) {
+    tree = { type: 'group', operator: 'and', children: [tree, { type: 'condition', condition: rule.conditions[0] }] };
+  }
+  rule.conditionTree = tree;
+  assert.match(validateRule(rule), /最多支持 5 层/);
+});
+
+test('numeric action expressions generate deterministic field arithmetic and functions', () => {
+  const rule = newRule();
+  rule.actions = [{
+    field: 'approvedLimit',
+    value: '',
+    valueExpression: {
+      type: 'function',
+      name: 'min',
+      args: [
+        { type: 'binary', operator: '*', left: { type: 'field', field: 'annualIncome' }, right: { type: 'literal', value: '0.3' } },
+        { type: 'literal', value: '100000' },
+      ],
+    },
+  }];
+
+  assert.equal(validateRule(rule), null);
+  assert.match(generateDrl([rule]), /setApprovedLimit\(\(double\) \(Math\.min\(\(\$input\.getAnnualIncome\(\) \* 0\.3d\), 100000\)\)\)/);
+});
+
+test('numeric action expressions support project variables and reject unsafe shapes', () => {
+  const rule = newRule();
+  rule.variables = [{ name: 'multiplier', label: '系数', type: 'Double', defaultValue: 0.5 }];
+  rule.actions = [{
+    field: 'approvedLimit', value: '', valueExpression: {
+      type: 'binary', operator: '*',
+      left: { type: 'field', field: 'annualIncome' },
+      right: { type: 'field', fieldSource: 'variable', field: 'multiplier' },
+    },
+  }];
+  assert.equal(validateRule(rule), null);
+  const drl = generateDrl([rule]);
+  assert.match(drl, /\$ctx : RuleContext\(\)/);
+  assert.match(drl, /\$ctx\.getMultiplier\(\)/);
+
+  rule.actions[0].valueExpression = { type: 'binary', operator: '/', left: { type: 'literal', value: '1' }, right: { type: 'literal', value: '0' } };
+  assert.match(validateRule(rule), /除以 0/);
+  rule.actions[0].valueExpression = { type: 'function', name: 'system', args: [{ type: 'literal', value: '1' }] };
+  assert.match(validateRule(rule), /函数无效/);
+  rule.actions[0].valueExpression = { type: 'field', field: 'riskLevel' };
+  assert.match(validateRule(rule), /不是数值输入字段/);
+});
+
 test('structured BAL conditions compare compatible input fields without quoting the right operand', () => {
   const rule = newRule();
   rule.conditions = [{

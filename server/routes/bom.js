@@ -1,13 +1,19 @@
 import { diffBom, validateBom } from '../../shared/bom.js';
+import { flowBranches, flowSteps } from '../../shared/assets.js';
+import { ruleConditions } from '../../shared/rules.js';
 import { StorageConflictError } from '../postgres-store.js';
 import { bodyOf, expectedRevision, reply } from '../http-utils.js';
 
 function normalizeIncomingBom(body, current) {
   const hasEventTypes = body && !Array.isArray(body) && Object.prototype.hasOwnProperty.call(body, 'eventTypes');
+  const hasDomains = body && !Array.isArray(body) && Object.prototype.hasOwnProperty.call(body, 'domains');
+  const hasMethods = body && !Array.isArray(body) && Object.prototype.hasOwnProperty.call(body, 'methods');
   const fields = Array.isArray(body?.fields) ? body.fields : body;
   return {
     fields,
     eventTypes: hasEventTypes ? body.eventTypes : (current.eventTypes || []),
+    domains: hasDomains ? body.domains : (current.domains || []),
+    methods: hasMethods ? body.methods : (current.methods || []),
   };
 }
 
@@ -15,6 +21,7 @@ export function createBomHandlers({
   getCurrentBom,
   setCurrentBom,
   getPostgresStore,
+  readBom,
   readRules,
   readAssets,
   collectUsedKeys,
@@ -23,6 +30,7 @@ export function createBomHandlers({
 }) {
   async function bomFieldReferences(fieldKey, projectId = 'default') {
     const [rules, tables, flows] = await Promise.all([readRules(projectId), readAssets('tables', projectId), readAssets('flows', projectId)]);
+    const bom = projectId === 'default' ? getCurrentBom() : await readBom(projectId);
     const references = [];
     const add = (item, type, used) => {
       if (!used || references.some(reference => reference.id === item.id && reference.type === type)) return;
@@ -33,9 +41,17 @@ export function createBomHandlers({
         status: item.published ? 'published' : 'draft',
       });
     };
+    const expressionUses = (node, key, bom) => {
+      if (!node || typeof node !== 'object') return false;
+      if (node.type === 'field') return node.fieldSource !== 'variable' && node.field === key;
+      if (node.type === 'binary') return expressionUses(node.left, key, bom) || expressionUses(node.right, key, bom);
+      if (node.type === 'function') return node.args?.some(argument => expressionUses(argument, key, bom));
+      if (node.type === 'method') return expressionUses((bom.methods || []).find(method => method.name === node.name)?.expression, key, bom);
+      return false;
+    };
     for (const item of rules.filter(rule => !rule.archived)) {
-      const used = [...(item.draft?.conditions || []), ...(item.draft?.actions || [])]
-        .some(entry => entry.field === fieldKey || (entry.valueSource === 'field' && entry.valueField === fieldKey));
+      const used = [...ruleConditions(item.draft || {}), ...(item.draft?.actions || [])]
+        .some(entry => entry.field === fieldKey || (entry.valueSource === 'field' && entry.valueField === fieldKey) || expressionUses(entry.valueExpression, fieldKey, bom));
       add(item, 'rule', used);
     }
     for (const item of tables.filter(table => !table.archived)) {
@@ -43,9 +59,10 @@ export function createBomHandlers({
       add(item, 'decision-table', used);
     }
     for (const item of flows.filter(flow => !flow.archived)) {
-      const steps = [...(item.draft?.steps || []), ...(item.draft?.branches || []).flatMap(branch => branch.steps || [])];
+      const branches = flowBranches(item.draft);
+      const steps = flowSteps(item.draft);
       const mappings = steps.flatMap(step => [...(step.inputMappings || []), ...(step.outputMappings || [])]);
-      const branchUses = (item.draft?.branches || []).some(branch => !branch.default && branch.condition?.field === fieldKey);
+      const branchUses = branches.some(branch => !branch.default && branch.condition?.field === fieldKey);
       add(item, 'flow', branchUses || mappings.some(mapping => mapping.source === fieldKey || mapping.target === fieldKey));
     }
     return references;
@@ -78,6 +95,8 @@ export function createBomHandlers({
       updatedAt: new Date().toISOString(),
       fields: incoming.fields,
       eventTypes: incoming.eventTypes || [],
+      domains: incoming.domains || [],
+      methods: incoming.methods || [],
     };
     try {
       await writeBom(next, currentBom.version);
@@ -111,7 +130,7 @@ export function createBomHandlers({
     const { errors, warnings } = diffBom(bom, incoming, used);
     if (errors.length && body?.acknowledgeImpact !== true) return reply(res, 400, { error: errors[0], warnings: [...errors, ...warnings] });
     const acknowledgedWarnings = errors.length ? [...errors, ...warnings] : warnings;
-    const next = { version: (bom.version || 0) + 1, updatedAt: new Date().toISOString(), fields: incoming.fields, eventTypes: incoming.eventTypes || [] };
+    const next = { version: (bom.version || 0) + 1, updatedAt: new Date().toISOString(), fields: incoming.fields, eventTypes: incoming.eventTypes || [], domains: incoming.domains || [], methods: incoming.methods || [] };
     await writeBom(next, bom.version, projectId);
     if (projectId === 'default') setCurrentBom(next);
     await appendAuditEvent('bom.updated', 'bom', projectId, `更新字段模型到 v${next.version}`, { version: next.version, warnings: acknowledgedWarnings }, req);

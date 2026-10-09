@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto';
-import { fieldConstraint, generateDrl, operators, formatDrlValue } from './rules.js';
+import { fieldConstraint, generateDrl, operators, formatDrlValue, ruleConditions } from './rules.js';
 import { defaultBom, findField, inferSemanticType, inputFields as bomInputs, outputFields as bomOutputs } from './bom.js';
 import { canonicalPackageName, DEFAULT_PACKAGE_NAME, PACKAGE_NAME_RE } from './packages.js';
 import { DomainError } from './errors.js';
 import { canonicalRuleSetVariables, findRuleSetVariable, normalizeRuleSetVariables, validateRuleSetVariables, variableDrlValue } from './ruleset-variables.js';
+import { decisionTreeDrl, decisionTreeRules, isDecisionTree } from './decision-trees.js';
+import { isScorecard, scorecardDrl, scorecardRules } from './scorecards.js';
 
 const DEFAULT_BOM = defaultBom();
 
@@ -49,7 +51,31 @@ function rowSalience(table, row, position, activeCount) {
     : tableBase + displayOrder;
 }
 
-export const newFlow = () => ({ name: '未命名规则集', description: '', variables: [], steps: [], branches: [], editor: { positions: {} } });
+export const newFlow = () => ({ name: '未命名规则集', description: '', variables: [], steps: [], gateways: [], editor: { positions: {} } });
+
+export function isFlowGraph(flow = {}) {
+  return Boolean(flow.graph && Array.isArray(flow.graph.nodes));
+}
+
+export function flowGraphNodes(flow = {}) {
+  return isFlowGraph(flow) ? flow.graph.nodes : [];
+}
+
+export function flowGateways(flow = {}) {
+  if (isFlowGraph(flow)) return flow.graph.nodes.filter(node => node.type === 'gateway');
+  if (Array.isArray(flow.gateways) && (flow.gateways.length || !Array.isArray(flow.branches) || !flow.branches.length)) return flow.gateways;
+  if (!Array.isArray(flow.branches) || !flow.branches.length) return [];
+  return [{ id: 'gateway', name: '排他网关', afterStep: Array.isArray(flow.steps) ? flow.steps.length : 0, branches: flow.branches }];
+}
+
+export function flowBranches(flow = {}) {
+  return flowGateways(flow).flatMap(gateway => gateway.branches || []);
+}
+
+export function flowSteps(flow = {}) {
+  if (isFlowGraph(flow)) return flow.graph.nodes.filter(node => node.type === 'step').map(node => node.step);
+  return [...(flow.steps || []), ...flowBranches(flow).flatMap(branch => branch.steps || [])];
+}
 
 /**
  * 解析一个条件单元格，返回 DRL 条件片段数组。
@@ -837,11 +863,52 @@ export function ruleGroupFingerprint(members) {
 
 function flowStepMembers(step, rules, tables, packages) {
   if (step?.type === 'rule-group') return resolveRuleGroupMembers(step.selector, rules, tables, packages);
+  if (step?.type === 'subflow') return [];
   return step?.id ? [{ type: step.type, id: step.id }] : [];
 }
 
+function referencedFlow(step, flows = []) {
+  return step?.type === 'subflow'
+    ? flows.find(item => item.id === step.id && !item.archived && item.lifecycleStatus !== 'deprecated' && item.published && item.versions?.length)
+    : null;
+}
+
+function publishedFlowDraft(item) {
+  return item?.versions?.at(-1)?.draft || item?.draft || null;
+}
+
+function flowSubflowIds(flow) {
+  return flowSteps(flow).filter(step => step?.type === 'subflow' && typeof step.id === 'string').map(step => step.id);
+}
+
+function validateSubflowDependency(rootFlow, rootFlowId, flows, bom, projectVariables, maximumDepth = 4) {
+  const walk = (flow, path, depth) => {
+    if (depth > maximumDepth) return `子流程最多嵌套 ${maximumDepth} 层`;
+    for (const childId of flowSubflowIds(flow)) {
+      if (childId === rootFlowId || path.includes(childId)) return '子流程引用存在直接或间接循环';
+      const child = referencedFlow({ type: 'subflow', id: childId }, flows);
+      if (!child) return `子流程“${childId}”不存在、未发布或已停用`;
+      const version = child.versions.at(-1);
+      if (version.bomVersion != null && version.bomVersion !== bom.version) {
+        return `子流程“${child.published?.name || child.draft?.name || child.id}”使用 BOM v${version.bomVersion}，当前为 v${bom.version}，请先重新发布子流程`;
+      }
+      const childVariables = canonicalRuleSetVariables(child.published?.variables || []);
+      const parentVariables = canonicalRuleSetVariables(projectVariables || []);
+      if (parentVariables.length && childVariables.length && JSON.stringify(parentVariables) !== JSON.stringify(childVariables)) {
+        return `子流程“${child.published?.name || child.draft?.name || child.id}”的规则集变量与当前项目不兼容`;
+      }
+      const childDraft = publishedFlowDraft(child);
+      if (!childDraft) return `子流程“${child.id}”缺少已发布定义`;
+      const error = walk(childDraft, [...path, childId], depth + 1);
+      if (error) return error;
+    }
+    return null;
+  };
+  return walk(rootFlow, rootFlowId ? [rootFlowId] : [], 0);
+}
+
 function flowRuleAssets(flow, rules, tables, packages) {
-  return [...(flow.steps || []), ...(flow.branches || []).flatMap(branch => branch.steps || [])]
+  return flowSteps(flow)
     .flatMap(step => flowStepMembers(step, rules, tables, packages)
       .map(member => member.asset || (member.type === 'rule'
         ? rules.find(asset => asset.id === member.id)
@@ -854,11 +921,12 @@ function validateFlowRuleVariableUsage(flow, rules, tables, packages, variables)
   for (const asset of flowRuleAssets(flow, rules, tables, packages)) {
     const rule = asset.published;
     const ruleName = rule.name || asset.id;
-    for (const item of [...(rule.conditions || []), ...(rule.actions || [])]) {
+    const conditions = ruleConditions(rule);
+    for (const item of [...conditions, ...(rule.actions || [])]) {
       if (item?.fieldSource !== 'variable') continue;
       const variable = findRuleSetVariable(variables, item.field);
       if (!variable) return `规则“${ruleName}”引用的规则集变量“${item.field}”未在规则集中定义；正式入口为 Rule Project 属性`;
-      if (rule.conditions?.includes(item)) {
+      if (conditions.includes(item)) {
         if (!['==', '!=', '>', '<', '>=', '<='].includes(item.operator)) return `规则“${ruleName}”的变量条件运算符无效`;
         if (variable.type === 'Boolean' && !['==', '!='].includes(item.operator)) return `规则“${ruleName}”的布尔变量只支持等于或不等于`;
       }
@@ -942,10 +1010,11 @@ export function validateFlow(flow, rules, tables, bom = DEFAULT_BOM, packages = 
   if (!flow || typeof flow !== 'object') return '规则集内容无效';
   if (typeof flow.name !== 'string' || !flow.name.trim() || flow.name.length > 80) return '名称需为 1–80 个字符';
   if (typeof flow.description !== 'string' || flow.description.length > 500) return '说明不能超过 500 个字符';
-  const branches = flow.branches ?? [];
+  const gateways = flowGateways(flow);
   if (!Array.isArray(flow.steps) || flow.steps.length > 20) return '规则集公共步骤数量无效';
-  if (!Array.isArray(branches) || branches.length > 8) return '规则集最多支持 8 个分支';
-  if (!flow.steps.length && !branches.length) return '规则集至少需要一个步骤或条件分支';
+  if (flow.gateways != null && !Array.isArray(flow.gateways)) return '规则集网关定义无效';
+  if (gateways.length > 4) return '规则集最多支持 4 个排他网关';
+  if (!isFlowGraph(flow) && !flow.steps.length && !gateways.length) return '规则集至少需要一个步骤或条件分支';
   const editorError = validateFlowEditor(flow.editor);
   if (editorError) return editorError;
   const nodeIds = new Set();
@@ -961,56 +1030,206 @@ export function validateFlow(flow, rules, tables, bom = DEFAULT_BOM, packages = 
       if (!members.length && !options.allowEmptyRuleGroups) return `${label}引用的规则包没有已发布规则或决策表`;
       return null;
     }
+    if (step?.type === 'subflow') {
+      if (step.inputMappings?.length || step.outputMappings?.length) return `${label}子流程节点首版不支持字段映射`;
+      const child = referencedFlow(step, options.flows || []);
+      if (!child) return `${label}引用的子流程不存在、未发布或已停用`;
+      if (child.id === options.currentFlowId) return `${label}不能引用当前规则集自身`;
+      return null;
+    }
     const collection = step?.type === 'rule' ? rules : step?.type === 'table' ? tables : null;
     return collection?.some(asset => asset.id === step.id && !asset.archived && asset.lifecycleStatus !== 'deprecated' && asset.published) ? null : `${label}引用的资产不存在或未发布（也可能已停用）`;
   };
+  if (isFlowGraph(flow)) {
+    const nodes = flowGraphNodes(flow);
+    if (!nodes.length || nodes.length > 36) return '规则集图需包含 1–36 个节点';
+    if (typeof flow.graph.entry !== 'string' || !flow.graph.entry || flow.graph.entry === 'end') return '规则集图入口无效';
+    const graphNodeIds = new Set();
+    const graphBranchIds = new Set();
+    let graphStepCount = 0;
+    let graphGatewayCount = 0;
+    let graphParallelCount = 0;
+    let graphJoinCount = 0;
+    for (const [index, node] of nodes.entries()) {
+      if (!node || typeof node !== 'object' || typeof node.id !== 'string' || !node.id || node.id === 'end' || node.id.length > 100 || graphNodeIds.has(node.id)) return `规则集图第 ${index + 1} 个节点 ID 无效或重复`;
+      graphNodeIds.add(node.id);
+      if (node.type === 'step') {
+        graphStepCount++;
+        const stepError = validateStep(node.step, `节点“${node.id}”`);
+        if (stepError) return stepError;
+        const mappingError = validateStepMappings(node.step, bom, `节点“${node.id}”`);
+        if (mappingError) return mappingError;
+        if (typeof node.next !== 'string' || !node.next) return `节点“${node.id}”后继节点无效`;
+      } else if (node.type === 'gateway') {
+        graphGatewayCount++;
+        if (typeof node.name !== 'string' || !node.name.trim() || node.name.length > 40) return `网关“${node.id}”名称需为 1–40 个字符`;
+        if (!Array.isArray(node.branches) || node.branches.length < 1 || node.branches.length > 8) return `网关“${node.name}”需包含 1–8 个分支`;
+        let defaults = 0;
+        let conditions = 0;
+        for (const branch of node.branches) {
+          if (!branch || typeof branch.id !== 'string' || !branch.id || branch.id.length > 80 || graphBranchIds.has(branch.id)) return `网关“${node.name}”分支 ID 无效或重复`;
+          graphBranchIds.add(branch.id);
+          if (typeof branch.name !== 'string' || !branch.name.trim() || branch.name.length > 40 || typeof branch.next !== 'string' || !branch.next) return `网关“${node.name}”分支定义无效`;
+          if (branch.default === true) defaults++;
+          else {
+            conditions++;
+            const field = findField(bom, branch.condition?.field);
+            if (!field || !operators.some(operator => operator.key === branch.condition?.operator)) return `分支“${branch.name}”的条件字段或运算符无效`;
+            if (field.type === 'Boolean' && !['==', '!='].includes(branch.condition.operator)) return `分支“${branch.name}”的布尔条件只支持等于或不等于`;
+            try { flowConditionValue(field, branch.condition.value); }
+            catch (error) { return `分支“${branch.name}”：${error.message}`; }
+          }
+        }
+        if (!conditions || defaults > 1) return `网关“${node.name}”需至少一个条件分支且最多一个默认分支`;
+      } else if (node.type === 'parallel') {
+        graphParallelCount++;
+        if (typeof node.name !== 'string' || !node.name.trim() || node.name.length > 40) return `并行网关“${node.id}”名称需为 1–40 个字符`;
+        if (!Array.isArray(node.branches) || node.branches.length < 2 || node.branches.length > 8) return `并行网关“${node.name}”需包含 2–8 个分支`;
+        if (typeof node.join !== 'string' || !node.join) return `并行网关“${node.name}”缺少聚合节点`;
+        for (const branch of node.branches) {
+          if (!branch || typeof branch.id !== 'string' || !branch.id || branch.id.length > 80 || graphBranchIds.has(branch.id)) return `并行网关“${node.name}”分支 ID 无效或重复`;
+          graphBranchIds.add(branch.id);
+          if (typeof branch.name !== 'string' || !branch.name.trim() || branch.name.length > 40 || typeof branch.next !== 'string' || !branch.next) return `并行网关“${node.name}”分支定义无效`;
+        }
+      } else if (node.type === 'join') {
+        graphJoinCount++;
+        if (typeof node.name !== 'string' || !node.name.trim() || node.name.length > 40 || typeof node.next !== 'string' || !node.next) return `聚合节点“${node.id}”定义无效`;
+      } else return `规则集图节点“${node.id}”类型无效`;
+    }
+    if (graphStepCount < 1 || graphStepCount > 20) return '规则集图需包含 1–20 个步骤节点';
+    if (graphGatewayCount > 8) return '规则集图最多支持 8 个排他网关';
+    if (graphParallelCount > 4 || graphJoinCount > 4 || graphParallelCount !== graphJoinCount) return '规则集图最多支持 4 组并行网关与聚合节点，且必须一一配对';
+    if (!graphNodeIds.has(flow.graph.entry)) return '规则集图入口节点不存在';
+    const targets = node => node.type === 'step' || node.type === 'join' ? [node.next] : node.branches.map(branch => branch.next);
+    for (const node of nodes) {
+      for (const target of targets(node)) if (target !== 'end' && !graphNodeIds.has(target)) return `节点“${node.id}”引用的后继节点“${target}”不存在`;
+    }
+    const byId = new Map(nodes.map(node => [node.id, node]));
+    const assignedJoins = new Set();
+    for (const parallel of nodes.filter(node => node.type === 'parallel')) {
+      const join = byId.get(parallel.join);
+      if (join?.type !== 'join' || assignedJoins.has(join.id)) return `并行网关“${parallel.name}”引用的聚合节点无效或重复`;
+      assignedJoins.add(join.id);
+      const branchNodes = [];
+      const reachesJoin = (id, seen = new Set()) => {
+        if (id === join.id) return true;
+        if (id === 'end' || seen.has(id)) return false;
+        const node = byId.get(id);
+        if (!node || node.type === 'parallel' || node.type === 'join') return false;
+        seen.add(id);
+        const nextTargets = targets(node);
+        const valid = nextTargets.length > 0 && nextTargets.every(target => reachesJoin(target, new Set(seen)));
+        if (valid) for (const target of nextTargets) if (target !== join.id) seen.add(target);
+        return valid;
+      };
+      for (const branch of parallel.branches) {
+        const collected = new Set();
+        const collect = id => {
+          if (id === join.id || collected.has(id)) return;
+          collected.add(id);
+          const node = byId.get(id);
+          if (node) for (const target of targets(node)) collect(target);
+        };
+        if (!reachesJoin(branch.next)) return `并行分支“${branch.name}”必须汇入聚合节点“${join.name}”且不能包含嵌套并行`;
+        collect(branch.next);
+        if (branchNodes.some(existing => [...collected].some(id => existing.has(id)))) return `并行网关“${parallel.name}”的分支在聚合前不能共享节点`;
+        branchNodes.push(collected);
+      }
+    }
+    const visiting = new Set();
+    const visited = new Set();
+    const paths = [];
+    const walk = (id, path = []) => {
+      if (id === 'end') { paths.push(path); return null; }
+      if (visiting.has(id)) return '规则集图存在循环';
+      const node = byId.get(id);
+      if (!node) return `规则集图节点“${id}”不存在`;
+      visiting.add(id);
+      visited.add(id);
+      const nextPath = node.type === 'step' ? [...path, node.step] : path;
+      for (const target of targets(node)) {
+        const error = walk(target, nextPath);
+        if (error) return error;
+      }
+      visiting.delete(id);
+      return null;
+    };
+    const graphError = walk(flow.graph.entry);
+    if (graphError) return graphError;
+    if (visited.size !== nodes.length) return '规则集图存在从入口不可达的孤立节点';
+    for (const [index, path] of paths.entries()) {
+      const repeated = repeatedGroupMemberError(path, rules, tables, packages, `第 ${index + 1} 条图路径`);
+      if (repeated) return repeated;
+    }
+    const subflowError = validateSubflowDependency(flow, options.currentFlowId, options.flows || [], bom, options.projectVariables);
+    if (subflowError) return subflowError;
+    try { resolveFlowVariables(flow, rules, tables, bom, packages, options.projectVariables); }
+    catch (error) { return error.message; }
+    return null;
+  }
   for (const [index, step] of flow.steps.entries()) {
     const stepError = validateStep(step, `第 ${index + 1} 个公共步骤`);
     if (stepError) return stepError;
     const mappingError = validateStepMappings(step, bom, `第 ${index + 1} 个公共步骤`);
     if (mappingError) return mappingError;
   }
-  const ids = new Set();
-  let defaultCount = 0;
-  let conditionalCount = 0;
+  const gatewayIds = new Set();
+  const branchIds = new Set();
   let totalSteps = flow.steps.length;
-  for (const [branchIndex, branch] of branches.entries()) {
-    if (!branch || typeof branch !== 'object') return `第 ${branchIndex + 1} 个分支无效`;
-    if (typeof branch.id !== 'string' || !branch.id || branch.id.length > 80 || ids.has(branch.id)) return `第 ${branchIndex + 1} 个分支 ID 无效或重复`;
-    ids.add(branch.id);
-    if (typeof branch.name !== 'string' || !branch.name.trim() || branch.name.length > 40) return `第 ${branchIndex + 1} 个分支名称需为 1–40 个字符`;
-    if (!Array.isArray(branch.steps) || branch.steps.length < 1) return `分支“${branch.name}”至少需要一个步骤`;
-    totalSteps += branch.steps.length;
-    if (branch.default === true) defaultCount++;
-    else {
-      conditionalCount++;
-      const condition = branch.condition;
-      const field = findField(bom, condition?.field);
-      if (!field || !operators.some(operator => operator.key === condition?.operator)) return `分支“${branch.name}”的条件字段或运算符无效`;
-      if (field.type === 'Boolean' && !['==', '!='].includes(condition.operator)) return `分支“${branch.name}”的布尔条件只支持等于或不等于`;
-      try { flowConditionValue(field, condition.value); }
-      catch (error) { return `分支“${branch.name}”：${error.message}`; }
+  const gatewayPositions = new Set();
+  for (const [gatewayIndex, gateway] of gateways.entries()) {
+    if (!gateway || typeof gateway !== 'object') return `第 ${gatewayIndex + 1} 个网关无效`;
+    if (typeof gateway.id !== 'string' || !gateway.id || gateway.id.length > 80 || gatewayIds.has(gateway.id)) return `第 ${gatewayIndex + 1} 个网关 ID 无效或重复`;
+    gatewayIds.add(gateway.id);
+    if (gateway.name != null && (typeof gateway.name !== 'string' || !gateway.name.trim() || gateway.name.length > 40)) return `第 ${gatewayIndex + 1} 个网关名称需为 1–40 个字符`;
+    if (!Number.isInteger(gateway.afterStep) || gateway.afterStep < 0 || gateway.afterStep > flow.steps.length || gatewayPositions.has(gateway.afterStep)) return `网关“${gateway.name || gateway.id}”插入位置无效或重复`;
+    gatewayPositions.add(gateway.afterStep);
+    const branches = gateway.branches;
+    if (!Array.isArray(branches) || branches.length < 1 || branches.length > 8) return `网关“${gateway.name || gateway.id}”需包含 1–8 个分支`;
+    let defaultCount = 0;
+    let conditionalCount = 0;
+    for (const [branchIndex, branch] of branches.entries()) {
+      if (!branch || typeof branch !== 'object') return `网关“${gateway.name || gateway.id}”第 ${branchIndex + 1} 个分支无效`;
+      if (typeof branch.id !== 'string' || !branch.id || branch.id.length > 80 || branchIds.has(branch.id)) return `第 ${branchIndex + 1} 个分支 ID 无效或重复`;
+      branchIds.add(branch.id);
+      if (typeof branch.name !== 'string' || !branch.name.trim() || branch.name.length > 40) return `第 ${branchIndex + 1} 个分支名称需为 1–40 个字符`;
+      if (!Array.isArray(branch.steps) || branch.steps.length < 1) return `分支“${branch.name}”至少需要一个步骤`;
+      totalSteps += branch.steps.length;
+      if (branch.default === true) defaultCount++;
+      else {
+        conditionalCount++;
+        const condition = branch.condition;
+        const field = findField(bom, condition?.field);
+        if (!field || !operators.some(operator => operator.key === condition?.operator)) return `分支“${branch.name}”的条件字段或运算符无效`;
+        if (field.type === 'Boolean' && !['==', '!='].includes(condition.operator)) return `分支“${branch.name}”的布尔条件只支持等于或不等于`;
+        try { flowConditionValue(field, condition.value); }
+        catch (error) { return `分支“${branch.name}”：${error.message}`; }
+      }
+      for (const [stepIndex, step] of branch.steps.entries()) {
+        const stepError = validateStep(step, `分支“${branch.name}”第 ${stepIndex + 1} 步`);
+        if (stepError) return stepError;
+        const mappingError = validateStepMappings(step, bom, `分支“${branch.name}”第 ${stepIndex + 1} 步`);
+        if (mappingError) return mappingError;
+      }
     }
-    for (const [stepIndex, step] of branch.steps.entries()) {
-      const stepError = validateStep(step, `分支“${branch.name}”第 ${stepIndex + 1} 步`);
-      if (stepError) return stepError;
-      const mappingError = validateStepMappings(step, bom, `分支“${branch.name}”第 ${stepIndex + 1} 步`);
-      if (mappingError) return mappingError;
-    }
+    if (!conditionalCount) return `网关“${gateway.name || gateway.id}”至少需要一个条件分支`;
+    if (defaultCount > 1) return `网关“${gateway.name || gateway.id}”最多一个默认分支`;
   }
-  if (branches.length && !conditionalCount) return '条件网关至少需要一个条件分支';
-  if (defaultCount > 1) return '条件网关最多一个默认分支';
   if (totalSteps > 20) return '规则集全部路径合计最多 20 个步骤';
   if (flow.steps.some(step => step.type === 'rule-group')) {
     const repeated = repeatedGroupMemberError(flow.steps, rules, tables, packages, '公共路径');
     if (repeated) return repeated;
   }
-  for (const branch of branches) {
-    const path = [...flow.steps, ...branch.steps];
-    if (!path.some(step => step.type === 'rule-group')) continue;
-    const repeated = repeatedGroupMemberError(path, rules, tables, packages, `分支“${branch.name}”路径`);
-    if (repeated) return repeated;
+  for (const gateway of gateways) {
+    for (const branch of gateway.branches) {
+      const path = [...flow.steps, ...branch.steps];
+      if (!path.some(step => step.type === 'rule-group')) continue;
+      const repeated = repeatedGroupMemberError(path, rules, tables, packages, `分支“${branch.name}”路径`);
+      if (repeated) return repeated;
+    }
   }
+  const subflowError = validateSubflowDependency(flow, options.currentFlowId, options.flows || [], bom, options.projectVariables);
+  if (subflowError) return subflowError;
   try {
     resolveFlowVariables(flow, rules, tables, bom, packages, options.projectVariables);
   } catch (error) {
@@ -1019,11 +1238,116 @@ export function validateFlow(flow, rules, tables, bom = DEFAULT_BOM, packages = 
   return null;
 }
 
-export function flowSnapshot(flow, rules, tables, bom = DEFAULT_BOM, packages = [], projectVariables = null) {
-  const error = validateFlow(flow, rules, tables, bom, packages, { projectVariables });
+function frozenFlowGraph(flow) {
+  if (isFlowGraph(flow)) return structuredClone(flow.graph);
+  const gateways = flowGateways(flow);
+  const gatewayAt = new Map(gateways.map(gateway => [gateway.afterStep, gateway]));
+  const commonIds = flow.steps.map((step, index) => step.nodeId || `common:${index}`);
+  const boundaryTarget = boundary => gatewayAt.get(boundary)?.id || commonIds[boundary] || 'end';
+  const nodes = flow.steps.map((step, index) => ({
+    id: commonIds[index], type: 'step', step: structuredClone(step), next: boundaryTarget(index + 1),
+  }));
+  for (const gateway of gateways) {
+    const mergeTarget = commonIds[gateway.afterStep] || 'end';
+    nodes.push({
+      id: gateway.id, type: 'gateway', name: gateway.name || '排他网关',
+      branches: gateway.branches.map(branch => ({
+        id: branch.id, name: branch.name, default: branch.default === true,
+        condition: branch.default ? null : structuredClone(branch.condition),
+        next: branch.steps[0]?.nodeId || `branch:${branch.id}:0`,
+      })),
+    });
+    for (const branch of gateway.branches) branch.steps.forEach((step, index) => nodes.push({
+      id: step.nodeId || `branch:${branch.id}:${index}`,
+      type: 'step', step: structuredClone(step),
+      next: branch.steps[index + 1]?.nodeId || (index + 1 < branch.steps.length ? `branch:${branch.id}:${index + 1}` : mergeTarget),
+    }));
+  }
+  return { entry: boundaryTarget(0), nodes };
+}
+
+function namespaceGraph(graph, prefix, exit, subflow) {
+  const nodeId = id => id === 'end' ? exit : `${prefix}/${id}`;
+  const branchId = id => `${prefix}/${id}`;
+  const inheritedPath = step => (step.subflowPath || []).map(item => ({ ...item, nodeId: `${prefix}/${item.nodeId}` }));
+  return {
+    entry: nodeId(graph.entry),
+    nodes: graph.nodes.map(node => node.type === 'step'
+      ? {
+          id: nodeId(node.id), type: 'step', next: nodeId(node.next),
+          step: { ...structuredClone(node.step), nodeId: nodeId(node.id), subflowPath: [subflow, ...inheritedPath(node.step)] },
+        }
+      : node.type === 'join'
+        ? { ...structuredClone(node), id: nodeId(node.id), next: nodeId(node.next) }
+        : node.type === 'parallel'
+          ? { ...structuredClone(node), id: nodeId(node.id), join: nodeId(node.join), branches: node.branches.map(branch => ({ ...structuredClone(branch), id: branchId(branch.id), next: nodeId(branch.next) })) }
+          : { ...structuredClone(node), id: nodeId(node.id), branches: node.branches.map(branch => ({ ...structuredClone(branch), id: branchId(branch.id), next: nodeId(branch.next) })) }),
+  };
+}
+
+function expandFrozenSubflows(snapshot) {
+  if (!flowSteps(snapshot).some(step => step.type === 'subflow')) return snapshot;
+  const graph = frozenFlowGraph(snapshot);
+  const manifests = [];
+  let nodes = structuredClone(graph.nodes);
+  let entry = graph.entry;
+  while (nodes.some(node => node.type === 'step' && node.step.type === 'subflow')) {
+    const target = nodes.find(node => node.type === 'step' && node.step.type === 'subflow');
+    const child = expandFrozenSubflows(target.step.snapshot);
+    const childGraph = frozenFlowGraph(child);
+    const manifest = { id: target.step.id, name: target.step.name, version: target.step.version, nodeId: target.id };
+    manifests.push(manifest, ...(child.subflows || []).map(item => ({ ...item, nodeId: `${target.id}/${item.nodeId}` })));
+    const namespaced = namespaceGraph(childGraph, target.id, target.next, manifest);
+    entry = entry === target.id ? namespaced.entry : entry;
+    nodes = nodes.flatMap(node => {
+      if (node.id === target.id) return namespaced.nodes;
+      if (node.type === 'step' || node.type === 'join') return [{ ...node, next: node.next === target.id ? namespaced.entry : node.next }];
+      return [{ ...node, branches: node.branches.map(branch => ({ ...branch, next: branch.next === target.id ? namespaced.entry : branch.next })) }];
+    });
+  }
+  const stepCount = nodes.filter(node => node.type === 'step').length;
+  if (stepCount > 20 || nodes.length > 36) throw new Error('展开子流程后最多支持 20 个步骤和 36 个图节点');
+  if (nodes.filter(node => node.type === 'gateway').length > 8) throw new Error('展开子流程后最多支持 8 个排他网关');
+  if (nodes.filter(node => node.type === 'parallel').length > 4) throw new Error('展开子流程后最多支持 4 组并行网关与聚合节点');
+  const byId = new Map(nodes.map(node => [node.id, node]));
+  const targets = node => node.type === 'step' || node.type === 'join' ? [node.next] : node.branches.map(branch => branch.next);
+  for (const parallel of nodes.filter(node => node.type === 'parallel')) {
+    const containsNestedParallel = (id, seen = new Set()) => {
+      if (id === parallel.join || id === 'end' || seen.has(id)) return false;
+      const node = byId.get(id);
+      if (!node) return false;
+      if (node.type === 'parallel') return true;
+      seen.add(id);
+      return targets(node).some(target => containsNestedParallel(target, new Set(seen)));
+    };
+    if (parallel.branches.some(branch => containsNestedParallel(branch.next))) throw new Error('子流程展开后形成嵌套并行，当前版本不支持');
+  }
+  return {
+    ...snapshot,
+    steps: [],
+    graph: { entry, nodes },
+    subflows: manifests.filter((item, index, all) => all.findIndex(candidate => candidate.nodeId === item.nodeId) === index),
+  };
+}
+
+export function flowSnapshot(flow, rules, tables, bom = DEFAULT_BOM, packages = [], projectVariables = null, options = {}) {
+  const validationOptions = { ...options, projectVariables };
+  const error = validateFlow(flow, rules, tables, bom, packages, validationOptions);
   if (error) throw new Error(error);
   const variables = resolveFlowVariables(flow, rules, tables, bom, packages, projectVariables);
   const freezeStep = step => {
+    if (step.type === 'subflow') {
+      const child = referencedFlow(step, options.flows || []);
+      const version = child.versions.at(-1);
+      return {
+        nodeId: step.nodeId,
+        type: 'subflow',
+        id: child.id,
+        name: child.published.name || child.draft?.name || child.id,
+        version: version.number,
+        snapshot: structuredClone(child.published),
+      };
+    }
     if (step.type === 'rule-group') {
       const resolved = resolveRuleGroupMembers(step.selector, rules, tables, packages);
       const executableRules = resolved.flatMap(member => {
@@ -1037,7 +1361,12 @@ export function flowSnapshot(flow, rules, tables, bom = DEFAULT_BOM, packages = 
         if (member.type === 'rule') {
           return [{ ...structuredClone(published), name: `${published.name} [${member.id}]` }];
         }
-        return tableRules(published, bom, member.id, variables).map(rule => ({ ...rule, name: `${rule.name} [${member.id}]` }));
+        const generated = isScorecard(published)
+          ? scorecardRules(published, bom, member.id, variables)
+          : isDecisionTree(published)
+          ? decisionTreeRules(published, bom, member.id, variables)
+          : tableRules(published, bom, member.id, variables);
+        return generated.map(rule => ({ ...rule, name: `${rule.name} [${member.id}]` }));
       });
       const frozen = {
         nodeId: step.nodeId,
@@ -1066,33 +1395,82 @@ export function flowSnapshot(flow, rules, tables, bom = DEFAULT_BOM, packages = 
       variables,
       drl: step.type === 'rule'
         ? generateDrl([asset.published], bom, variables)
-        : tableDrl(asset.published, bom, asset.id, variables) };
+        : isScorecard(asset.published)
+          ? scorecardDrl(asset.published, bom, asset.id, variables)
+          : isDecisionTree(asset.published)
+          ? decisionTreeDrl(asset.published, bom, asset.id, variables)
+          : tableDrl(asset.published, bom, asset.id, variables) };
     if (step.inputMappings?.length) frozen.inputMappings = structuredClone(step.inputMappings);
     if (step.outputMappings?.length) frozen.outputMappings = structuredClone(step.outputMappings);
     return frozen;
   };
-  const steps = flow.steps.map(freezeStep);
-  const branches = (flow.branches ?? []).map(branch => {
-    const field = branch.default ? null : findField(bom, branch.condition.field);
-    return {
-      id: branch.id,
-      name: branch.name,
-      default: branch.default === true,
-      condition: branch.default ? null : {
-        field: branch.condition.field,
-        operator: branch.condition.operator,
-        value: flowConditionValue(field, branch.condition.value),
+  if (isFlowGraph(flow)) {
+    return expandFrozenSubflows({
+      name: flow.name,
+      description: flow.description,
+      bomVersion: bom.version,
+      bom: structuredClone(bom),
+      variables,
+      steps: [],
+      graph: {
+        entry: flow.graph.entry,
+        nodes: flow.graph.nodes.map(node => node.type === 'step'
+          ? { id: node.id, type: 'step', step: freezeStep(node.step), next: node.next }
+          : node.type === 'join'
+            ? { id: node.id, type: 'join', name: node.name, next: node.next }
+          : node.type === 'parallel'
+            ? { id: node.id, type: 'parallel', name: node.name, join: node.join, branches: structuredClone(node.branches) }
+          : {
+              id: node.id,
+              type: 'gateway',
+              name: node.name,
+              branches: node.branches.map(branch => {
+                const field = branch.default ? null : findField(bom, branch.condition.field);
+                return {
+                  id: branch.id,
+                  name: branch.name,
+                  default: branch.default === true,
+                  condition: branch.default ? null : {
+                    field: branch.condition.field,
+                    operator: branch.condition.operator,
+                    value: flowConditionValue(field, branch.condition.value),
+                  },
+                  next: branch.next,
+                };
+              }),
+            }),
       },
-      steps: branch.steps.map(freezeStep),
-    };
-  });
-  return {
+    });
+  }
+  const steps = flow.steps.map(freezeStep);
+  const gateways = flowGateways(flow).map(gateway => ({
+    id: gateway.id,
+    name: gateway.name || '排他网关',
+    afterStep: gateway.afterStep,
+    branches: gateway.branches.map(branch => {
+      const field = branch.default ? null : findField(bom, branch.condition.field);
+      return {
+        id: branch.id,
+        name: branch.name,
+        default: branch.default === true,
+        condition: branch.default ? null : {
+          field: branch.condition.field,
+          operator: branch.condition.operator,
+          value: flowConditionValue(field, branch.condition.value),
+        },
+        steps: branch.steps.map(freezeStep),
+      };
+    }),
+  }));
+  const snapshot = {
     name: flow.name,
     description: flow.description,
     bomVersion: bom.version,
     bom: structuredClone(bom),
     variables,
     steps,
-    branches,
   };
+  if (Array.isArray(flow.gateways) && (flow.gateways.length || !Array.isArray(flow.branches) || !flow.branches.length)) snapshot.gateways = gateways;
+  else snapshot.branches = gateways[0]?.branches || [];
+  return expandFrozenSubflows(snapshot);
 }

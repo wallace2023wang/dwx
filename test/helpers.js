@@ -121,6 +121,7 @@ export async function startTestEnv(options = {}) {
   process.env.RES_URL = `http://127.0.0.1:${resServer.address().port}`;
 
   const cepDeployments = new Map();
+  const cepAlerts = new Map();
   const cepCalls = [];
   const cepServer = http.createServer(async (req, res) => {
     let body = '';
@@ -150,6 +151,15 @@ export async function startTestEnv(options = {}) {
       const release = cepDeployments.get(payload.releaseId);
       if (release) release.webhook = payload.webhook;
       res.end(JSON.stringify({ ok: true, releaseId: payload.releaseId }));
+    } else if (req.url.startsWith('/alerts?')) {
+      const releaseId = new URL(req.url, 'http://localhost').searchParams.get('releaseId');
+      res.end(JSON.stringify([...cepAlerts.values()].filter(alert => alert.releaseId === releaseId)));
+    } else if (req.url.startsWith('/alerts/')) {
+      const alertId = decodeURIComponent(req.url.slice('/alerts/'.length));
+      const alert = cepAlerts.get(alertId);
+      if (!alert || alert.releaseId !== payload.releaseId) { res.writeHead(404); res.end(JSON.stringify({ error: '告警不存在' })); return; }
+      if (payload.action === 'ack' && alert.status === 'ACTIVE') Object.assign(alert, { status: 'ACKED', ackedBy: payload.actor, ackedAt: '2026-10-09T08:00:00.000Z' });
+      res.end(JSON.stringify(alert));
     } else if (req.url === '/undeploy') {
       const removed = cepDeployments.delete(payload.releaseId);
       res.end(JSON.stringify({ ok: true, releaseId: payload.releaseId, removed, stoppedAt: '2026-09-29T02:00:00.000Z' }));
@@ -180,7 +190,7 @@ export async function startTestEnv(options = {}) {
   };
 
   return {
-    base, request, dir, engineCalls, resCalls, cepCalls,
+    base, request, dir, engineCalls, resCalls, cepCalls, cepAlerts,
     async stop() {
       await new Promise(r => server.close(r));
       await new Promise(r => engine.close(r));

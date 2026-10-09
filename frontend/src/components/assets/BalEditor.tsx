@@ -59,7 +59,7 @@ export default function BalEditor({ detail, fields, projectVariables, loading, o
         {view === 'bal'
           ? draft
             ? <>
-                <BalRuleView draft={draft} fields={fields} projectVariables={projectVariables} onOpenBom={onOpenBom} />
+                <BalRuleView draft={draft} fields={fields} projectVariables={projectVariables} methods={detail.bomMethods || []} onOpenBom={onOpenBom} />
                 <AssetProperties attributes={detail.attributes} />
               </>
             : <div className="p-5 text-[11px] text-[#c62828]">该演示规则缺少结构化 BAL 定义。</div>

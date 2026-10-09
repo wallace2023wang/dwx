@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronUp, Code2, LockKeyhole, Plus, Trash2 } from 'lucide-react'
-import type { BomField, RuleActionDraft, RuleConditionDraft, RuleDraft, RuleFieldConditionDraft, RulePatternConditionDraft, RuleRawConditionDraft, RuleSetVariable, RuleSetVariableType } from '../../types'
+import type { BomField, BomMethod, RuleActionDraft, RuleActionValueExpression, RuleConditionDraft, RuleConditionNode, RuleDraft, RuleFieldConditionDraft, RulePatternConditionDraft, RuleRawConditionDraft, RuleSetVariable, RuleSetVariableType } from '../../types'
 import { BOM_TYPE_CAPABILITIES, defaultOperatorForType, operatorsForType, supportsFieldValueForType } from '../../domain/bomTypes'
 
 interface BalRuleViewProps {
@@ -7,12 +7,13 @@ interface BalRuleViewProps {
   fields: BomField[]
   projectVariables?: RuleSetVariable[]
   variables?: RuleSetVariable[]
+  methods?: BomMethod[]
   editable?: boolean
   onChange?: (draft: RuleDraft) => void
   onOpenBom?: (fieldKey: string) => void
 }
 
-interface FactOption {
+export interface FactOption {
   name: string
   label: string
   fields: BomField[]
@@ -41,6 +42,60 @@ function isListField(field: BomField | undefined) {
   return Boolean(field && field.type === 'List<String>')
 }
 
+function isNumericField(field: BomField | undefined) {
+  return Boolean(field && (field.type === 'Integer' || field.type === 'Decimal'))
+}
+
+function draftConditions(draft: RuleDraft) {
+  if (!draft.conditionTree) return draft.conditions
+  const conditions: RuleConditionDraft[] = []
+  const visit = (node: RuleConditionNode) => {
+    if (node.type === 'condition') conditions.push(node.condition)
+    else node.children.forEach(visit)
+  }
+  visit(draft.conditionTree)
+  return conditions
+}
+
+function mapConditionTree(node: RuleConditionNode, mapper: (condition: RuleConditionDraft) => RuleConditionDraft): RuleConditionNode {
+  return node.type === 'condition'
+    ? { ...node, condition: mapper(node.condition) }
+    : { ...node, children: node.children.map(child => mapConditionTree(child, mapper)) }
+}
+
+function expressionLabel(expression: RuleActionValueExpression | undefined, fields: BomField[], variables: RuleSetVariable[], methods: BomMethod[] = []): string {
+  if (!expression) return '未设置'
+  if (expression.type === 'literal') return expression.value || '未设置'
+  if (expression.type === 'field') return expression.fieldSource === 'variable'
+    ? variables.find(variable => variable.name === expression.field)?.label || expression.field
+    : fields.find(field => field.key === expression.field)?.label || expression.field
+  if (expression.type === 'binary') return `(${expressionLabel(expression.left, fields, variables, methods)} ${expression.operator} ${expressionLabel(expression.right, fields, variables, methods)})`
+  if (expression.type === 'method') return `${methods.find(method => method.name === expression.name)?.label || expression.name}()`
+  return `${expression.name}(${expression.args.map(argument => expressionLabel(argument, fields, variables, methods)).join(', ')})`
+}
+
+function expressionValueError(expression: RuleActionValueExpression | undefined, fields: BomField[], variables: RuleSetVariable[], methods: BomMethod[] = [], depth = 1): string | null {
+  if (!expression) return '请选择表达式'
+  if (depth > 10) return '表达式最多支持 10 层'
+  if (expression.type === 'literal') return expression.value.trim() && Number.isFinite(Number(expression.value)) ? null : '表达式常量必须是数字'
+  if (expression.type === 'field') {
+    if (expression.fieldSource === 'variable') return ['Integer', 'Double'].includes(variables.find(variable => variable.name === expression.field)?.type || '') ? null : '请选择数值变量'
+    return isNumericField(fields.find(field => field.key === expression.field && field.direction === 'input')) ? null : '请选择数值输入字段'
+  }
+  if (expression.type === 'binary') {
+    const left = expressionValueError(expression.left, fields, variables, methods, depth + 1)
+    const right = expressionValueError(expression.right, fields, variables, methods, depth + 1)
+    if (left || right) return left || right
+    if (expression.operator === '/' && expression.right.type === 'literal' && Number(expression.right.value) === 0) return '除数不能为 0'
+    return null
+  }
+  if (expression.type === 'method') return methods.some(method => method.name === expression.name) ? null : '引用的 BOM 方法不存在'
+  if (!['min', 'max', 'round', 'abs'].includes(expression.name)) return '函数不受支持'
+  const expected = ['round', 'abs'].includes(expression.name) ? 1 : 2
+  if (expression.args.length !== expected) return `${expression.name} 需要 ${expected} 个参数`
+  return expression.args.map(argument => expressionValueError(argument, fields, variables, methods, depth + 1)).find(Boolean) || null
+}
+
 function enumValues(field: BomField | undefined) {
   if (!field) return []
   if (field.enum?.length) return field.enum
@@ -52,7 +107,7 @@ function operatorsFor(field: BomField | undefined) {
   return operatorsForType(field?.type)
 }
 
-function factsFor(fields: BomField[], direction: BomField['direction']): FactOption[] {
+export function factsFor(fields: BomField[], direction: BomField['direction']): FactOption[] {
   const facts = new Map<string, FactOption>()
   for (const field of fields.filter(candidate => candidate.direction === direction)) {
     const name = field.factName || (direction === 'input' ? 'Input' : 'Output')
@@ -174,7 +229,7 @@ function conditionValueError(condition: RuleFieldConditionDraft, field: BomField
     : literalConditionError(condition, field)
 }
 
-function defaultLiteralValue(field: BomField | undefined, operator = defaultOperatorForType(field?.type)) {
+export function defaultLiteralValue(field: BomField | undefined, operator = defaultOperatorForType(field?.type)) {
   if (operator === 'size >' || operator === 'size <') return '0'
   return isBooleanField(field) ? 'true' : enumValues(field)[0] || ''
 }
@@ -201,7 +256,7 @@ function advancedExpression(condition: RuleRawConditionDraft | RulePatternCondit
   return condition.raw || `${condition.pattern} ${condition.condition}`
 }
 
-export function validateBalDraft(draft: RuleDraft, fields: BomField[], projectVariables?: RuleSetVariable[]) {
+export function validateBalDraft(draft: RuleDraft, fields: BomField[], projectVariables?: RuleSetVariable[], methods: BomMethod[] = []) {
   const issues: string[] = []
   const variables = projectVariables?.length ? projectVariables : (draft.variables || [])
   const variableNames = new Set<string>()
@@ -218,7 +273,7 @@ export function validateBalDraft(draft: RuleDraft, fields: BomField[], projectVa
     if (variable.type === 'String' && variable.enum?.length && !variable.enum.includes(String(variable.defaultValue))) issues.push(`规则集变量“${variable.name}”的默认值不在枚举范围内`)
   }
   const actionKeys = new Set<string>()
-  for (const [index, condition] of draft.conditions.entries()) {
+  for (const [index, condition] of draftConditions(draft).entries()) {
     if (isAdvancedCondition(condition)) continue
     if (condition.fieldSource === 'variable') {
       const variable = variables.find(candidate => candidate.name === condition.field)
@@ -250,8 +305,9 @@ export function validateBalDraft(draft: RuleDraft, fields: BomField[], projectVa
     }
     const field = fields.find(candidate => candidate.key === action.field && candidate.direction === 'output')
     if (!field) issues.push(`第 ${index + 1} 个动作引用的 BOM 字段不存在`)
-    const error = valueError(action.value, field)
+    const error = action.valueExpression ? expressionValueError(action.valueExpression, fields, variables, methods) : valueError(action.value, field)
     if (error) issues.push(`第 ${index + 1} 个动作：${error}`)
+    if (action.valueExpression && !isNumericField(field)) issues.push(`第 ${index + 1} 个动作：只有数值输出字段支持表达式`)
     if (actionKeys.has(action.field)) issues.push(`第 ${index + 1} 个动作重复设置了同一字段`)
     actionKeys.add(action.field)
   }
@@ -261,17 +317,18 @@ export function validateBalDraft(draft: RuleDraft, fields: BomField[], projectVa
 export function normalizeBalDraft(draft: RuleDraft, fields: BomField[]): RuleDraft {
   const inputFacts = factsFor(fields, 'input')
   const outputFacts = factsFor(fields, 'output')
+  const normalizeCondition = (condition: RuleConditionDraft) => {
+    if (isAdvancedCondition(condition)) return condition
+    return {
+      ...condition,
+      factType: selectedFact(inputFacts, condition.factType, condition.field)?.name || condition.factType,
+      quantifier: condition.quantifier || 'one',
+    }
+  }
   return {
     ...draft,
-    conditions: draft.conditions.map((condition, index) => {
-      if (isAdvancedCondition(condition)) return condition
-      return {
-        ...condition,
-        factType: selectedFact(inputFacts, condition.factType, condition.field)?.name || condition.factType,
-        quantifier: condition.quantifier || 'one',
-        connector: index === 0 ? 'and' : condition.connector || 'and',
-      }
-    }),
+    conditions: draft.conditions.map((condition, index) => ({ ...normalizeCondition(condition), connector: index === 0 ? 'and' : condition.connector || 'and' })),
+    conditionTree: draft.conditionTree ? mapConditionTree(draft.conditionTree, normalizeCondition) : undefined,
     actions: draft.actions.map(action => {
       const field = selectedField(outputFacts, action.field)
       return {
@@ -413,6 +470,72 @@ function RowActions({ index, count, onMove, onDelete }: {
       <button type="button" className="inline-flex size-7 items-center justify-center text-ink-3 hover:bg-ink-bg hover:text-ink-1 disabled:opacity-30" disabled={index === 0} onClick={() => onMove(-1)} title="上移"><ChevronUp size={13} /></button>
       <button type="button" className="inline-flex size-7 items-center justify-center text-ink-3 hover:bg-ink-bg hover:text-ink-1 disabled:opacity-30" disabled={index === count - 1} onClick={() => onMove(1)} title="下移"><ChevronDown size={13} /></button>
       <button type="button" className="inline-flex size-7 items-center justify-center text-ink-3 hover:bg-[#ffebee] hover:text-[#c62828] disabled:opacity-30" disabled={count === 1} onClick={onDelete} title="删除"><Trash2 size={13} /></button>
+    </div>
+  )
+}
+
+function ConditionTreeEditor({ node, facts, variables, editable, onChange, onDelete, onOpenBom, depth = 0 }: {
+  node: RuleConditionNode
+  facts: FactOption[]
+  variables: RuleSetVariable[]
+  editable: boolean
+  onChange: (node: RuleConditionNode) => void
+  onDelete?: () => void
+  onOpenBom?: (fieldKey: string) => void
+  depth?: number
+}) {
+  const firstField = facts[0]?.fields[0]
+  const newCondition = (): RuleConditionNode => ({ type: 'condition', condition: { factType: facts[0]?.name, quantifier: 'one', field: firstField?.key || '', operator: defaultOperatorForType(firstField?.type), value: defaultLiteralValue(firstField) } })
+  if (node.type === 'condition') {
+    return (
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <ConditionRow condition={node.condition} index={0} count={1} facts={facts} variables={variables} editable={editable} onOpenBom={onOpenBom} onChange={condition => onChange({ ...node, condition })} onMove={() => {}} onDelete={() => onDelete?.()} />
+        </div>
+        {editable && onDelete && <button type="button" className="mt-2 inline-flex size-7 shrink-0 items-center justify-center text-ink-3 hover:bg-[#ffebee] hover:text-[#c62828]" onClick={onDelete} title="删除条件"><Trash2 size={13} /></button>}
+      </div>
+    )
+  }
+  return (
+    <div className={`rounded-[3px] border p-3 ${depth ? 'border-[#b8c9f5] bg-[#f8faff]' : 'border-ink-border bg-[#fafafa]'}`}>
+      <div className="mb-2 flex items-center gap-2">
+        <span className="text-[11px] font-medium text-ink-3">条件组</span>
+        {editable ? <select className="h-7 rounded-[2px] border border-ink-border bg-white px-2 text-[11px] font-medium text-brand-primary" value={node.operator} onChange={event => onChange({ ...node, operator: event.target.value as 'and' | 'or' })}><option value="and">全部满足（并且）</option><option value="or">任一满足（或者）</option></select> : <strong className="text-[11px] text-brand-primary">{node.operator === 'and' ? '全部满足' : '任一满足'}</strong>}
+        {editable && depth < 4 && <><button type="button" className="h-7 px-2 text-[11px] text-brand-primary hover:bg-brand-primary-l" onClick={() => onChange({ ...node, children: [...node.children, newCondition()] })}>+ 条件</button><button type="button" className="h-7 px-2 text-[11px] text-brand-primary hover:bg-brand-primary-l" onClick={() => onChange({ ...node, children: [...node.children, { type: 'group', operator: 'and', children: [newCondition(), newCondition()] }] })}>+ 子组</button></>}
+        {editable && onDelete && <button type="button" className="ml-auto inline-flex size-7 items-center justify-center text-ink-3 hover:bg-[#ffebee] hover:text-[#c62828]" onClick={onDelete} title="删除条件组"><Trash2 size={13} /></button>}
+      </div>
+      <div className="space-y-2">
+        {node.children.map((child, index) => <div key={index}>{index > 0 && <div className="mb-1 text-[10px] font-medium text-ink-3">{node.operator === 'and' ? '并且' : '或者'}</div>}<ConditionTreeEditor node={child} facts={facts} variables={variables} editable={editable} onOpenBom={onOpenBom} depth={depth + 1} onChange={next => onChange({ ...node, children: node.children.map((item, position) => position === index ? next : item) })} onDelete={node.children.length > 2 ? () => onChange({ ...node, children: node.children.filter((_, position) => position !== index) }) : undefined} /></div>)}
+      </div>
+    </div>
+  )
+}
+
+export function ExpressionEditor({ expression, fields, variables, methods = [], onChange, depth = 0 }: {
+  expression: RuleActionValueExpression
+  fields: BomField[]
+  variables: RuleSetVariable[]
+  methods?: BomMethod[]
+  onChange: (expression: RuleActionValueExpression) => void
+  depth?: number
+}) {
+  const numericFields = fields.filter(field => field.direction === 'input' && isNumericField(field))
+  const numericVariables = variables.filter(variable => variable.type === 'Integer' || variable.type === 'Double')
+  const changeType = (type: RuleActionValueExpression['type']) => {
+    if (type === 'literal') onChange({ type, value: '0' })
+    else if (type === 'field') onChange({ type, field: numericFields[0]?.key || numericVariables[0]?.name || '', fieldSource: numericFields.length ? 'bom' : 'variable' })
+    else if (type === 'binary') onChange({ type, operator: '+', left: { type: 'literal', value: '0' }, right: { type: 'literal', value: '0' } })
+    else if (type === 'function') onChange({ type, name: 'min', args: [{ type: 'literal', value: '0' }, { type: 'literal', value: '0' }] })
+    else onChange({ type: 'method', name: methods[0]?.name || '' })
+  }
+  return (
+    <div className={`flex min-w-[240px] flex-wrap items-center gap-1 rounded-[2px] border border-[#b8c9f5] bg-white p-1 ${depth ? 'ml-2' : 'flex-1'}`}>
+      <select className="h-7 rounded-[2px] border border-ink-border bg-white px-1 text-[10px]" value={expression.type} onChange={event => changeType(event.target.value as RuleActionValueExpression['type'])}><option value="literal">数字</option><option value="field">字段/变量</option><option value="binary">四则运算</option><option value="function">函数</option>{methods.length > 0 && <option value="method">BOM 方法</option>}</select>
+      {expression.type === 'literal' && <input className="h-7 min-w-20 flex-1 rounded-[2px] border border-ink-border px-2 font-mono text-[11px]" type="number" value={expression.value} onChange={event => onChange({ ...expression, value: event.target.value })} />}
+      {expression.type === 'field' && <select className="h-7 min-w-36 flex-1 rounded-[2px] border border-ink-border bg-white px-2 text-[11px]" value={`${expression.fieldSource || 'bom'}:${expression.field}`} onChange={event => { const [source, field] = event.target.value.split(':'); onChange({ ...expression, field, fieldSource: source as 'bom' | 'variable' }) }}><optgroup label="输入字段">{numericFields.map(field => <option key={field.key} value={`bom:${field.key}`}>{field.label}</option>)}</optgroup>{numericVariables.length > 0 && <optgroup label="规则集变量">{numericVariables.map(variable => <option key={variable.name} value={`variable:${variable.name}`}>{variable.label}</option>)}</optgroup>}</select>}
+      {expression.type === 'binary' && <><select className="h-7 rounded-[2px] border border-ink-border bg-white px-2 font-mono text-[11px]" value={expression.operator} onChange={event => onChange({ ...expression, operator: event.target.value as '+' | '-' | '*' | '/' })}><option>+</option><option>-</option><option>*</option><option>/</option></select>{depth < 9 && <div className="basis-full space-y-1"><ExpressionEditor expression={expression.left} fields={fields} variables={variables} methods={methods} depth={depth + 1} onChange={left => onChange({ ...expression, left })} /><ExpressionEditor expression={expression.right} fields={fields} variables={variables} methods={methods} depth={depth + 1} onChange={right => onChange({ ...expression, right })} /></div>}</>}
+      {expression.type === 'function' && <><select className="h-7 rounded-[2px] border border-ink-border bg-white px-2 font-mono text-[11px]" value={expression.name} onChange={event => { const name = event.target.value as 'min' | 'max' | 'round' | 'abs'; const count = name === 'round' || name === 'abs' ? 1 : 2; onChange({ ...expression, name, args: Array.from({ length: count }, (_, index) => expression.args[index] || { type: 'literal', value: '0' }) }) }}><option value="min">min</option><option value="max">max</option><option value="round">round</option><option value="abs">abs</option></select>{depth < 9 && <div className="basis-full space-y-1">{expression.args.map((argument, index) => <ExpressionEditor key={index} expression={argument} fields={fields} variables={variables} methods={methods} depth={depth + 1} onChange={next => onChange({ ...expression, args: expression.args.map((item, position) => position === index ? next : item) })} />)}</div>}</>}
+      {expression.type === 'method' && <select className="h-7 min-w-40 flex-1 rounded-[2px] border border-ink-border bg-white px-2 text-[11px]" value={expression.name} onChange={event => onChange({ ...expression, name: event.target.value })}>{methods.map(method => <option key={method.name} value={method.name}>{method.label} · {method.name}()</option>)}</select>}
     </div>
   )
 }
@@ -609,12 +732,14 @@ function ConditionRow({ condition, index, count, facts, variables, editable, onC
   )
 }
 
-function ActionRow({ action, index, count, facts, variables, editable, onChange, onMove, onDelete, onOpenBom }: {
+export function ActionRow({ action, index, count, facts, allFields, variables, methods, editable, onChange, onMove, onDelete, onOpenBom }: {
   action: RuleActionDraft
   index: number
   count: number
   facts: FactOption[]
+  allFields: BomField[]
   variables: RuleSetVariable[]
+  methods: BomMethod[]
   editable: boolean
   onChange: (action: RuleActionDraft) => void
   onMove: (offset: number) => void
@@ -667,7 +792,7 @@ function ActionRow({ action, index, count, facts, variables, editable, onChange,
         <span className="text-ink-3">的</span>
         <ReadonlyTerm fieldKey={action.field} onOpenBom={onOpenBom}>{field?.label || action.field}</ReadonlyTerm>
         {actionType === 'set' && <span className="text-ink-3">为</span>}
-        <code className="rounded-[2px] bg-[#f0f0f0] px-2 py-1 font-mono text-[12px] text-ink-1">{displayValue(action.value, field)}</code>
+        <code className="rounded-[2px] bg-[#f0f0f0] px-2 py-1 font-mono text-[12px] text-ink-1">{action.valueExpression ? expressionLabel(action.valueExpression, allFields, variables, methods) : displayValue(action.value, field)}</code>
       </div>
     )
   }
@@ -683,7 +808,7 @@ function ActionRow({ action, index, count, facts, variables, editable, onChange,
   }
 
   return (
-    <div className={`flex min-h-12 flex-wrap items-center gap-2 rounded-[3px] border px-3 py-2 ${invalid || valueError(action.value, field) ? 'border-[#c62828] bg-[#fffafa]' : 'border-ink-border bg-[#fafafa]'}`}>
+    <div className={`flex min-h-12 flex-wrap items-center gap-2 rounded-[3px] border px-3 py-2 ${invalid || (action.valueExpression ? expressionValueError(action.valueExpression, allFields, variables, methods) : valueError(action.value, field)) ? 'border-[#c62828] bg-[#fffafa]' : 'border-ink-border bg-[#fafafa]'}`}>
       <strong className="min-w-8 font-semibold text-ink-2">{verb}</strong>
       {variables.length > 0 && <select className="h-8 rounded-[2px] border border-ink-border bg-white px-1.5 text-[11px] text-ink-2 outline-none focus:border-brand-primary" value="bom" onChange={event => {
         if (event.target.value === 'variable') {
@@ -695,17 +820,18 @@ function ActionRow({ action, index, count, facts, variables, editable, onChange,
       <span className="text-ink-3">的</span>
       <TermSelect value={action.field} label="目标业务字段" options={(fact?.fields || []).map(option => ({ value: option.key, label: option.label }))} invalid={invalid} onChange={selectField} />
       {actionType === 'set' && <span className="text-ink-3">为</span>}
-      <ValueControl value={action.value} field={field} onChange={value => onChange({ ...action, value })} />
+      {isNumericField(field) && actionType === 'set' && <select className="h-8 rounded-[2px] border border-ink-border bg-white px-1.5 text-[11px]" value={action.valueExpression ? 'expression' : 'literal'} onChange={event => event.target.value === 'expression' ? onChange({ ...action, value: '', valueExpression: { type: 'field', field: allFields.find(candidate => candidate.direction === 'input' && isNumericField(candidate))?.key || '', fieldSource: 'bom' } }) : onChange({ ...action, value: '0', valueExpression: undefined })}><option value="literal">固定值</option><option value="expression">计算表达式</option></select>}
+      {action.valueExpression ? <ExpressionEditor expression={action.valueExpression} fields={allFields} variables={variables} methods={methods} onChange={valueExpression => onChange({ ...action, valueExpression })} /> : <ValueControl value={action.value} field={field} onChange={value => onChange({ ...action, value })} />}
       <RowActions index={index} count={count} onMove={onMove} onDelete={onDelete} />
     </div>
   )
 }
 
-function balPreview(draft: RuleDraft, fields: BomField[], variables: RuleSetVariable[]) {
+function balPreview(draft: RuleDraft, fields: BomField[], variables: RuleSetVariable[], methods: BomMethod[]) {
   const inputFacts = factsFor(fields, 'input')
   const outputFacts = factsFor(fields, 'output')
   const lines = [`规则 ${JSON.stringify(draft.name)}`, '', '  当']
-  draft.conditions.forEach((condition, index) => {
+  draftConditions(draft).forEach((condition, index) => {
     const prefix = index ? `${condition.connector === 'or' ? '或者' : '并且'} ` : ''
     if (isAdvancedCondition(condition)) {
       const quantifier = condition.raw && condition.quantifier && condition.quantifier !== 'one'
@@ -741,12 +867,12 @@ function balPreview(draft: RuleDraft, fields: BomField[], variables: RuleSetVari
     const fact = selectedFact(outputFacts, action.factType, action.field)
     const field = selectedField(outputFacts, action.field)
     const add = action.actionType === 'add' || isListField(field)
-    lines.push(`    ${add ? '添加' : '设置'} ${fact?.label || '未知事实'} 的 ${field?.label || action.field}${add ? '' : ' 为'} ${displayValue(action.value, field)}`)
+    lines.push(`    ${add ? '添加' : '设置'} ${fact?.label || '未知事实'} 的 ${field?.label || action.field}${add ? '' : ' 为'} ${action.valueExpression ? expressionLabel(action.valueExpression, fields, variables, methods) : displayValue(action.value, field)}`)
   })
   return lines.join('\n')
 }
 
-export default function BalRuleView({ draft, fields, projectVariables, editable = false, onChange, onOpenBom }: BalRuleViewProps) {
+export default function BalRuleView({ draft, fields, projectVariables, methods = [], editable = false, onChange, onOpenBom }: BalRuleViewProps) {
   const inputFacts = factsFor(fields, 'input')
   const outputFacts = factsFor(fields, 'output')
   const variables = projectVariables?.length ? projectVariables : (draft.variables || [])
@@ -762,6 +888,7 @@ export default function BalRuleView({ draft, fields, projectVariables, editable 
       ...draft,
       variables: variables.filter((_, position) => position !== index),
       conditions: draft.conditions.filter(condition => condition.fieldSource !== 'variable' || condition.field !== removed?.name),
+      conditionTree: draft.conditionTree ? mapConditionTree(draft.conditionTree, condition => condition.fieldSource === 'variable' && condition.field === removed?.name ? { field: firstConditionField?.key || '', operator: defaultOperatorForType(firstConditionField?.type), value: defaultLiteralValue(firstConditionField) } : condition) : undefined,
       actions: draft.actions.filter(action => action.fieldSource !== 'variable' || action.field !== removed?.name),
     })
   }
@@ -800,10 +927,11 @@ export default function BalRuleView({ draft, fields, projectVariables, editable 
       <section aria-labelledby="bal-when-heading">
         <div className="mb-2 flex min-h-7 items-center gap-3">
           <h3 id="bal-when-heading" className="font-semibold text-ink-3">当</h3>
-          {editable && <button type="button" className="inline-flex h-7 items-center gap-1 rounded-[2px] px-2 text-[11px] text-brand-primary hover:bg-brand-primary-l" disabled={!firstConditionField} onClick={() => setDraft({ ...draft, conditions: [...draft.conditions, { factType: inputFacts[0]?.name, quantifier: 'one', connector: 'and', field: firstConditionField?.key || '', operator: defaultOperatorForType(firstConditionField?.type), value: isBooleanField(firstConditionField) ? 'true' : enumValues(firstConditionField)[0] || '' }] })}><Plus size={13} />添加条件</button>}
+          {editable && !draft.conditionTree && <><button type="button" className="inline-flex h-7 items-center gap-1 rounded-[2px] px-2 text-[11px] text-brand-primary hover:bg-brand-primary-l" disabled={!firstConditionField} onClick={() => setDraft({ ...draft, conditions: [...draft.conditions, { factType: inputFacts[0]?.name, quantifier: 'one', connector: 'and', field: firstConditionField?.key || '', operator: defaultOperatorForType(firstConditionField?.type), value: isBooleanField(firstConditionField) ? 'true' : enumValues(firstConditionField)[0] || '' }] })}><Plus size={13} />添加条件</button><button type="button" className="h-7 rounded-[2px] px-2 text-[11px] text-brand-primary hover:bg-brand-primary-l" onClick={() => { const children: RuleConditionNode[] = draft.conditions.map(condition => ({ type: 'condition', condition })); if (children.length === 1) children.push({ type: 'condition', condition: { factType: inputFacts[0]?.name, quantifier: 'one', field: firstConditionField?.key || '', operator: defaultOperatorForType(firstConditionField?.type), value: defaultLiteralValue(firstConditionField) } }); setDraft({ ...draft, conditionTree: { type: 'group', operator: 'and', children } }) }}>启用条件组</button></>}
+          {editable && draft.conditionTree && <button type="button" className="h-7 rounded-[2px] px-2 text-[11px] text-ink-3 hover:bg-ink-bg" onClick={() => setDraft({ ...draft, conditions: draftConditions(draft).map((condition, index) => ({ ...condition, connector: index ? 'and' : undefined })), conditionTree: undefined })}>转为扁平条件（全部并且）</button>}
         </div>
         <div className="space-y-2">
-          {draft.conditions.map((condition, index) => (
+          {draft.conditionTree ? <ConditionTreeEditor node={draft.conditionTree} facts={inputFacts} variables={variables} editable={editable} onOpenBom={onOpenBom} onChange={conditionTree => setDraft({ ...draft, conditionTree })} /> : draft.conditions.map((condition, index) => (
             <ConditionRow
               key={`${condition.field || condition.raw || condition.pattern || 'condition'}-${index}`}
               condition={condition}
@@ -834,7 +962,9 @@ export default function BalRuleView({ draft, fields, projectVariables, editable 
               index={index}
               count={draft.actions.length}
               facts={outputFacts}
+              allFields={fields}
               variables={variables}
+              methods={methods}
               editable={editable}
               onOpenBom={onOpenBom}
               onChange={next => setDraft({ ...draft, actions: draft.actions.map((item, position) => position === index ? next : item) })}
@@ -848,7 +978,7 @@ export default function BalRuleView({ draft, fields, projectVariables, editable 
       {editable && (
         <details className="mt-5 border-t border-ink-border pt-3">
           <summary className="cursor-pointer select-none text-[11px] font-medium text-ink-2">BAL 中文预览</summary>
-          <pre className="mt-2 overflow-auto rounded-[3px] border border-ink-border bg-[#fafafa] p-3 font-sans text-[12px] leading-6 text-ink-1">{balPreview(draft, fields, variables)}</pre>
+          <pre className="mt-2 overflow-auto rounded-[3px] border border-ink-border bg-[#fafafa] p-3 font-sans text-[12px] leading-6 text-ink-1">{balPreview(draft, fields, variables, methods)}</pre>
         </details>
       )}
     </div>

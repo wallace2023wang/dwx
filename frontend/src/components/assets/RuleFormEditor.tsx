@@ -37,7 +37,8 @@ export default function RuleFormEditor({ detail, fields, projectVariables, busy,
   const [drl, setDrl] = useState(detail.content ?? '')
   const [notice, setNotice] = useState<{ error: boolean; text: string } | null>(null)
   const dirty = JSON.stringify(draft) !== JSON.stringify(source)
-  const issues = validateBalDraft(draft, fields, projectVariables)
+  const methods = detail.bomMethods || []
+  const issues = validateBalDraft(draft, fields, projectVariables, methods)
   const invalid = issues.length > 0
 
   useEffect(() => {
@@ -88,7 +89,7 @@ export default function RuleFormEditor({ detail, fields, projectVariables, busy,
         {view === 'bal'
           ? <>
               {invalid && <div className="border-b border-[#ef9a9a] bg-[#fff1f1] px-4 py-2 text-[11px] text-[#a31515]" role="alert">{issues[0]}{issues.length > 1 ? `，另有 ${issues.length - 1} 项问题` : ''}。修复后才能保存或编译。</div>}
-              <BalRuleView draft={draft} fields={fields} projectVariables={projectVariables} editable onChange={setDraft} onOpenBom={onOpenBom} />
+              <BalRuleView draft={draft} fields={fields} projectVariables={projectVariables} methods={methods} editable onChange={setDraft} onOpenBom={onOpenBom} />
               <div className="grid grid-cols-[100px_150px_minmax(150px,1fr)] gap-3 border-t border-ink-border bg-[#fafafa] px-5 py-3">
                 <label className="text-[10px] font-semibold text-ink-3">优先级<input className="control-input mt-1 h-8 bg-white text-xs" type="number" min={-1000} max={1000} value={draft.priority} onChange={event => setDraft({ ...draft, priority: Number(event.target.value) })} /></label>
                 <label className="text-[10px] font-semibold text-ink-3">命中策略<input className="control-input mt-1 h-8 bg-[#f1f1f1] text-xs" value={detail.attributes.hitPolicy} readOnly /></label>

@@ -36,14 +36,14 @@ export function createEngineClients(config) {
     return { result };
   }
 
-  async function executionServer(endpoint, payload, projectOrEngine = 'rules') {
+  async function executionServer(endpoint, payload, projectOrEngine = 'rules', method = 'POST') {
     const target = resolveEngineTargets(projectOrEngine, config);
     const timeoutMs = Math.min(310000, Math.max(20000, (Number.isInteger(payload?.waitMs) ? payload.waitMs : 0) + 5000));
     let response;
     try {
       response = await fetch(`${target.runtimeUrl}${endpoint}`, {
-        method: 'POST', headers: engineHeaders(target, config),
-        body: JSON.stringify(payload), signal: AbortSignal.timeout(timeoutMs),
+        method, headers: engineHeaders(target, config),
+        ...(method === 'GET' ? {} : { body: JSON.stringify(payload) }), signal: AbortSignal.timeout(timeoutMs),
       });
     } catch { return { status: 503, error: `${target.label} 执行服务不可用` }; }
     let result;

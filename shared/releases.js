@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto';
 import { generateDrl } from './rules.js';
-import { resolveRuleGroupMembers, ruleGroupFingerprint, tableDrl, tableRules } from './assets.js';
+import { flowBranches, flowGateways, flowSteps, isFlowGraph, resolveRuleGroupMembers, ruleGroupFingerprint, tableDrl, tableRules } from './assets.js';
 import { defaultBom, findField, validateBom } from './bom.js';
 import { CEP_ENGINE_VERSION } from './event-streams.js';
 import { canonicalRuleSetVariables, normalizeRuleSetVariables, validateRuleSetVariables } from './ruleset-variables.js';
 import { DomainError } from './errors.js';
+import { decisionTreeDrl, decisionTreeRules, isDecisionTree } from './decision-trees.js';
+import { isScorecard, scorecardDrl, scorecardRules } from './scorecards.js';
 
 export const RELEASE_SCHEMA_VERSION = 1;
 export const DROOLS_VERSION = '10.2.0';
@@ -76,6 +78,7 @@ function releaseStep(step, options = {}) {
   if (options.includeVariables !== false && step.variables?.length) result.variables = structuredClone(step.variables);
   if (step.inputMappings?.length) result.inputMappings = structuredClone(step.inputMappings);
   if (step.outputMappings?.length) result.outputMappings = structuredClone(step.outputMappings);
+  if (step.subflowPath?.length) result.subflowPath = structuredClone(step.subflowPath);
   return result;
 }
 
@@ -100,13 +103,13 @@ function assetVersion(asset, number) {
   return asset?.versions?.find(version => version.number === number) || asset?.versions?.at(-1);
 }
 
-function flowDependencyIssues(flow, rules, tables, packages) {
+function flowDependencyIssues(flow, rules, tables, flows, packages) {
   const assets = new Map([
     ...rules.map(asset => [`rule:${asset.id}`, asset]),
     ...tables.map(asset => [`table:${asset.id}`, asset]),
   ]);
-  const steps = [...(flow.steps || []), ...(flow.branches || []).flatMap(branch => branch.steps || [])];
-  return steps.flatMap(step => {
+  const steps = flowSteps(flow);
+  const stepIssues = steps.flatMap(step => {
     if (step.type === 'rule-group') {
       const selector = step.selector || { packageName: step.packageName, includeChildren: step.includeChildren === true };
       try {
@@ -124,10 +127,17 @@ function flowDependencyIssues(flow, rules, tables, packages) {
       ? [{ type: step.type, id: step.id, name: step.name || asset.published?.name || asset.draft?.name || step.id, frozenVersion: step.version, latestVersion }]
       : [];
   });
+  return [...stepIssues, ...(flow.subflows || []).flatMap(subflow => {
+    const current = flows.find(item => item.id === subflow.id && !item.archived && item.lifecycleStatus !== 'deprecated');
+    const latestVersion = current?.versions?.at(-1)?.number;
+    return !current || !latestVersion || latestVersion !== subflow.version
+      ? [{ type: 'subflow', id: subflow.id, name: subflow.name || current?.published?.name || current?.draft?.name || subflow.id, frozenVersion: subflow.version, latestVersion: latestVersion || 0 }]
+      : [];
+  })];
 }
 
-function assertCurrentFlowDependencies(flow, rules, tables, packages) {
-  const issues = flowDependencyIssues(flow, rules, tables, packages);
+function assertCurrentFlowDependencies(flow, rules, tables, flows, packages) {
+  const issues = flowDependencyIssues(flow, rules, tables, flows, packages);
   if (!issues.length) return;
   const summary = issues.slice(0, 3).map(issue => issue.type === 'rule-group'
     ? `${issue.name}成员已变化`
@@ -151,7 +161,11 @@ function regenerateFlowStep(step, rules, tables, model, variables) {
     if (source) {
       const drl = step.type === 'rule'
         ? generateDrl([source], version?.bom || model, variables)
-        : tableDrl(source, version?.bom || model, asset.id, variables);
+        : isScorecard(source)
+          ? scorecardDrl(source, version?.bom || model, asset.id, variables)
+          : isDecisionTree(source)
+          ? decisionTreeDrl(source, version?.bom || model, asset.id, variables)
+          : tableDrl(source, version?.bom || model, asset.id, variables);
       return { ...step, drl };
     }
   }
@@ -164,7 +178,12 @@ function regenerateFlowStep(step, rules, tables, model, variables) {
     const source = version?.rule || version?.draft || memberAsset?.published;
     if (!source) return [];
     if (member.type === 'rule') return [{ ...source, name: `${source.name} [${member.id}]` }];
-    return tableRules(source, version?.bom || model, member.id, variables)
+    const generated = isScorecard(source)
+      ? scorecardRules(source, version?.bom || model, member.id, variables)
+      : isDecisionTree(source)
+      ? decisionTreeRules(source, version?.bom || model, member.id, variables)
+      : tableRules(source, version?.bom || model, member.id, variables);
+    return generated
       .map(rule => ({ ...rule, name: `${rule.name} [${member.id}]` }));
   });
   return executableRules.length ? { ...step, drl: generateDrl(executableRules, model, variables) } : step;
@@ -231,31 +250,62 @@ export function buildRelease({ id, request, rules, tables, flows, eventStreams =
       assetId: targetAsset.id,
       assetVersion: version.number,
       drl: projectVariables.length
-        ? tableDrl(targetAsset.published, model, targetAsset.id, projectVariables)
-        : version.drl || tableDrl(targetAsset.published, model, targetAsset.id, projectVariables),
+        ? (isScorecard(targetAsset.published)
+            ? scorecardDrl(targetAsset.published, model, targetAsset.id, projectVariables)
+            : isDecisionTree(targetAsset.published)
+            ? decisionTreeDrl(targetAsset.published, model, targetAsset.id, projectVariables)
+            : tableDrl(targetAsset.published, model, targetAsset.id, projectVariables))
+        : version.drl || (isScorecard(targetAsset.published)
+            ? scorecardDrl(targetAsset.published, model, targetAsset.id, projectVariables)
+            : isDecisionTree(targetAsset.published)
+            ? decisionTreeDrl(targetAsset.published, model, targetAsset.id, projectVariables)
+            : tableDrl(targetAsset.published, model, targetAsset.id, projectVariables)),
     }];
     variables = mergeRuleSetVariables(projectVariables);
   } else if (request.target.type === 'flow') {
     targetAsset = publishedAsset(flows, request.target.id, '规则集');
-    if (enforceCurrentFlowDependencies) assertCurrentFlowDependencies(targetAsset.published, rules, tables, packageRecords);
+    if (enforceCurrentFlowDependencies) assertCurrentFlowDependencies(targetAsset.published, rules, tables, flows, packageRecords);
     model = structuredClone(targetAsset.published.bom || targetAsset.versions.at(-1).bom || bom);
     const flowVariables = targetAsset.published.variables || targetAsset.published.snapshot?.variables;
     if (projectVariables.length) variables = mergeRuleSetVariables(projectVariables);
     else if (flowVariables?.length) variables = mergeRuleSetVariables(flowVariables);
     else {
       variables = mergeRuleSetVariables(
-        ...(targetAsset.published.steps || []).map(step => step.variables || []),
-        ...(targetAsset.published.branches?.flatMap(branch => branch.steps || []).map(step => step.variables || []) || []),
+        ...flowSteps(targetAsset.published).map(step => step.variables || []),
+        ...flowBranches(targetAsset.published).flatMap(branch => branch.steps || []).map(step => step.variables || []),
       );
     }
     const releaseStepOptions = { includeVariables: !variables.length };
     const freezeFlowStep = step => releaseStep(regenerateFlowStep(step, rules, tables, model, variables), releaseStepOptions);
-    steps = targetAsset.published.steps.map(freezeFlowStep);
-    if (targetAsset.published.branches?.length) {
+    if (isFlowGraph(targetAsset.published)) {
+      const graphNodes = targetAsset.published.graph.nodes;
+      const stepIndexes = new Map();
+      steps = [];
+      for (const node of graphNodes) {
+        if (node.type !== 'step') continue;
+        stepIndexes.set(node.id, steps.length);
+        steps.push(freezeFlowStep(node.step));
+      }
       routing = {
-        type: 'exclusive',
-        afterStep: steps.length,
-        branches: targetAsset.published.branches.map(branch => {
+        type: graphNodes.some(node => node.type === 'parallel' || node.type === 'join') ? 'decision-dag' : 'exclusive-dag',
+        entry: targetAsset.published.graph.entry,
+        nodes: graphNodes.map(node => node.type === 'step'
+          ? { id: node.id, type: 'step', stepIndex: stepIndexes.get(node.id), next: node.next }
+          : node.type === 'join'
+            ? { id: node.id, type: 'join', name: node.name, next: node.next }
+          : node.type === 'parallel'
+            ? { id: node.id, type: 'parallel', name: node.name, join: node.join, branches: structuredClone(node.branches) }
+          : {
+              id: node.id,
+              type: 'gateway',
+              name: node.name,
+              branches: structuredClone(node.branches),
+            }),
+      };
+    } else steps = targetAsset.published.steps.map(freezeFlowStep);
+    const publishedGateways = flowGateways(targetAsset.published);
+    if (!routing && publishedGateways.length) {
+      const freezeBranches = gateway => gateway.branches.map(branch => {
           const stepIndexes = [];
           for (const step of branch.steps) {
             stepIndexes.push(steps.length);
@@ -268,8 +318,19 @@ export function buildRelease({ id, request, rules, tables, flows, eventStreams =
             condition: branch.default ? null : branch.condition,
             stepIndexes,
           };
-        }),
-      };
+        });
+      routing = Array.isArray(targetAsset.published.gateways)
+        ? {
+            type: 'exclusive-chain',
+            commonStepCount: targetAsset.published.steps.length,
+            gateways: publishedGateways.map(gateway => ({
+              id: gateway.id,
+              name: gateway.name || '排他网关',
+              afterStep: gateway.afterStep,
+              branches: freezeBranches(gateway),
+            })),
+          }
+        : { type: 'exclusive', afterStep: steps.length, branches: freezeBranches(publishedGateways[0]) };
     }
   } else {
     targetAsset = publishedAsset(eventStreams, request.target.id, '事件流');
@@ -344,33 +405,132 @@ export function verifyRelease(release) {
   }
   if (release.routing != null) {
     const routing = release.routing;
-    if (routing.type !== 'exclusive' || !Number.isInteger(routing.afterStep) || routing.afterStep < 0 || routing.afterStep > release.steps.length) return '发布包路由定义无效';
-    if (!Array.isArray(routing.branches) || routing.branches.length < 1 || routing.branches.length > 8) return '发布包路由分支数量无效';
+    if (routing.type === 'exclusive-dag' || routing.type === 'decision-dag') {
+      if (typeof routing.entry !== 'string' || !routing.entry || !Array.isArray(routing.nodes) || !routing.nodes.length || routing.nodes.length > 36) return '发布包图路由定义无效';
+      const ids = new Set();
+      const branchIds = new Set();
+      const stepIndexes = new Set();
+      const parallelJoins = new Set();
+      for (const node of routing.nodes) {
+        if (typeof node?.id !== 'string' || !node.id || node.id === 'end' || ids.has(node.id)) return '发布包图节点无效';
+        ids.add(node.id);
+        if (node.type === 'step') {
+          if (!Number.isInteger(node.stepIndex) || node.stepIndex < 0 || node.stepIndex >= release.steps.length || stepIndexes.has(node.stepIndex) || typeof node.next !== 'string' || !node.next) return '发布包图步骤节点无效';
+          stepIndexes.add(node.stepIndex);
+        } else if (node.type === 'gateway') {
+          if (typeof node.name !== 'string' || !node.name || !Array.isArray(node.branches) || node.branches.length < 1 || node.branches.length > 8) return '发布包图网关无效';
+          let defaults = 0;
+          let conditions = 0;
+          for (const branch of node.branches) {
+            if (typeof branch?.id !== 'string' || !branch.id || branchIds.has(branch.id) || typeof branch.name !== 'string' || !branch.name || typeof branch.next !== 'string' || !branch.next) return '发布包图分支无效';
+            branchIds.add(branch.id);
+            if (branch.default === true) defaults++;
+            else {
+              conditions++;
+              if (!branch.condition || typeof branch.condition.field !== 'string' || !['==', '!=', '>', '>=', '<', '<='].includes(branch.condition.operator) || branch.condition.value == null) return '发布包图分支条件无效';
+              if (release.model && !release.model.fields.some(field => field.key === branch.condition.field)) return '发布包图分支字段不在冻结模型中';
+            }
+          }
+          if (!conditions || defaults > 1) return '发布包图网关定义不完整';
+        } else if (node.type === 'parallel' && routing.type === 'decision-dag') {
+          if (typeof node.name !== 'string' || !node.name || typeof node.join !== 'string' || !node.join || !Array.isArray(node.branches) || node.branches.length < 2 || node.branches.length > 8) return '发布包并行网关无效';
+          if (parallelJoins.has(node.join)) return '发布包聚合节点重复引用';
+          parallelJoins.add(node.join);
+          for (const branch of node.branches) {
+            if (typeof branch?.id !== 'string' || !branch.id || branchIds.has(branch.id) || typeof branch.name !== 'string' || !branch.name || typeof branch.next !== 'string' || !branch.next) return '发布包并行分支无效';
+            branchIds.add(branch.id);
+          }
+        } else if (node.type === 'join' && routing.type === 'decision-dag') {
+          if (typeof node.name !== 'string' || !node.name || typeof node.next !== 'string' || !node.next) return '发布包聚合节点无效';
+        } else return '发布包图节点类型无效';
+      }
+      if (!ids.has(routing.entry) || stepIndexes.size !== release.steps.length) return '发布包图路由定义不完整';
+      const byId = new Map(routing.nodes.map(node => [node.id, node]));
+      if (routing.type === 'decision-dag') {
+        const joins = routing.nodes.filter(node => node.type === 'join');
+        const parallels = routing.nodes.filter(node => node.type === 'parallel');
+        if (joins.length !== parallels.length || joins.length > 4 || joins.some(join => !parallelJoins.has(join.id)) || parallels.some(node => byId.get(node.join)?.type !== 'join')) return '发布包并行与聚合节点必须一一配对';
+        const targetsOf = node => node.type === 'step' || node.type === 'join' ? [node.next] : node.branches.map(branch => branch.next);
+        for (const parallel of parallels) {
+          const branchNodeSets = [];
+          const reachesJoin = (id, seen = new Set()) => {
+            if (id === parallel.join) return true;
+            if (id === 'end' || seen.has(id)) return false;
+            const node = byId.get(id);
+            if (!node || node.type === 'parallel' || node.type === 'join') return false;
+            seen.add(id);
+            return targetsOf(node).every(target => reachesJoin(target, new Set(seen)));
+          };
+          for (const branch of parallel.branches) {
+            if (!reachesJoin(branch.next)) return '发布包并行分支未汇入指定聚合节点或包含嵌套并行';
+            const collected = new Set();
+            const collect = id => {
+              if (id === parallel.join || collected.has(id)) return;
+              collected.add(id);
+              const node = byId.get(id);
+              if (node) for (const target of targetsOf(node)) collect(target);
+            };
+            collect(branch.next);
+            if (branchNodeSets.some(existing => [...collected].some(id => existing.has(id)))) return '发布包并行分支在聚合前共享节点';
+            branchNodeSets.push(collected);
+          }
+        }
+      }
+      const visiting = new Set();
+      const visited = new Set();
+      const walk = id => {
+        if (id === 'end') return true;
+        if (visiting.has(id) || !byId.has(id)) return false;
+        if (visited.has(id)) return true;
+        visiting.add(id);
+        const node = byId.get(id);
+        const targets = node.type === 'step' || node.type === 'join' ? [node.next] : node.branches.map(branch => branch.next);
+        if (!targets.every(walk)) return false;
+        visiting.delete(id);
+        visited.add(id);
+        return true;
+      };
+      if (!walk(routing.entry) || visited.size !== routing.nodes.length) return '发布包图路由存在循环或不可达节点';
+    } else {
+    const gateways = routing.type === 'exclusive-chain' ? routing.gateways : routing.type === 'exclusive' ? [{ id: 'gateway', afterStep: routing.afterStep, branches: routing.branches }] : null;
+    const commonStepCount = routing.type === 'exclusive-chain' ? routing.commonStepCount : routing.afterStep;
+    if (!gateways || !Number.isInteger(commonStepCount) || commonStepCount < 0 || commonStepCount > release.steps.length) return '发布包路由定义无效';
+    if (routing.type === 'exclusive-chain' && (!Array.isArray(gateways) || gateways.length < 1 || gateways.length > 4)) return '发布包网关数量无效';
     const indexes = new Set();
-    const ids = new Set();
-    let defaults = 0;
-    let conditions = 0;
-    for (const branch of routing.branches) {
-      if (typeof branch?.id !== 'string' || !branch.id || ids.has(branch.id) || typeof branch.name !== 'string' || !branch.name) return '发布包路由分支无效';
-      ids.add(branch.id);
-      if (!Array.isArray(branch.stepIndexes) || !branch.stepIndexes.length) return '发布包路由分支缺少步骤';
-      for (const index of branch.stepIndexes) {
-        if (!Number.isInteger(index) || index < routing.afterStep || index >= release.steps.length || indexes.has(index)) return '发布包路由步骤索引无效';
-        indexes.add(index);
+    const gatewayIds = new Set();
+    const branchIds = new Set();
+    const positions = new Set();
+    for (const gateway of gateways) {
+      if (typeof gateway?.id !== 'string' || !gateway.id || gatewayIds.has(gateway.id) || !Number.isInteger(gateway.afterStep) || gateway.afterStep < 0 || gateway.afterStep > commonStepCount || positions.has(gateway.afterStep)) return '发布包网关定义无效';
+      gatewayIds.add(gateway.id);
+      positions.add(gateway.afterStep);
+      if (!Array.isArray(gateway.branches) || gateway.branches.length < 1 || gateway.branches.length > 8) return '发布包路由分支数量无效';
+      let defaults = 0;
+      let conditions = 0;
+      for (const branch of gateway.branches) {
+        if (typeof branch?.id !== 'string' || !branch.id || branchIds.has(branch.id) || typeof branch.name !== 'string' || !branch.name) return '发布包路由分支无效';
+        branchIds.add(branch.id);
+        if (!Array.isArray(branch.stepIndexes) || !branch.stepIndexes.length) return '发布包路由分支缺少步骤';
+        for (const index of branch.stepIndexes) {
+          if (!Number.isInteger(index) || index < commonStepCount || index >= release.steps.length || indexes.has(index)) return '发布包路由步骤索引无效';
+          indexes.add(index);
+        }
+        if (branch.default === true) defaults++;
+        else {
+          conditions++;
+          const condition = branch.condition;
+          if (!condition || typeof condition.field !== 'string' || !['==', '!=', '>', '>=', '<', '<='].includes(condition.operator) || condition.value == null) return '发布包路由条件无效';
+          if (release.model && !release.model.fields.some(field => field.key === condition.field)) return '发布包路由字段不在冻结模型中';
+        }
       }
-      if (branch.default === true) defaults++;
-      else {
-        conditions++;
-        const condition = branch.condition;
-        if (!condition || typeof condition.field !== 'string' || !['==', '!=', '>', '>=', '<', '<='].includes(condition.operator) || condition.value == null) return '发布包路由条件无效';
-        if (release.model && !release.model.fields.some(field => field.key === condition.field)) return '发布包路由字段不在冻结模型中';
-      }
+      if (!conditions || defaults > 1) return '发布包路由定义不完整';
     }
-    if (!conditions || defaults > 1 || indexes.size !== release.steps.length - routing.afterStep) return '发布包路由定义不完整';
+    if (indexes.size !== release.steps.length - commonStepCount) return '发布包路由定义不完整';
+    }
   }
   if (release.checksum !== releaseChecksum(release)) return '发布包校验和不匹配';
   for (const [index, step] of release.steps.entries()) {
-    if (typeof step?.name !== 'string' || !step.name || !['rule', 'table'].includes(step.type) || typeof step.drl !== 'string' || !step.drl) {
+    if (typeof step?.name !== 'string' || !step.name || !['rule', 'table', 'rule-group'].includes(step.type) || typeof step.drl !== 'string' || !step.drl) {
       return `发布包第 ${index + 1} 步无效`;
     }
     if (!verifyStepMappings(step, release.model)) return `发布包第 ${index + 1} 步字段映射无效`;

@@ -206,8 +206,26 @@ export function createReleaseHandler({
       if (!release) return reply(res, 409, { error: `决策服务 ${decisionService} 在 local 环境没有当前生效版本` });
       return executeRelease(req, res, release, project);
     }
-    if (segments.length !== 4 || req.method !== 'POST') return reply(res, 404, { error: '未找到资源' });
+    if (segments.length !== 4 || !['GET', 'POST'].includes(req.method)) return reply(res, 404, { error: '未找到资源' });
     const [, , id, action] = segments;
+    if (action === 'alerts') {
+      if (normalizeProjectEngine(project.engine) !== 'cep') return reply(res, 400, { error: '仅 CEP Release 支持告警实例' });
+      const release = (await readReleases(projectId)).find(item => item.id === id);
+      if (!release) return reply(res, 404, { error: '发布包不存在' });
+      if (!isLiveDeployment(deploymentFor(release))) return reply(res, 409, { error: '发布包尚未部署到 local 环境或已经停用' });
+      if (req.method === 'GET') {
+        const alerts = await executionServer(`/alerts?releaseId=${encodeURIComponent(release.id)}`, undefined, project, 'GET');
+        return reply(res, alerts.status || 200, alerts.result || { error: alerts.error });
+      }
+      const payload = await bodyOf(req);
+      const alertId = typeof payload?.alertId === 'string' ? payload.alertId.trim() : '';
+      if (!alertId || payload?.action !== 'ack') return reply(res, 400, { error: '告警确认参数无效' });
+      const acknowledged = await executionServer(`/alerts/${encodeURIComponent(alertId)}`, { releaseId: release.id, action: 'ack', actor: actorOf(req) }, project);
+      if (acknowledged.error) return reply(res, acknowledged.status || 502, operationError(acknowledged));
+      await appendAuditEvent('alert.acknowledged', 'release', id, `确认 CEP 告警：${release.name}`, { alertId }, req);
+      return reply(res, 200, acknowledged.result);
+    }
+    if (req.method !== 'POST') return reply(res, 405, { error: 'Method not allowed' });
     if (action === 'deploy') {
       const params = await bodyOf(req);
       if ((params.environment || 'local') !== 'local') return reply(res, 400, { error: '当前版本只支持 local 环境' });

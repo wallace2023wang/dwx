@@ -20,6 +20,7 @@ import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.net.URLDecoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -28,6 +29,7 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -53,6 +55,7 @@ public final class CepServer {
   private static final String ESPER_VERSION = "8.8.0";
   private static final int MAX_BODY = 2 * 1024 * 1024;
   private static final Path DATA_DIR = Path.of(System.getenv().getOrDefault("CEP_DATA_DIR", "data/cep"));
+  private static final Path ALERTS_FILE = DATA_DIR.resolve("alerts.json");
   private static final String API_KEY = System.getenv().getOrDefault("CEP_API_KEY", "").trim();
   private static final Map<String, Deployment> DEPLOYMENTS = new ConcurrentHashMap<>();
   private static final Map<String, AlertState> ALERTS = new ConcurrentHashMap<>();
@@ -63,7 +66,8 @@ public final class CepServer {
 
   private record Deployment(JsonNode release, EPRuntime runtime, String deployedAt, Map<String, Map<String, String>> schemaTypes, CopyOnWriteArrayList<DetectionCollector> collectors) {}
   private record CompileResult(EPCompiled compiled, String epl, List<Map<String, Object>> statements, Map<String, Map<String, String>> schemaTypes) {}
-  private record AlertState(String releaseId, String statement, String eventType, String key, long lastFiredAt, JsonNode webhook, boolean cleared) {}
+  private record AlertState(String releaseId, String statement, String eventType, String key, String correlationKey, long lastFiredAt,
+      JsonNode webhook, JsonNode detection, String status, String ackedBy, String ackedAt, String clearedAt) {}
   private static final class DetectionCollector {
     private final List<Map<String, Object>> detections = Collections.synchronizedList(new ArrayList<>());
 
@@ -93,6 +97,7 @@ public final class CepServer {
   public static void main(String[] args) throws IOException {
     Files.createDirectories(DATA_DIR);
     loadDeployments();
+    loadAlerts();
     Runtime.getRuntime().addShutdownHook(new Thread(CepServer::shutdown));
     int port = Integer.parseInt(System.getenv().getOrDefault("CEP_PORT", "8791"));
     HttpServer server = HttpServer.create(new InetSocketAddress("0.0.0.0", port), 0);
@@ -105,6 +110,7 @@ public final class CepServer {
     server.createContext("/execute", CepServer::execute);
     server.createContext("/events", CepServer::events);
     server.createContext("/webhook", CepServer::webhook);
+    server.createContext("/alerts", CepServer::alerts);
     server.createContext("/metrics", CepServer::metrics);
     server.createContext("/openapi.json", CepServer::openapi);
     server.setExecutor(Executors.newFixedThreadPool(Math.max(4, Runtime.getRuntime().availableProcessors())));
@@ -215,6 +221,7 @@ public final class CepServer {
       Deployment deployment = DEPLOYMENTS.remove(releaseId);
       Files.deleteIfExists(releaseFile(releaseId));
       ALERTS.entrySet().removeIf(entry -> releaseId.equals(entry.getValue().releaseId()));
+      persistAlerts();
       if (deployment != null) deployment.runtime().destroy();
       send(exchange, 200, Map.of(
           "ok", true,
@@ -290,7 +297,12 @@ public final class CepServer {
       Deployment rebuilt = buildDeployment(next, deployment.deployedAt());
       deployment.runtime().destroy();
       DEPLOYMENTS.put(releaseId, rebuilt);
-      ALERTS.entrySet().removeIf(entry -> entry.getValue().releaseId().equals(releaseId));
+      for (Map.Entry<String, AlertState> entry : ALERTS.entrySet()) {
+        AlertState alert = entry.getValue();
+        if (!releaseId.equals(alert.releaseId())) continue;
+        ALERTS.replace(entry.getKey(), alert, new AlertState(alert.releaseId(), alert.statement(), alert.eventType(), alert.key(), alert.correlationKey(), alert.lastFiredAt(), input.path("webhook"), alert.detection(), alert.status(), alert.ackedBy(), alert.ackedAt(), alert.clearedAt()));
+      }
+      persistAlerts();
       send(exchange, 200, Map.of("ok", true, "releaseId", releaseId));
     } catch (Exception exception) {
       exception.printStackTrace();
@@ -298,12 +310,80 @@ public final class CepServer {
     }
   }
 
+  private static void alerts(HttpExchange exchange) throws IOException {
+    if (!requireAuth(exchange)) return;
+    String path = exchange.getRequestURI().getPath();
+    String prefix = "/alerts/";
+    if ("GET".equals(exchange.getRequestMethod()) && (path.equals("/alerts") || path.equals("/alerts/"))) {
+      String releaseId = query(exchange, "releaseId");
+      List<Map<String, Object>> result = ALERTS.values().stream()
+          .filter(alert -> releaseId == null || releaseId.equals(alert.releaseId()))
+          .sorted((left, right) -> Long.compare(right.lastFiredAt(), left.lastFiredAt()))
+          .map(CepServer::alertView)
+          .toList();
+      send(exchange, 200, result);
+      return;
+    }
+    if (!"POST".equals(exchange.getRequestMethod()) || !path.startsWith(prefix)) {
+      send(exchange, 405, Map.of("error", "Method not allowed"));
+      return;
+    }
+    String alertId = URLDecoder.decode(path.substring(prefix.length()), StandardCharsets.UTF_8);
+    AlertState alert = ALERTS.get(alertId);
+    if (alert == null) { send(exchange, 404, Map.of("error", "告警不存在")); return; }
+    JsonNode body;
+    try { body = readBody(exchange); }
+    catch (IllegalArgumentException exception) { send(exchange, 400, Map.of("error", exception.getMessage())); return; }
+    String action = body.path("action").asText("");
+    if (!"ack".equals(action)) { send(exchange, 400, Map.of("error", "仅支持 ack 状态迁移")); return; }
+    String releaseId = body.path("releaseId").asText("").trim();
+    if (releaseId.isBlank()) { send(exchange, 400, Map.of("error", "releaseId 不能为空")); return; }
+    if (!releaseId.equals(alert.releaseId())) { send(exchange, 404, Map.of("error", "告警不属于指定 Release")); return; }
+    String actor = body.path("actor").asText("").trim();
+    if (actor.isBlank() || actor.length() > 120) { send(exchange, 400, Map.of("error", "actor 不能为空")); return; }
+    if ("CLEARED".equals(alert.status())) { send(exchange, 409, Map.of("error", "已清除告警不能确认")); return; }
+    if ("ACKED".equals(alert.status())) { send(exchange, 200, alertView(alert)); return; }
+    String ackedAt = Instant.now().toString();
+    AlertState next = new AlertState(alert.releaseId(), alert.statement(), alert.eventType(), alert.key(), alert.correlationKey(), alert.lastFiredAt(), alert.webhook(), alert.detection(), "ACKED", actor, ackedAt, null);
+    ALERTS.put(alertId, next);
+    persistAlerts();
+    sendWebhook(next.webhook(), Map.of("type", "alert.acked", "releaseId", next.releaseId(), "statement", next.statement(), "eventType", next.eventType(), "key", next.key(), "ackedBy", actor, "ackedAt", ackedAt));
+    send(exchange, 200, alertView(next));
+  }
+
+  private static String query(HttpExchange exchange, String name) {
+    String raw = exchange.getRequestURI().getRawQuery();
+    if (raw == null) return null;
+    for (String part : raw.split("&")) {
+      String[] pair = part.split("=", 2);
+      if (pair.length == 2 && name.equals(URLDecoder.decode(pair[0], StandardCharsets.UTF_8))) return URLDecoder.decode(pair[1], StandardCharsets.UTF_8);
+    }
+    return null;
+  }
+
+  private static Map<String, Object> alertView(AlertState alert) {
+    Map<String, Object> result = new LinkedHashMap<>();
+    result.put("id", alert.key());
+    result.put("releaseId", alert.releaseId());
+    result.put("statement", alert.statement());
+    result.put("eventType", alert.eventType());
+    result.put("key", alert.key());
+    result.put("correlationKey", alert.correlationKey());
+    result.put("status", alert.status());
+    result.put("lastFiredAt", Instant.ofEpochMilli(alert.lastFiredAt()).toString());
+    result.put("detection", alert.detection());
+    if (alert.ackedBy() != null) result.put("ackedBy", alert.ackedBy());
+    if (alert.ackedAt() != null) result.put("ackedAt", alert.ackedAt());
+    if (alert.clearedAt() != null) result.put("clearedAt", alert.clearedAt());
+    return result;
+  }
+
   private static void metrics(HttpExchange exchange) throws IOException {
     if (!method(exchange, "GET")) return;
     String body = "# TYPE cep_deployments gauge\n"
       + "cep_deployments " + DEPLOYMENTS.size() + "\n"
       + "# TYPE cep_alerts_active gauge\n"
-      + "cep_alerts_active " + ALERTS.values().stream().filter(alert -> !alert.cleared()).count() + "\n"
+      + "cep_alerts_active " + ALERTS.values().stream().filter(alert -> !"CLEARED".equals(alert.status())).count() + "\n"
       + counter("cep_compile_requests_total", METRICS.compileRequests)
       + counter("cep_test_requests_total", METRICS.testRequests)
       + counter("cep_deploy_requests_total", METRICS.deployRequests)
@@ -325,16 +405,18 @@ public final class CepServer {
     send(exchange, 200, Map.of(
       "openapi", "3.0.3",
       "info", Map.of("title", "Decision Workbench CEP Runtime", "version", "1.0.0"),
-      "paths", Map.of(
-        "/health", Map.of("get", Map.of("summary", "Health check")),
-        "/compile", Map.of("post", Map.of("summary", "Compile CEP module")),
-        "/test", Map.of("post", Map.of("summary", "Run ephemeral CEP test")),
-        "/deploy", Map.of("post", Map.of("summary", "Deploy immutable CEP release")),
-        "/execute", Map.of("post", Map.of("summary", "Execute deployed release with events")),
-        "/events/{releaseId}", Map.of("post", Map.of("summary", "Continuously append events to deployed release")),
-        "/webhook", Map.of("post", Map.of("summary", "Configure release webhook")),
-        "/undeploy", Map.of("post", Map.of("summary", "Unload a deployed release")),
-        "/metrics", Map.of("get", Map.of("summary", "Prometheus metrics"))
+      "paths", Map.ofEntries(
+        Map.entry("/health", Map.of("get", Map.of("summary", "Health check"))),
+        Map.entry("/compile", Map.of("post", Map.of("summary", "Compile CEP module"))),
+        Map.entry("/test", Map.of("post", Map.of("summary", "Run ephemeral CEP test"))),
+        Map.entry("/deploy", Map.of("post", Map.of("summary", "Deploy immutable CEP release"))),
+        Map.entry("/execute", Map.of("post", Map.of("summary", "Execute deployed release with events"))),
+        Map.entry("/events/{releaseId}", Map.of("post", Map.of("summary", "Continuously append events to deployed release"))),
+        Map.entry("/webhook", Map.of("post", Map.of("summary", "Configure release webhook"))),
+        Map.entry("/alerts", Map.of("get", Map.of("summary", "List alert instances"))),
+        Map.entry("/alerts/{alertId}", Map.of("post", Map.of("summary", "Acknowledge an alert"))),
+        Map.entry("/undeploy", Map.of("post", Map.of("summary", "Unload a deployed release"))),
+        Map.entry("/metrics", Map.of("get", Map.of("summary", "Prometheus metrics")))
       )
     ));
   }
@@ -470,16 +552,23 @@ public final class CepServer {
 
   private static void publishWebhookEvents(String releaseId, JsonNode release, List<Map<String, Object>> detections) {
     JsonNode webhook = webhookOf(release);
-    if (webhook == null || detections.isEmpty()) return;
+    if (detections.isEmpty()) return;
     for (Map<String, Object> detection : detections) {
       long now = System.currentTimeMillis();
-      String key = alertKey(releaseId, detection);
+      String correlationKey = detectionKey(detection);
+      String key = alertKey(releaseId, detection, correlationKey);
       AlertState previous = ALERTS.get(key);
-      long minIntervalMs = Math.max(0, webhook.path("minIntervalMs").asLong(0));
-      ALERTS.put(key, new AlertState(releaseId, String.valueOf(detection.get("statement")), String.valueOf(detection.get("eventType")), key, now, webhook, false));
-      if (previous != null && !previous.cleared() && minIntervalMs > 0 && now - previous.lastFiredAt() < minIntervalMs) continue;
-      sendWebhook(webhook, Map.of("type", "alert.fired", "releaseId", releaseId, "detection", detection));
-      METRICS.webhookFired.incrementAndGet();
+      long minIntervalMs = webhook == null ? 0 : Math.max(0, webhook.path("minIntervalMs").asLong(0));
+      JsonNode storedWebhook = webhook == null ? JSON.nullNode() : webhook;
+      boolean reopen = previous == null || "CLEARED".equals(previous.status());
+      AlertState next = new AlertState(releaseId, String.valueOf(detection.get("statement")), String.valueOf(detection.get("eventType")), key, correlationKey, now, storedWebhook, JSON.valueToTree(detection), reopen ? "ACTIVE" : previous.status(), reopen ? null : previous.ackedBy(), reopen ? null : previous.ackedAt(), null);
+      ALERTS.put(key, next);
+      persistAlerts();
+      if (previous != null && !"CLEARED".equals(previous.status()) && minIntervalMs > 0 && now - previous.lastFiredAt() < minIntervalMs) continue;
+      if (webhook != null) {
+        sendWebhook(webhook, Map.of("type", "alert.fired", "releaseId", releaseId, "detection", detection));
+        METRICS.webhookFired.incrementAndGet();
+      }
     }
   }
 
@@ -487,16 +576,19 @@ public final class CepServer {
     long now = System.currentTimeMillis();
     for (Map.Entry<String, AlertState> entry : ALERTS.entrySet()) {
       AlertState alert = entry.getValue();
-      if (alert.cleared()) continue;
+      if ("CLEARED".equals(alert.status())) continue;
+      if (!alert.webhook().isObject()) continue;
       long clearedAfterMs = Math.max(0, alert.webhook().path("clearedAfterMs").asLong(0));
       if (clearedAfterMs <= 0 || now - alert.lastFiredAt() < clearedAfterMs) continue;
-      if (!ALERTS.replace(entry.getKey(), alert, new AlertState(alert.releaseId(), alert.statement(), alert.eventType(), alert.key(), alert.lastFiredAt(), alert.webhook(), true))) continue;
-      sendWebhook(alert.webhook(), Map.of("type", "alert.cleared", "releaseId", alert.releaseId(), "statement", alert.statement(), "eventType", alert.eventType(), "key", alert.key(), "clearedAt", Instant.now().toString()));
+      String clearedAt = Instant.now().toString();
+      if (!ALERTS.replace(entry.getKey(), alert, new AlertState(alert.releaseId(), alert.statement(), alert.eventType(), alert.key(), alert.correlationKey(), alert.lastFiredAt(), alert.webhook(), alert.detection(), "CLEARED", alert.ackedBy(), alert.ackedAt(), clearedAt))) continue;
+      persistAlerts();
+      sendWebhook(alert.webhook(), Map.of("type", "alert.cleared", "releaseId", alert.releaseId(), "statement", alert.statement(), "eventType", alert.eventType(), "key", alert.key(), "clearedAt", clearedAt));
       METRICS.webhookCleared.incrementAndGet();
     }
   }
 
-  private static String alertKey(String releaseId, Map<String, Object> detection) {
+  private static String detectionKey(Map<String, Object> detection) {
     Object rawData = detection.get("data");
     Object key = null;
     if (rawData instanceof Map<?, ?> data) {
@@ -504,10 +596,15 @@ public final class CepServer {
       if (key == null) key = data.get("warehouseId");
       if (key == null) key = data.get("sensorId");
     }
-    return releaseId + ":" + detection.get("statement") + ":" + detection.get("eventType") + ":" + String.valueOf(key == null ? "default" : key);
+    return String.valueOf(key == null ? "default" : key);
+  }
+
+  private static String alertKey(String releaseId, Map<String, Object> detection, String correlationKey) {
+    return releaseId + ":" + detection.get("statement") + ":" + detection.get("eventType") + ":" + correlationKey;
   }
 
   private static void sendWebhook(JsonNode webhook, Object payload) {
+    if (webhook == null || !webhook.isObject() || !webhook.path("enabled").asBoolean(false) || !webhook.path("callbackUrl").isTextual()) return;
     SCHEDULER.execute(() -> {
       try {
         String json = JSON.writeValueAsString(payload);
@@ -715,10 +812,56 @@ public final class CepServer {
     if (!Files.isDirectory(DATA_DIR)) return;
     try (DirectoryStream<Path> stream = Files.newDirectoryStream(DATA_DIR, "*.json")) {
       for (Path file : stream) {
+        if (file.equals(ALERTS_FILE)) continue;
         JsonNode release = JSON.readTree(Files.readString(file));
         try { DEPLOYMENTS.put(release.path("id").asText(), buildDeployment(release, Instant.now().toString())); }
         catch (Exception exception) { System.err.println("跳过无法加载的 CEP Release " + file + ": " + exception.getMessage()); }
       }
+    }
+  }
+
+  private static void loadAlerts() {
+    if (!Files.isRegularFile(ALERTS_FILE)) return;
+    try {
+      JsonNode root = JSON.readTree(Files.readString(ALERTS_FILE));
+      if (!root.isArray()) return;
+      for (JsonNode item : root) {
+        String id = item.path("key").asText("");
+        String releaseId = item.path("releaseId").asText("");
+        if (id.isBlank() || releaseId.isBlank()) continue;
+        ALERTS.put(id, new AlertState(
+            releaseId, item.path("statement").asText(""), item.path("eventType").asText(""), id, item.path("correlationKey").asText("default"),
+            item.path("lastFiredAt").asLong(0), item.path("webhook"), item.path("detection"),
+            item.path("status").asText("ACTIVE"), nullableText(item, "ackedBy"), nullableText(item, "ackedAt"), nullableText(item, "clearedAt")));
+      }
+    } catch (Exception exception) {
+      System.err.println("无法加载 CEP 告警状态：" + exception.getMessage());
+    }
+  }
+
+  private static String nullableText(JsonNode node, String field) {
+    return node.path(field).isTextual() ? node.path(field).asText() : null;
+  }
+
+  private static synchronized void persistAlerts() {
+    try {
+      Files.createDirectories(DATA_DIR);
+      List<Map<String, Object>> values = new ArrayList<>();
+      for (AlertState alert : ALERTS.values()) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("key", alert.key()); item.put("correlationKey", alert.correlationKey()); item.put("releaseId", alert.releaseId());
+        item.put("statement", alert.statement()); item.put("eventType", alert.eventType());
+        item.put("lastFiredAt", alert.lastFiredAt()); item.put("webhook", alert.webhook());
+        item.put("detection", alert.detection()); item.put("status", alert.status());
+        item.put("ackedBy", alert.ackedBy()); item.put("ackedAt", alert.ackedAt()); item.put("clearedAt", alert.clearedAt());
+        values.add(item);
+      }
+      Path temp = ALERTS_FILE.resolveSibling(ALERTS_FILE.getFileName() + ".tmp");
+      Files.writeString(temp, JSON.writerWithDefaultPrettyPrinter().writeValueAsString(values));
+      try { Files.move(temp, ALERTS_FILE, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING); }
+      catch (AtomicMoveNotSupportedException exception) { Files.move(temp, ALERTS_FILE, StandardCopyOption.REPLACE_EXISTING); }
+    } catch (Exception exception) {
+      System.err.println("无法持久化 CEP 告警状态：" + exception.getMessage());
     }
   }
 

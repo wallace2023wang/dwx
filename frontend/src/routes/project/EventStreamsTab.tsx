@@ -1,15 +1,22 @@
 import { AlertTriangle, ArchiveRestore, ArrowDown, ArrowUp, CheckCircle2, Circle, Code2, FileClock, GripVertical, LoaderCircle, Plus, RadioTower, Save, Send, Sparkles, Trash2, Wand2, XCircle, Zap } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import { useBom } from '../../api/bom'
 import Modal from '../../components/Modal'
 import MonacoTextEditor from '../../components/assets/MonacoTextEditor'
-import { useCompileEventStream, useCreateEventStream, useDeleteEventStream, useEventStream, useEventStreams, usePublishEventStream, useRestoreEventStream, useSaveEventStream, type EplStatement, type EventStreamDraft } from '../../api/eventStreams'
+import { useCompileEventStream, useCreateEventStream, useDeleteEventStream, useEventStream, useEventStreams, usePublishEventStream, useRestoreEventStream, useSaveEventStream, useTransferEventStreamOwner, type EplStatement, type EventStreamDraft } from '../../api/eventStreams'
+import { isRevisionConflict } from '../../api/errors'
+import { useAssetCollaboration } from '../../api/collaboration'
+import AssetOwnershipBar from '../../components/assets/AssetOwnershipBar'
+import AssetGovernanceBar from '../../components/assets/AssetGovernanceBar'
+import DraftConflictModal from '../../components/assets/DraftConflictModal'
+import AssetCollaborationBar from '../../components/assets/AssetCollaborationBar'
 import { useCreateTestSuite } from '../../api/tests'
 import { buildCepTemplate, CEP_TEMPLATES, defaultCepParams, describeCepTemplate, fieldsForEventType, numericFields, type CepOutputField, type CepTemplateId, type CepTemplateParams } from '../../lib/cepTemplates'
 import { buildCepTestSkeleton } from '../../lib/cepTemplates'
 import type { BomModel } from '../../types'
 import { useSessionStore } from '../../store/session'
+import { threeWayMerge, type DraftMergeConflict } from '../../lib/threeWayMerge'
 
 type EditorOperation = 'save' | 'compile' | 'test' | 'publish'
 
@@ -90,8 +97,10 @@ export default function EventStreamsTab() {
   const compileStream = useCompileEventStream(projectId, detail?.id)
   const publishStream = usePublishEventStream(projectId, detail?.id)
   const restoreStream = useRestoreEventStream(projectId)
+  const transferOwner = useTransferEventStreamOwner(projectId, detail?.id)
   const createTestSuite = useCreateTestSuite(projectId)
   const [draft, setDraft] = useState<EventStreamDraft | null>(null)
+  const [draftConflict, setDraftConflict] = useState<DraftMergeConflict<EventStreamDraft> | null>(null)
   const [selectedStatement, setSelectedStatement] = useState(0)
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false)
   const [localNotice, setLocalNotice] = useState<string | null>(null)
@@ -103,11 +112,27 @@ export default function EventStreamsTab() {
   const [activeOperation, setActiveOperation] = useState<EditorOperation | null>(null)
   const [draggedStatement, setDraggedStatement] = useState<number | null>(null)
   const user = useSessionStore(state => state.user)
+  const canManageDraft = Boolean(detail && user && (!detail.owner || detail.owner.id === user.id || user.roles.includes('admin') || user.permissions?.includes('*')))
   const canEditAdvancedEpl = Boolean(user?.roles.includes('admin') || user?.roles.includes('cep-developer') || user?.permissions?.includes('*') || user?.permissions?.includes('advanced-epl'))
   const [compiledFingerprint, setCompiledFingerprint] = useState('')
   const [failedFingerprint, setFailedFingerprint] = useState('')
   const currentDraft = draft || detail?.draft || null
   const currentStatement = currentDraft?.statements[selectedStatement] || currentDraft?.statements[0] || null
+  const advancedDocumentId = currentStatement && !(currentStatement.mode === 'guided' && currentStatement.template) ? `statement:${selectedStatement}:epl` : undefined
+  const collaboration = useAssetCollaboration({
+    projectId,
+    assetType: 'event-stream',
+    assetId: detail?.id,
+    revision: detail?.revision,
+    mode: canManageDraft && canEditAdvancedEpl ? 'editing' : 'viewing',
+    documentId: advancedDocumentId,
+    documentValue: currentStatement?.epl || '',
+    onDocumentChange: value => {
+      if (!currentDraft || !currentStatement || !advancedDocumentId) return
+      setDraft({ ...currentDraft, statements: currentDraft.statements.map((statement, index) => index === selectedStatement ? { ...statement, epl: value, mode: 'advanced' } : statement) })
+    },
+    enabled: Boolean(detail && detail.status !== 'archived'),
+  })
   const busy = activeOperation !== null || deleteStream.isPending || createStream.isPending
   const notice = localNotice
   const currentFingerprint = draftFingerprint(currentDraft)
@@ -125,6 +150,8 @@ export default function EventStreamsTab() {
   const currentSummary = statementSummary(currentStatement)
   const knownGroups = [...new Set((currentDraft?.statements || []).map(statementGroup).filter(group => group !== '未分组'))]
   const firstEventType = useMemo(() => bom?.eventTypes?.[0]?.name || bom?.factTypes?.find(fact => fact.direction !== 'output')?.name || 'DefaultEvent', [bom])
+
+  useEffect(() => setDraftConflict(null), [active?.id])
 
   const create = async () => {
     const created = await createStream.mutateAsync(defaultDraft(bom))
@@ -169,21 +196,35 @@ export default function EventStreamsTab() {
     if (!detail || !currentDraft) return null
     if (openTemplateConflict(currentDraft)) return null
     const shouldCompile = forceCompile || runtimeChanged
-    if (shouldCompile) {
-      try {
+    try {
+      if (shouldCompile) {
         await compileStream.mutateAsync({ revision: detail.revision, draft: currentDraft })
         setCompiledFingerprint(currentRuntimeFingerprint)
         setFailedFingerprint('')
-      } catch (error) {
-        setFailedFingerprint(currentRuntimeFingerprint)
-        setCompiledFingerprint('')
-        throw error
       }
+      const saved = await saveStream.mutateAsync({ revision: detail.revision, draft: currentDraft })
+      setDraft(saved.draft)
+      if (shouldCompile) setCompiledFingerprint(runtimeFingerprint(saved.draft))
+      return { ...saved, compiled: shouldCompile }
+    } catch (cause) {
+      if (!isRevisionConflict<{ draft?: EventStreamDraft }>(cause) || !cause.current?.draft || !cause.currentRevision) {
+        if (shouldCompile) {
+          setFailedFingerprint(currentRuntimeFingerprint)
+          setCompiledFingerprint('')
+        }
+        throw cause
+      }
+      const result = threeWayMerge(detail.draft, currentDraft, cause.current.draft)
+      if (!result.conflicts.length) {
+        if (shouldCompile) await compileStream.mutateAsync({ revision: cause.currentRevision, draft: result.value })
+        const saved = await saveStream.mutateAsync({ revision: cause.currentRevision, draft: result.value })
+        setDraft(saved.draft)
+        if (shouldCompile) setCompiledFingerprint(runtimeFingerprint(saved.draft))
+        return { ...saved, compiled: shouldCompile }
+      }
+      setDraftConflict({ base: detail.draft, local: currentDraft, remote: cause.current.draft, currentRevision: cause.currentRevision, result })
+      throw new Error(`检测到 ${result.conflicts.length} 项并发修改，请在冲突窗口中选择保留内容`)
     }
-    const saved = await saveStream.mutateAsync({ revision: detail.revision, draft: currentDraft })
-    setDraft(saved.draft)
-    if (shouldCompile) setCompiledFingerprint(runtimeFingerprint(saved.draft))
-    return { ...saved, compiled: shouldCompile }
   }
 
   const save = async () => {
@@ -261,7 +302,7 @@ export default function EventStreamsTab() {
   }
 
   const updateStatements = (updater: (statements: EplStatement[]) => EplStatement[]) => {
-    if (!currentDraft) return
+    if (!currentDraft || !canManageDraft) return
     const statements = updater(currentDraft.statements)
     setDraft({ ...currentDraft, statements })
     if (selectedStatement >= statements.length) setSelectedStatement(Math.max(0, statements.length - 1))
@@ -272,7 +313,7 @@ export default function EventStreamsTab() {
   }
 
   const moveStatement = (from: number, to: number) => {
-    if (!currentDraft || from === to || from < 0 || to < 0 || from >= currentDraft.statements.length || to >= currentDraft.statements.length) return
+    if (!canManageDraft || !currentDraft || from === to || from < 0 || to < 0 || from >= currentDraft.statements.length || to >= currentDraft.statements.length) return
     updateStatements(statements => {
       const next = [...statements]
       const [moved] = next.splice(from, 1)
@@ -285,7 +326,7 @@ export default function EventStreamsTab() {
   }
 
   const addTemplateStatement = (id: CepTemplateId) => {
-    if (!currentDraft) return
+    if (!currentDraft || !canManageDraft) return
     const params = defaultCepParams(id, bom, currentDraft.statements.length + 1)
     const statement = applyTemplate(id, params)
     updateStatements(statements => [...statements, statement])
@@ -294,14 +335,14 @@ export default function EventStreamsTab() {
   }
 
   const addAdvancedStatement = () => {
-    if (!currentDraft) return
+    if (!currentDraft || !canManageDraft) return
     if (!canEditAdvancedEpl) { setLocalNotice('当前角色没有高级 EPL 编辑权限。'); return }
     updateStatements(statements => [...statements, { name: `Statement${statements.length + 1}`, enabled: true, mode: 'advanced', epl: `select * from ${firstEventType}` }])
     setSelectedStatement(currentDraft.statements.length)
   }
 
   const requestDeleteStatement = (index: number) => {
-    if (!currentDraft || !currentDraft.statements[index]) return
+    if (!canManageDraft || !currentDraft || !currentDraft.statements[index]) return
     if (currentDraft.statements.length === 1) {
       setLocalNotice('事件流至少需要一条语句，不能删除最后一条。')
       return
@@ -346,7 +387,7 @@ export default function EventStreamsTab() {
   }
 
   const switchToAdvanced = () => {
-    if (!currentStatement) return
+    if (!currentStatement || !canManageDraft) return
     if (!canEditAdvancedEpl) { setLocalNotice('当前角色没有高级 EPL 编辑权限。'); return }
     const generatedEpl = generatedEplForStatement(currentStatement)
     if (generatedEpl && currentStatement.epl.trim() !== generatedEpl.trim()) {
@@ -357,7 +398,7 @@ export default function EventStreamsTab() {
   }
 
   const regenerateGuided = () => {
-    if (!currentStatement?.template) return
+    if (!currentStatement?.template || !canManageDraft) return
     const generatedEpl = generatedEplForStatement(currentStatement)
     if (generatedEpl && currentStatement.epl.trim() !== generatedEpl.trim()) {
       setTemplateConflict({ index: selectedStatement, generatedEpl })
@@ -380,6 +421,7 @@ export default function EventStreamsTab() {
   }
 
   const generateDescription = (index: number) => {
+    if (!canManageDraft) return
     const statement = currentDraft?.statements[index]
     const summary = statementSummary(statement || null)
     if (!statement || !summary) return
@@ -418,13 +460,13 @@ export default function EventStreamsTab() {
         }) : <p className="text-xs text-ink-3">暂无事件流，点击新建开始。</p>}
       </aside>
       <section className="min-w-0 flex-1 overflow-auto p-4">
-        {!currentDraft ? <p className="text-xs text-ink-3">请选择或新建事件流。</p> : <div className="space-y-4">
+        {!currentDraft ? <p className="text-xs text-ink-3">请选择或新建事件流。</p> : <div className="space-y-4">{detail && <div><AssetOwnershipBar owner={detail.owner} user={user} busy={transferOwner.isPending} onTransfer={(ownerId, ownerName) => transferOwner.mutateAsync({ revision: detail.revision, ownerId, ownerName })} /><AssetGovernanceBar projectId={projectId} asset={{ ...detail, type: 'event-stream' }} disabled={!canManageDraft} /></div>}{detail && collaboration.state && <AssetCollaborationBar members={collaboration.state.members} clientId={collaboration.clientId} localRevision={detail.revision} currentRevision={collaboration.state.currentRevision} error={collaboration.error} />}
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-[240px] flex-1"><input className="control-input max-w-xl text-sm font-semibold" value={currentDraft.name} onChange={event => setDraft({ ...currentDraft, name: event.target.value })} /><div className="mt-1.5 flex flex-wrap items-center gap-2 text-[10px]"><span className={`inline-flex items-center gap-1 ${active?.status === 'published' ? 'text-[#198038]' : 'text-[#a15c00]'}`}><Circle size={7} fill="currentColor" />{active?.status === 'published' ? `已发布 v${active.version}` : '草稿'}</span><span className="text-ink-3">修订 r{detail?.revision ?? active?.revision ?? '-'}</span>{active?.hasDraftChanges && <span className="inline-flex items-center gap-1 bg-[#fff3e0] px-1.5 py-0.5 text-[#a15c00]"><Circle size={6} fill="currentColor" />草稿有修改</span>}{isDirty && <span className="inline-flex items-center gap-1 bg-[#fff3e0] px-1.5 py-0.5 text-[#a15c00]"><Circle size={6} fill="currentColor" />未保存</span>}{compileState === 'passed' && <span className="inline-flex items-center gap-1 bg-[#e8f5e9] px-1.5 py-0.5 text-[#198038]"><CheckCircle2 size={11} />编译通过</span>}{compileState === 'failed' && <span className="inline-flex items-center gap-1 bg-[#fff1f1] px-1.5 py-0.5 text-[#da1e28]"><XCircle size={11} />编译失败</span>}{compileState === 'idle' && <span className="text-ink-3">未校验</span>}</div>
+            <div className="min-w-[240px] flex-1"><input disabled={!canManageDraft} className="control-input max-w-xl text-sm font-semibold disabled:bg-ink-bg" value={currentDraft.name} onChange={event => setDraft({ ...currentDraft, name: event.target.value })} /><div className="mt-1.5 flex flex-wrap items-center gap-2 text-[10px]"><span className={`inline-flex items-center gap-1 ${active?.status === 'published' ? 'text-[#198038]' : 'text-[#a15c00]'}`}><Circle size={7} fill="currentColor" />{active?.status === 'published' ? `已发布 v${active.version}` : '草稿'}</span><span className="text-ink-3">修订 r{detail?.revision ?? active?.revision ?? '-'}</span>{active?.hasDraftChanges && <span className="inline-flex items-center gap-1 bg-[#fff3e0] px-1.5 py-0.5 text-[#a15c00]"><Circle size={6} fill="currentColor" />草稿有修改</span>}{isDirty && <span className="inline-flex items-center gap-1 bg-[#fff3e0] px-1.5 py-0.5 text-[#a15c00]"><Circle size={6} fill="currentColor" />未保存</span>}{compileState === 'passed' && <span className="inline-flex items-center gap-1 bg-[#e8f5e9] px-1.5 py-0.5 text-[#198038]"><CheckCircle2 size={11} />编译通过</span>}{compileState === 'failed' && <span className="inline-flex items-center gap-1 bg-[#fff1f1] px-1.5 py-0.5 text-[#da1e28]"><XCircle size={11} />编译失败</span>}{compileState === 'idle' && <span className="text-ink-3">未校验</span>}</div>
             </div>
-            <div className="flex flex-wrap justify-end gap-2"><button className="h-8 border border-ink-border px-3 text-[11px]" disabled={busy || !isDirty || descriptionError} onClick={() => void save()}>{activeOperation === 'save' ? <LoaderCircle size={13} className="animate-spin" /> : <Save size={13} />}{activeOperation === 'save' ? '保存中...' : '保存'}</button><button className="h-8 border border-brand-primary px-3 text-[11px] text-brand-primary" disabled={busy || descriptionError} onClick={() => void compileCurrent()}>{activeOperation === 'compile' ? <LoaderCircle size={13} className="animate-spin" /> : <Zap size={13} />}{activeOperation === 'compile' ? '编译中...' : '编译'}</button><button className="h-8 border border-ink-border px-3 text-[11px]" disabled={busy || !detail || !currentStatement || descriptionError} onClick={() => void saveAndCreateTest()}>{activeOperation === 'test' && <LoaderCircle size={13} className="animate-spin" />}{activeOperation === 'test' ? '处理中...' : '保存并新建测试'}</button><button className="h-8 bg-brand-primary px-3 text-[11px] text-white" disabled={busy || !detail || descriptionError} onClick={() => void publish()}>{activeOperation === 'publish' ? <LoaderCircle size={13} className="animate-spin" /> : <Send size={13} />}{activeOperation === 'publish' ? '发布中...' : '保存并发布'}</button><button type="button" className="inline-flex size-8 items-center justify-center border border-[#da1e28] text-[#da1e28] hover:bg-[#fff1f1]" disabled={busy || !detail} onClick={() => setDeleteAssetOpen(true)} title="删除事件流"><Trash2 size={14} /></button></div>
+            <div className="flex flex-wrap justify-end gap-2"><button className="h-8 border border-ink-border px-3 text-[11px]" disabled={!canManageDraft || busy || !isDirty || descriptionError} onClick={() => void save()}>{activeOperation === 'save' ? <LoaderCircle size={13} className="animate-spin" /> : <Save size={13} />}{activeOperation === 'save' ? '保存中...' : '保存'}</button><button className="h-8 border border-brand-primary px-3 text-[11px] text-brand-primary" disabled={busy || descriptionError} onClick={() => void compileCurrent()}>{activeOperation === 'compile' ? <LoaderCircle size={13} className="animate-spin" /> : <Zap size={13} />}{activeOperation === 'compile' ? '编译中...' : '编译'}</button><button className="h-8 border border-ink-border px-3 text-[11px]" disabled={!canManageDraft || busy || !detail || !currentStatement || descriptionError} onClick={() => void saveAndCreateTest()}>{activeOperation === 'test' && <LoaderCircle size={13} className="animate-spin" />}{activeOperation === 'test' ? '处理中...' : '保存并新建测试'}</button><button className="h-8 bg-brand-primary px-3 text-[11px] text-white" disabled={!canManageDraft || busy || !detail || descriptionError} onClick={() => void publish()}>{activeOperation === 'publish' ? <LoaderCircle size={13} className="animate-spin" /> : <Send size={13} />}{activeOperation === 'publish' ? '发布中...' : '保存并发布'}</button><button type="button" className="inline-flex size-8 items-center justify-center border border-[#da1e28] text-[#da1e28] hover:bg-[#fff1f1]" disabled={!canManageDraft || busy || !detail} onClick={() => setDeleteAssetOpen(true)} title="删除事件流"><Trash2 size={14} /></button></div>
           </div>
-          <label className="block text-xs"><span className="mb-1 flex items-center justify-between text-[11px] text-ink-3"><span>事件流说明</span><span className={(currentDraft.description?.length || 0) > 500 ? 'text-[#da1e28]' : ''}>{currentDraft.description?.length || 0} / 500</span></span><textarea aria-label="事件流说明" className={`min-h-16 w-full resize-y border p-2 text-xs outline-none ${(currentDraft.description?.length || 0) > 500 ? 'border-[#da1e28]' : 'border-ink-border focus:border-brand-primary'}`} placeholder="说明整个事件流的业务目标、输入和输出范围" value={currentDraft.description || ''} onChange={event => setDraft({ ...currentDraft, description: event.target.value })} />{(currentDraft.description?.length || 0) > 500 && <span className="mt-1 block text-[10px] text-[#da1e28]">事件流说明不能超过 500 字</span>}</label>
+          <label className="block text-xs"><span className="mb-1 flex items-center justify-between text-[11px] text-ink-3"><span>事件流说明</span><span className={(currentDraft.description?.length || 0) > 500 ? 'text-[#da1e28]' : ''}>{currentDraft.description?.length || 0} / 500</span></span><textarea disabled={!canManageDraft} aria-label="事件流说明" className={`min-h-16 w-full resize-y border p-2 text-xs outline-none ${(currentDraft.description?.length || 0) > 500 ? 'border-[#da1e28]' : 'border-ink-border focus:border-brand-primary'}`} placeholder="说明整个事件流的业务目标、输入和输出范围" value={currentDraft.description || ''} onChange={event => setDraft({ ...currentDraft, description: event.target.value })} />{(currentDraft.description?.length || 0) > 500 && <span className="mt-1 block text-[10px] text-[#da1e28]">事件流说明不能超过 500 字</span>}</label>
           <div className="grid gap-4 xl:grid-cols-[280px_minmax(360px,1fr)_420px]">
             <div className="border border-ink-border p-3 text-xs">
               <div className="mb-2 flex gap-2"><button className="h-8 flex-1 border border-brand-primary text-brand-primary" onClick={() => setTemplatePickerOpen(!templatePickerOpen)}><Wand2 size={13} />从向导新建</button><button className="inline-flex size-8 items-center justify-center border border-ink-border disabled:cursor-not-allowed disabled:opacity-40" disabled={!canEditAdvancedEpl} onClick={addAdvancedStatement} title={canEditAdvancedEpl ? '新建高级 EPL 语句' : '需要 advanced-epl 权限'}><Code2 size={13} /></button></div>
@@ -445,7 +487,7 @@ export default function EventStreamsTab() {
               })}</div>
             </div>
             <div className="border border-ink-border p-3 text-xs">
-              {currentStatement ? <div className="space-y-3"><label className="block"><span className="mb-1 block text-[11px] text-ink-3">语句分组</span><input className="control-input" list="event-stream-groups" maxLength={80} placeholder="未分组" value={currentStatement.group || ''} onChange={event => patchStatement(selectedStatement, { group: event.target.value || undefined })} /></label><label className="block"><span className="mb-1 flex items-center justify-between text-[11px] text-ink-3"><span>业务说明</span><span className={(currentStatement.description?.length || 0) > 500 ? 'text-[#da1e28]' : ''}>{currentStatement.description?.length || 0} / 500</span></span><textarea aria-label="业务说明" className={`min-h-20 w-full resize-y border p-2 text-xs outline-none ${(currentStatement.description?.length || 0) > 500 ? 'border-[#da1e28]' : 'border-ink-border focus:border-brand-primary'}`} placeholder="说明该语句检测什么、适用场景以及命中后的业务结果" value={currentStatement.description || ''} onChange={event => patchStatement(selectedStatement, { description: event.target.value })} />{(currentStatement.description?.length || 0) > 500 && <span className="mt-1 block text-[10px] text-[#da1e28]">业务说明不能超过 500 字</span>} {!currentStatement.description?.trim() && <span className="mt-1 block text-[10px] text-[#a15c00]">建议补充业务说明，便于评审和运维理解。</span>}{currentSummary && <button type="button" className="mt-2 h-7 border border-ink-border px-2 text-[10px]" onClick={() => generateDescription(selectedStatement)}>按当前配置生成说明</button>}</label>{currentStatement.mode === 'guided' && currentStatement.template ? <GuidedForm statement={currentStatement} bom={bom} onChange={statement => patchStatement(selectedStatement, statement)} onAdvanced={switchToAdvanced} canEditAdvanced={canEditAdvancedEpl} /> : <AdvancedEditor statement={currentStatement} bom={bom} onChange={statement => patchStatement(selectedStatement, statement)} onRegenerate={currentStatement.template ? regenerateGuided : undefined} readOnly={!canEditAdvancedEpl} />}</div> : <p className="text-ink-3">请选择语句。</p>}
+              {currentStatement ? <div className="space-y-3"><label className="block"><span className="mb-1 block text-[11px] text-ink-3">语句分组</span><input className="control-input" list="event-stream-groups" maxLength={80} placeholder="未分组" value={currentStatement.group || ''} onChange={event => patchStatement(selectedStatement, { group: event.target.value || undefined })} /></label><label className="block"><span className="mb-1 flex items-center justify-between text-[11px] text-ink-3"><span>业务说明</span><span className={(currentStatement.description?.length || 0) > 500 ? 'text-[#da1e28]' : ''}>{currentStatement.description?.length || 0} / 500</span></span><textarea aria-label="业务说明" className={`min-h-20 w-full resize-y border p-2 text-xs outline-none ${(currentStatement.description?.length || 0) > 500 ? 'border-[#da1e28]' : 'border-ink-border focus:border-brand-primary'}`} placeholder="说明该语句检测什么、适用场景以及命中后的业务结果" value={currentStatement.description || ''} onChange={event => patchStatement(selectedStatement, { description: event.target.value })} />{(currentStatement.description?.length || 0) > 500 && <span className="mt-1 block text-[10px] text-[#da1e28]">业务说明不能超过 500 字</span>} {!currentStatement.description?.trim() && <span className="mt-1 block text-[10px] text-[#a15c00]">建议补充业务说明，便于评审和运维理解。</span>}{currentSummary && <button type="button" className="mt-2 h-7 border border-ink-border px-2 text-[10px]" onClick={() => generateDescription(selectedStatement)}>按当前配置生成说明</button>}</label>{currentStatement.mode === 'guided' && currentStatement.template ? <GuidedForm statement={currentStatement} bom={bom} onChange={statement => patchStatement(selectedStatement, statement)} onAdvanced={switchToAdvanced} canEditAdvanced={canEditAdvancedEpl} /> : <AdvancedEditor statement={currentStatement} bom={bom} onChange={statement => patchStatement(selectedStatement, statement)} onCollaborativeChange={value => { patchStatement(selectedStatement, { epl: value, mode: 'advanced' }); collaboration.publishText(value) }} onSelectionChange={collaboration.publishSelection} remoteSelections={(collaboration.state?.members || []).filter(member => member.clientId !== collaboration.clientId && member.documentId === advancedDocumentId && member.selection).map(member => ({ clientId: member.clientId, name: member.name, selection: member.selection! }))} syncState={collaboration.syncState} onRegenerate={currentStatement.template ? regenerateGuided : undefined} readOnly={!canEditAdvancedEpl} />}</div> : <p className="text-ink-3">请选择语句。</p>}
             </div>
             <div className="border border-ink-border p-3 text-xs">
               <div className="mb-2 flex items-center justify-between"><span className="font-semibold">EPL 预览</span>{currentStatement?.mode === 'guided' && <span className="rounded bg-brand-primary-l px-2 py-1 text-[10px] text-brand-primary"><Sparkles size={12} />引导生成</span>}</div>
@@ -489,13 +531,15 @@ export default function EventStreamsTab() {
         <div className="space-y-2 p-4 text-xs">{archivedStreams.length ? archivedStreams.map(stream => <div key={stream.id} className="flex items-center justify-between gap-3 border border-ink-border p-3"><div className="min-w-0"><div className="truncate font-semibold">{stream.name}</div><div className="mt-1 text-[10px] text-ink-3">r{stream.revision} · 历史版本 {stream.version}</div></div><button type="button" className="h-8 shrink-0 border border-brand-primary px-3 text-[11px] text-brand-primary disabled:opacity-40" disabled={restoreStream.isPending} onClick={() => void restoreAsset(stream.id, stream.revision)}><ArchiveRestore size={12} />恢复为草稿</button></div>) : <p className="text-ink-3">暂无归档事件流。</p>}{restoreStream.error && <p className="text-[#da1e28]">{restoreStream.error.message}</p>}</div>
         <footer className="flex justify-end border-t border-ink-border bg-[#fafafa] p-3"><button className="h-8 border border-ink-border bg-white px-3 text-[11px]" onClick={() => setArchiveOpen(false)}>关闭</button></footer>
       </Modal>}
+      {draftConflict && <DraftConflictModal conflict={draftConflict} busy={saveStream.isPending || compileStream.isPending} onClose={() => setDraftConflict(null)} onSave={async (mergedDraft, currentRevision) => { await compileStream.mutateAsync({ revision: currentRevision, draft: mergedDraft }); const saved = await saveStream.mutateAsync({ revision: currentRevision, draft: mergedDraft }); setDraft(saved.draft); setCompiledFingerprint(runtimeFingerprint(saved.draft)); setDraftConflict(null); setLocalNotice(`冲突已合并并保存，当前修订 r${saved.revision}。`) }} />}
     </div>
   )
 }
 
-function AdvancedEditor({ statement, bom, onChange, onRegenerate, readOnly }: { statement: EplStatement; bom: BomModel | undefined; onChange: (patch: Partial<EplStatement>) => void; onRegenerate?: () => void; readOnly: boolean }) {
+function AdvancedEditor({ statement, bom, onChange, onCollaborativeChange, onSelectionChange, remoteSelections, syncState, onRegenerate, readOnly }: { statement: EplStatement; bom: BomModel | undefined; onChange: (patch: Partial<EplStatement>) => void; onCollaborativeChange: (value: string) => void; onSelectionChange: Parameters<typeof MonacoTextEditor>[0]['onSelectionChange']; remoteSelections: NonNullable<Parameters<typeof MonacoTextEditor>[0]['remoteSelections']>; syncState: 'idle' | 'syncing' | 'synced' | 'conflict'; onRegenerate?: () => void; readOnly: boolean }) {
   const suggestions = [...(bom?.eventTypes || []).map(item => item.name), ...(bom?.factTypes || []).flatMap(item => item.fields.map(field => field.key))]
-  return <div className="space-y-3"><div className="flex items-center justify-between"><div><div className="font-semibold">高级 EPL</div>{readOnly && <div className="mt-1 text-[11px] text-amber-700">当前角色只能查看高级 EPL。</div>}{statement.template && <div className="mt-1 text-[11px] text-amber-700">已从模板分叉，重新生成前会要求确认。</div>}</div>{onRegenerate && !readOnly && <button className="h-8 border border-ink-border px-3 text-[11px]" onClick={onRegenerate}>用模板重新生成</button>}</div><input className="control-input" value={statement.name} disabled={readOnly} onChange={event => onChange({ name: event.target.value })} /><div className="border border-ink-border"><MonacoTextEditor height={320} value={statement.epl} onChange={epl => onChange({ epl, mode: 'advanced' })} readOnly={readOnly} language="epl" suggestions={suggestions} /></div></div>
+  const syncLabel = syncState === 'syncing' ? '实时同步中…' : syncState === 'synced' ? '已实时同步' : syncState === 'conflict' ? '实时内容有冲突' : '实时协作已连接'
+  return <div className="space-y-3"><div className="flex items-center justify-between"><div><div className="font-semibold">高级 EPL</div><div className={`mt-1 text-[10px] ${syncState === 'conflict' ? 'text-[#da1e28]' : 'text-ink-3'}`}>{syncLabel}</div>{readOnly && <div className="mt-1 text-[11px] text-amber-700">当前角色只能查看高级 EPL。</div>}{statement.template && <div className="mt-1 text-[11px] text-amber-700">已从模板分叉，重新生成前会要求确认。</div>}</div>{onRegenerate && !readOnly && <button className="h-8 border border-ink-border px-3 text-[11px]" onClick={onRegenerate}>用模板重新生成</button>}</div><input className="control-input" value={statement.name} disabled={readOnly} onChange={event => onChange({ name: event.target.value })} /><div className="border border-ink-border"><MonacoTextEditor height={320} value={statement.epl} onChange={onCollaborativeChange} onSelectionChange={onSelectionChange} remoteSelections={remoteSelections} readOnly={readOnly} language="epl" suggestions={suggestions} /></div></div>
 }
 
 function GuidedForm({ statement, bom, onChange, onAdvanced, canEditAdvanced }: { statement: EplStatement; bom: ReturnType<typeof useBom>['data']; onChange: (patch: Partial<EplStatement>) => void; onAdvanced: () => void; canEditAdvanced: boolean }) {

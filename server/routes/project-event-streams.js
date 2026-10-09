@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { eventSchemasFromBom, eventStreamDependencyImpact, normalizeEventStreamDraft, validateEventStreamDraft } from '../../shared/event-streams.js';
 import { bodyOf, operationError, reply, revisionConflict } from '../http-utils.js';
+import { assignAssetOwner, claimAssetDraft, draftOwnershipError } from '../asset-ownership.js';
 
 export function createProjectEventStreamHandler({
   projectBomModel,
@@ -46,6 +47,7 @@ export function createProjectEventStreamHandler({
       const result = await mutateAssets('eventStreams', assets => {
         const now = new Date().toISOString();
         const item = initializeAssetRevision({ id: crypto.randomUUID(), draft, published: null, versions: [], archived: false, updatedAt: now });
+        claimAssetDraft(item, req.principal);
         assets.unshift(item);
         return { item };
       }, projectId);
@@ -78,8 +80,11 @@ export function createProjectEventStreamHandler({
       const result = await mutateAssets('eventStreams', assets => {
         const item = assets.find(stream => stream.id === id && !stream.archived);
         if (!item) return { status: 404, error: '事件流不存在' };
+        const ownership = draftOwnershipError(req.principal, item);
+        if (ownership) return ownership;
         const conflict = revisionConflict(item, payload.revision);
         if (conflict) return conflict;
+        claimAssetDraft(item, req.principal);
         item.draft = structuredClone(draft);
         advanceAssetRevision(item, 'saved', true);
         return { item };
@@ -98,6 +103,8 @@ export function createProjectEventStreamHandler({
       const result = await mutateAssets('eventStreams', assets => {
         const item = assets.find(stream => stream.id === id && !stream.archived);
         if (!item) return { status: 404, error: '事件流不存在' };
+        const ownership = draftOwnershipError(req.principal, item);
+        if (ownership) return ownership;
         const conflict = revisionConflict(item, payload.revision);
         if (conflict) return conflict;
         item.archived = true;
@@ -116,8 +123,32 @@ export function createProjectEventStreamHandler({
       const item = (data.allEventStreams || data.eventStreams).find(stream => stream.id === id);
       if (!item) return reply(res, 404, { error: '事件流不存在' });
       const payload = await bodyOf(req);
+      if (action === 'transfer-owner') {
+        const ownerId = typeof payload?.ownerId === 'string' ? payload.ownerId.trim() : '';
+        const ownerName = typeof payload?.ownerName === 'string' ? payload.ownerName.trim() : ownerId;
+        if (!ownerId || ownerId.length > 120 || ownerName.length > 120) return reply(res, 400, { error: '负责人无效' });
+        const result = await mutateAssets('eventStreams', assets => {
+          const target = assets.find(stream => stream.id === id && !stream.archived);
+          if (!target) return { status: 404, error: '事件流不存在' };
+          const ownership = draftOwnershipError(req.principal, target);
+          if (ownership) return ownership;
+          const conflict = revisionConflict(target, payload?.revision);
+          if (conflict) return conflict;
+          const previousOwnerId = target.ownerId || null;
+          assignAssetOwner(target, ownerId, ownerName);
+          advanceAssetRevision(target, 'owner-transferred');
+          return { item: target, previousOwnerId };
+        }, projectId);
+        if (result.error) return reply(res, result.status, operationError(result));
+        await appendAuditEvent('asset.owner-transferred', 'event-stream', id, `转交负责人：${result.item.draft.name}`, {
+          revision: result.item.revision, previousOwnerId: result.previousOwnerId, ownerId,
+        }, req);
+        return reply(res, 200, projectEventStreamDetail(result.item, { ...data, eventStreams: [result.item] }));
+      }
       if (action === 'restore') {
         authorizeAsset(req.principal, id);
+        const ownership = draftOwnershipError(req.principal, item);
+        if (ownership) return reply(res, ownership.status, { error: ownership.error });
         if (!item.archived) return reply(res, 409, { error: '只有已归档事件流可以恢复' });
         if (!Number.isInteger(payload?.revision) || payload.revision < 1) return reply(res, 400, { error: '修订号无效' });
         const validation = validateEventStreamDraft(item.draft, data.bom);
@@ -128,6 +159,8 @@ export function createProjectEventStreamHandler({
         const result = await mutateAssets('eventStreams', assets => {
           const target = assets.find(stream => stream.id === id && stream.archived);
           if (!target) return { status: 404, error: '已归档事件流不存在' };
+          const currentOwnership = draftOwnershipError(req.principal, target);
+          if (currentOwnership) return currentOwnership;
           const conflict = revisionConflict(target, payload.revision);
           if (conflict) return conflict;
           target.archived = false;
@@ -147,7 +180,9 @@ export function createProjectEventStreamHandler({
         return result.error ? reply(res, result.status, operationError(result)) : reply(res, 200, result.result);
       }
       if (action === 'publish') {
-        const result = await publishProjectEventStream(id, payload?.revision, projectId, data, actorOf(req));
+        const ownership = draftOwnershipError(req.principal, item);
+        if (ownership) return reply(res, ownership.status, { error: ownership.error });
+        const result = await publishProjectEventStream(id, payload?.revision, projectId, data, actorOf(req), req.principal);
         if (result.error) return reply(res, result.status, operationError(result));
         await appendAuditEvent('asset.publish', 'event-stream', id, `发布事件流：${result.item.draft.name}`, {
           revision: result.item.revision, version: result.item.versions.at(-1)?.number || null,

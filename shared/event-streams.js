@@ -367,6 +367,7 @@ export function runEventStream(module = {}, events = []) {
   for (const statement of module.statements || []) {
     if (statement.enabled === false) continue;
     const epl = statement.epl || '';
+    const runtimeName = epl.match(/@Name\s*\(\s*['"]([^'"]+)['"]\s*\)/i)?.[1] || statement.name;
     const sourceType = epl.match(/\bfrom\s+([A-Z][A-Za-z0-9_]*)\b/i)?.[1];
     if (!sourceType) continue;
     const where = epl.match(/\bwhere\s+([a-zA-Z][a-zA-Z0-9_]*)\s*(==|!=|>=|<=|>|<)\s*([^\s;]+)/i);
@@ -375,7 +376,7 @@ export function runEventStream(module = {}, events = []) {
       if (event.type !== sourceType) continue;
       const data = eventPayload(event);
       if (where && !compare(data[where[1]], where[2], parseLiteral(where[3]))) continue;
-      detections.push({ statement: statement.name, eventType, timestamp: null, data });
+      detections.push({ statement: runtimeName, eventType, timestamp: null, data });
     }
   }
   return { detections };

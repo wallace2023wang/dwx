@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
-import type { BomDataType, BomEventType, BomFactType, BomField, BomModel } from '../types'
+import type { BomDataType, BomDomain, BomEventType, BomFactType, BomField, BomMethod, BomModel } from '../types'
 import { http } from './client'
 
 export interface FlatBomField {
@@ -22,6 +22,7 @@ export interface FlatBomField {
   regex?: string | null
   allowDuplicates?: boolean
   required?: boolean
+  domainId?: string | null
 }
 
 export interface FlatBomModel {
@@ -29,12 +30,14 @@ export interface FlatBomModel {
   updatedAt?: string
   fields: FlatBomField[]
   eventTypes?: BomEventType[]
+  domains?: BomDomain[]
+  methods?: BomMethod[]
 }
 
 export interface BomReference {
   id: string
   name: string
-  type: 'rule' | 'decision-table' | 'flow'
+  type: 'rule' | 'decision-table' | 'decision-tree' | 'scorecard' | 'flow'
   status: 'draft' | 'published'
 }
 
@@ -80,6 +83,7 @@ export function bomDrlPreview(model: BomModel) {
 
 export function flattenToFactTypes(flat: FlatBomModel, references: Record<string, number> = {}, drl?: string): BomModel {
   const facts = new Map<string, BomFactType>()
+  const domains = new Map((flat.domains || []).map(domain => [domain.id, domain]))
   for (const field of flat.fields) {
     const meta = inferredFact(field)
     const fact = facts.get(meta.name) || { name: meta.name, label: meta.label, direction: field.kind, fields: [] }
@@ -92,7 +96,7 @@ export function flattenToFactTypes(flat: FlatBomModel, references: Record<string
       references: references[field.key] || 0,
       factName: meta.name,
       factLabel: meta.label,
-      enum: field.enum || null,
+      enum: field.domainId ? domains.get(field.domainId)?.values || null : field.enum || null,
       unit: field.unit || null,
       min: field.min ?? null,
       max: field.max ?? null,
@@ -103,6 +107,7 @@ export function flattenToFactTypes(flat: FlatBomModel, references: Record<string
       regex: field.regex ?? null,
       allowDuplicates: field.allowDuplicates,
       required: field.required === true,
+      domainId: field.domainId || null,
     }
     fact.fields.push(nextField)
     if (fact.direction !== field.kind) fact.direction = 'mixed'
@@ -114,6 +119,8 @@ export function flattenToFactTypes(flat: FlatBomModel, references: Record<string
     updatedAt: flat.updatedAt,
     updatedBy: 'Team Server',
     eventTypes: flat.eventTypes || [],
+    domains: flat.domains || [],
+    methods: flat.methods || [],
     factTypes,
     vocabulary: factTypes.flatMap(fact => fact.fields.map(field => ({
       property: `${fact.name}.${field.key}`,
@@ -139,13 +146,14 @@ export function flattenFromFactTypes(model: BomModel): FlatBomField[] {
     unit: field.unit || null,
     min: field.min ?? null,
     max: field.max ?? null,
-    enum: field.enum || null,
+    enum: field.domainId ? null : field.enum || null,
     control: field.control || (field.type === 'Enum' ? 'select' : field.type === 'Boolean' ? 'boolean' : ['Integer', 'Decimal'].includes(field.type) ? 'number' : field.type === 'Date' ? 'date' : 'text'),
     description: field.description || '',
     maxLength: field.maxLength ?? null,
     regex: field.regex ?? null,
     allowDuplicates: field.type === 'List<String>' ? field.allowDuplicates ?? true : undefined,
     required: field.direction === 'input' ? field.required === true : undefined,
+    domainId: field.domainId || null,
   })))
 }
 
@@ -168,6 +176,8 @@ async function saveBom(projectId: string, model: BomModel, acknowledgeImpact: bo
       version: model.version,
       fields: flattenFromFactTypes(model),
       eventTypes: model.eventTypes || [],
+      domains: model.domains || [],
+      methods: model.methods || [],
       acknowledgeImpact,
     })
     return { bom: flattenToFactTypes(data.bom), warnings: data.warnings || [] }

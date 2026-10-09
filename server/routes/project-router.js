@@ -15,12 +15,14 @@ export function createProjectRouter({
   handleTestSuites,
   handleReleases,
   handleProjectRules,
+  handleProjectAssets,
   readProjectRecords,
   projectData,
   readPackageRecords,
   normalizeProjectEngine,
   updateProjectBom,
   bomFieldReferences,
+  handleCollaboration,
 }) {
   return async function handleProjects(req, res, segments, url) {
     if (segments.length === 2) return handleProjectCollection(req, res, url);
@@ -42,6 +44,9 @@ export function createProjectRouter({
     const packageRecords = await readPackageRecords(projectId, data);
     data.packageRecords = packageRecords;
     const projectEngine = normalizeProjectEngine(project.engine);
+    if ([4, 5].includes(segments.length) && segments[3] === 'collaboration') {
+      return handleCollaboration(req, res, projectId, data, url, segments[4]);
+    }
     if (projectEngine === 'cep' && ['rules', 'tables', 'flows', 'rulesets'].includes(segments[3])) {
       const message = 'CEP 项目不支持规则资产、决策表或规则集';
       return reply(res, req.method === 'GET' ? 404 : 403, { error: message });
@@ -55,6 +60,9 @@ export function createProjectRouter({
     if (segments.length === 3 && req.method === 'GET') return handleProjectSummary(res, project, data, packageRecords);
     if (segments[3] === 'packages') {
       return handleProjectPackages(req, res, segments, projectId, data, packageRecords);
+    }
+    if (segments.length === 5 && segments[3] === 'assets' && segments[4] === 'batch') {
+      return handleProjectAssets(req, res, projectId, data, packageRecords);
     }
     if (segments.length === 4 && segments[3] === 'bom' && req.method === 'GET') return reply(res, 200, projectBomModel(data, data.bom));
     if (segments.length === 4 && segments[3] === 'bom' && req.method === 'PUT') return updateProjectBom(req, res, projectId, data.bom);
@@ -75,7 +83,7 @@ export function createProjectRouter({
     if (segments.length === 4 && segments[3] === 'releases') {
       return handleReleases(req, res, ['api', 'releases'], projectId, true);
     }
-    if (segments.length === 6 && segments[3] === 'releases' && ['deploy', 'activate', 'rollback', 'undeploy', 'execute', 'events', 'webhook'].includes(segments[5])) {
+    if (segments.length === 6 && segments[3] === 'releases' && ['deploy', 'activate', 'rollback', 'undeploy', 'execute', 'events', 'webhook', 'alerts'].includes(segments[5])) {
       return handleReleases(req, res, ['api', 'releases', segments[4], segments[5]], projectId, true);
     }
     if (segments.length === 6 && segments[3] === 'services' && segments[5] === 'execute') {

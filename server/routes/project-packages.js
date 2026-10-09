@@ -1,5 +1,6 @@
 import { canonicalPackageName, PACKAGE_NAME_RE } from '../../shared/packages.js';
 import { bodyOf, reply } from '../http-utils.js';
+import { draftOwnershipError } from '../asset-ownership.js';
 
 function normalizePackagePayload(payload, packages, currentName = null) {
   let name = typeof payload?.name === 'string' ? payload.name.trim() : '';
@@ -50,6 +51,8 @@ export function createProjectPackageHandler({
       const payload = await bodyOf(req);
       const affected = [...data.rules, ...data.tables].filter(asset => asset.draft.category === currentName || asset.draft.category.startsWith(`${currentName}.`));
       const affectedFlows = data.flows.filter(flow => flowReferencesPackage(flow.draft, currentName));
+      const ownership = [...affected, ...affectedFlows].map(asset => draftOwnershipError(req.principal, asset)).find(Boolean);
+      if (ownership) return reply(res, ownership.status, { error: ownership.error });
       const locked = [...affected, ...affectedFlows].map(asset => reviewLock(data.changeSets, asset.id)).find(Boolean);
       if (locked) return reply(res, locked.status, { error: locked.error, changeSetId: locked.changeSetId });
       const result = await mutatePackageRecords(projectId, data, async records => {
@@ -60,15 +63,24 @@ export function createProjectPackageHandler({
         const renameMap = new Map(records.filter(pkg => pkg.name === currentName || pkg.name.startsWith(`${currentName}.`)).map(pkg => [pkg.name, pkg.name === currentName ? normalized.name : `${normalized.name}${pkg.name.slice(currentName.length)}`]));
         const renamed = records.map(pkg => renameMap.has(pkg.name) ? { ...pkg, name: renameMap.get(pkg.name), label: pkg.name === currentName ? normalized.label : pkg.label, parentId: pkg.name === currentName ? normalized.parentId : renameMap.get(pkg.parentId) || pkg.parentId } : pkg);
         records.splice(0, records.length, ...renamed);
-        const moveCategories = assets => { for (const asset of assets) if (renameMap.has(asset.draft.category)) { asset.draft.category = renameMap.get(asset.draft.category); advanceAssetRevision(asset, 'saved', true); } return { changed: true }; };
-        await mutate(moveCategories, projectId);
-        await mutateAssets('tables', moveCategories, projectId);
-        await mutateAssets('flows', flows => {
+        const moveCategories = assets => {
+          const currentOwnership = assets.filter(asset => renameMap.has(asset.draft.category)).map(asset => draftOwnershipError(req.principal, asset)).find(Boolean);
+          if (currentOwnership) return currentOwnership;
+          for (const asset of assets) if (renameMap.has(asset.draft.category)) { asset.draft.category = renameMap.get(asset.draft.category); advanceAssetRevision(asset, 'saved', true); }
+          return { changed: true };
+        };
+        const rulesResult = await mutate(moveCategories, projectId);
+        if (rulesResult.error) return rulesResult;
+        const tablesResult = await mutateAssets('tables', moveCategories, projectId);
+        if (tablesResult.error) return tablesResult;
+        const flowsResult = await mutateAssets('flows', flows => {
           let changed = false;
           for (const flow of flows) {
             let flowChanged = false;
             for (const selector of flowPackageSelectors(flow.draft)) {
               if (!renameMap.has(selector.packageName)) continue;
+              const currentOwnership = draftOwnershipError(req.principal, flow);
+              if (currentOwnership) return currentOwnership;
               selector.packageName = renameMap.get(selector.packageName);
               flowChanged = true;
             }
@@ -76,6 +88,7 @@ export function createProjectPackageHandler({
           }
           return { changed };
         }, projectId);
+        if (flowsResult.error) return flowsResult;
         return { itemName: normalized.name, changed: true };
       });
       if (result.error) return reply(res, result.status, { error: result.error });
@@ -89,6 +102,8 @@ export function createProjectPackageHandler({
       const referencedBy = data.flows.filter(flow => flowReferencesPackage(flow.draft, name));
       if (referencedBy.length) return reply(res, 409, { error: `规则包被 ${referencedBy.length} 个规则集引用，请先移除或替换 Rule Group 节点` });
       const affected = [...data.rules, ...data.tables].filter(asset => asset.draft.category === name || asset.draft.category.startsWith(`${name}.`));
+      const ownership = affected.map(asset => draftOwnershipError(req.principal, asset)).find(Boolean);
+      if (ownership) return reply(res, ownership.status, { error: ownership.error });
       const locked = affected.map(asset => reviewLock(data.changeSets, asset.id)).find(Boolean);
       if (locked) return reply(res, locked.status, { error: locked.error, changeSetId: locked.changeSetId });
       const result = await mutatePackageRecords(projectId, data, async records => {
@@ -102,12 +117,19 @@ export function createProjectPackageHandler({
         const moveRulesTo = canonicalPackageName(payload?.moveRulesTo);
         if (assets.length && !moveRulesTo && payload?.deleteAssets !== true) return { status: 409, error: `包 ${name} 下有 ${assets.length} 条规则`, assetCount: assets.length };
         if (moveRulesTo && (!records.some(pkg => pkg.name === moveRulesTo) || names.has(moveRulesTo))) return { status: 400, error: '目标包无效' };
-        const updateAssets = collection => { for (const asset of collection) if (names.has(asset.draft.category)) {
+        const updateAssets = collection => {
+          const currentOwnership = collection.filter(asset => names.has(asset.draft.category)).map(asset => draftOwnershipError(req.principal, asset)).find(Boolean);
+          if (currentOwnership) return currentOwnership;
+          for (const asset of collection) if (names.has(asset.draft.category)) {
           if (payload.deleteAssets) { asset.archived = true; asset.lifecycleStatus = 'archived'; advanceAssetRevision(asset, 'archived', true); }
           else { asset.draft.category = moveRulesTo; advanceAssetRevision(asset, 'saved', true); }
-        } return { changed: true }; };
-        await mutate(updateAssets, projectId);
-        await mutateAssets('tables', updateAssets, projectId);
+          }
+          return { changed: true };
+        };
+        const rulesResult = await mutate(updateAssets, projectId);
+        if (rulesResult.error) return rulesResult;
+        const tablesResult = await mutateAssets('tables', updateAssets, projectId);
+        if (tablesResult.error) return tablesResult;
         const retained = records.filter(pkg => !names.has(pkg.name));
         records.splice(0, records.length, ...retained);
         return { changed: true };

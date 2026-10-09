@@ -1,10 +1,73 @@
-import { generateDrl } from '../shared/rules.js';
-import { conditionCellExportValue, resolveRuleGroupMembers, ruleGroupFingerprint, tableDrl, validateTable } from '../shared/assets.js';
-import { findField, inferSemanticType } from '../shared/bom.js';
+import { generateDrl, ruleConditions } from '../shared/rules.js';
+import { conditionCellExportValue, flowBranches, flowGateways, flowSteps, resolveRuleGroupMembers, ruleGroupFingerprint, tableDrl, validateTable } from '../shared/assets.js';
+import { decisionTreeDrl, decisionTreeLeaves, isDecisionTree, validateDecisionTree } from '../shared/decision-trees.js';
+import { isScorecard, scorecardDrl, validateScorecard } from '../shared/scorecards.js';
+import { findField, inferSemanticType, resolvedBomFields } from '../shared/bom.js';
 import { compileEventStreamDraft, eventStreamDependencies } from '../shared/event-streams.js';
 import { canonicalPackageName, packageLabel } from '../shared/packages.js';
+import { assetOwner } from './asset-ownership.js';
+import { assetGovernance } from './domain-utils.js';
+
+function presentedGovernance(item) {
+  const governance = assetGovernance(item);
+  const today = new Date().toISOString().slice(0, 10);
+  const effectiveStatus = governance.effectiveFrom && today < governance.effectiveFrom
+    ? 'scheduled'
+    : governance.effectiveTo && today > governance.effectiveTo ? 'expired' : 'effective';
+  return { ...governance, effectiveStatus };
+}
+
+function effectiveDateLabel(item) {
+  const { effectiveFrom, effectiveTo } = assetGovernance(item);
+  if (effectiveFrom && effectiveTo) return `${effectiveFrom} 至 ${effectiveTo}`;
+  if (effectiveFrom) return `${effectiveFrom} 起`;
+  if (effectiveTo) return `截至 ${effectiveTo}`;
+  return '始终';
+}
 
 function assetBomIssue(draft, type, bom) {
+  if (isScorecard(draft)) {
+    const scoreField = findField(bom, draft.scoreOutputField);
+    if (!scoreField || scoreField.kind !== 'output' || !['Integer', 'Decimal'].includes(inferSemanticType(scoreField))) return '总分输出字段不存在或不是数值输出字段';
+    for (const characteristic of draft.characteristics || []) {
+      const field = findField(bom, characteristic.field);
+      if (!field || field.kind !== 'input') return `评分特征字段 ${characteristic.field || '（空）'} 不存在或不是输入字段`;
+    }
+    for (const band of draft.bands || []) for (const action of band.actions || []) {
+      if (action.fieldSource === 'variable') continue;
+      const field = findField(bom, action.field);
+      if (!field || field.kind !== 'output') return `动作字段 ${action.field || '（空）'} 不存在或不是输出字段`;
+    }
+    return null;
+  }
+  if (isDecisionTree(draft)) {
+    let issue = null;
+    const visit = node => {
+      if (!node || issue) return;
+      if (node.type === 'condition') {
+        if (node.condition?.fieldSource !== 'variable') {
+          const field = findField(bom, node.condition?.field);
+          if (!field || field.kind !== 'input') issue = `条件字段 ${node.condition?.field || '（空）'} 不存在或不是输入字段`;
+          if (!issue && node.condition?.valueSource === 'field') {
+            const valueField = findField(bom, node.condition.valueField);
+            if (!valueField || valueField.kind !== 'input' || valueField.key === field.key || inferSemanticType(valueField) !== inferSemanticType(field)) {
+              issue = `比较字段 ${node.condition.valueField || '（空）'} 不存在、不是输入字段或类型不匹配`;
+            }
+          }
+        }
+        visit(node.trueChild);
+        visit(node.falseChild);
+        return;
+      }
+      for (const action of node.actions || []) {
+        if (action.fieldSource === 'variable') continue;
+        const field = findField(bom, action.field);
+        if (!field || field.kind !== 'output') { issue = `动作字段 ${action.field || '（空）'} 不存在或不是输出字段`; break; }
+      }
+    };
+    visit(draft.root);
+    return issue;
+  }
   const invalidCondition = draft.conditions?.find(column => {
     if (column.fieldSource === 'variable') return false;
     if (column.raw || column.pattern) return false;
@@ -56,7 +119,8 @@ function assetWorkflowStatus(item, changeSets) {
     if (changeSet.status === 'REJECTED' && pinned.assetRevision === (item.revision || 1)) return 'rejected';
   }
   const publishedRevision = item.versions.at(-1)?.assetRevision;
-  return item.published && (publishedRevision == null || publishedRevision === (item.revision || 1)) ? 'published' : 'draft';
+  const latestDraftRevision = item.revisions?.at(-1)?.number || item.revision || 1;
+  return item.published && (publishedRevision == null || latestDraftRevision <= publishedRevision) ? 'published' : 'draft';
 }
 
 function projectAssetSummaryWithReview(item, type, bom, changeSets = []) {
@@ -64,14 +128,17 @@ function projectAssetSummaryWithReview(item, type, bom, changeSets = []) {
   return {
     id: item.id,
     name: item.draft.name,
-    type: type === 'table' ? 'decision-table' : 'rule',
+    type: type === 'table' ? (isScorecard(item.draft) ? 'scorecard' : isDecisionTree(item.draft) ? 'decision-tree' : 'decision-table') : 'rule',
     modifiedBy: 'Team Server',
     status: assetWorkflowStatus(item, changeSets),
     version: String(item.versions.at(-1)?.number || item.revision || 1),
+    revision: item.revision || 1,
     priority: item.draft.priority ?? 0,
     bomInvalid: Boolean(bomIssue),
     bomIssue: bomIssue || undefined,
     lifecycleStatus: item.lifecycleStatus || (item.archived ? 'archived' : 'active'),
+    owner: assetOwner(item),
+    ...presentedGovernance(item),
   };
 }
 
@@ -97,6 +164,8 @@ export function projectAssetDetail(item, type, bom, changeSets = [], projectVari
     packageId: draft.category || '未分类',
     packageName: draft.category || '未分类',
     updatedAt: item.updatedAt,
+    owner: assetOwner(item),
+    ...presentedGovernance(item),
     revision: item.revision || 1,
     versions: (item.versions || []).map(version => ({
       number: version.number,
@@ -108,6 +177,7 @@ export function projectAssetDetail(item, type, bom, changeSets = [], projectVari
     currentBomVersion: bom.version,
     bomOutdated: item.versions?.at(-1)?.bomVersion != null && item.versions.at(-1).bomVersion !== bom.version,
     projectVariables: structuredClone(projectVariables || []),
+    bomMethods: structuredClone(bom.methods || []),
     deprecatedAt: item.deprecatedAt || null,
     deprecatedBy: item.deprecatedBy || null,
     deprecationReason: item.deprecationReason || null,
@@ -116,13 +186,30 @@ export function projectAssetDetail(item, type, bom, changeSets = [], projectVari
     attributes: {
       priority: draft.priority || 0,
       hitPolicy: type === 'table' ? tableHitPolicy : 'FIRST',
-      effectiveDate: '始终',
+      effectiveDate: effectiveDateLabel(item),
       createdBy: 'Team Server',
       reviewedAt,
     },
   };
   if (type === 'rule') {
     try { detail.content = generateDrl([draft], bom, projectVariables?.length ? projectVariables : draft.variables); }
+    catch (error) { detail.content = `// 当前草稿无法生成 DRL：${error.message}`; }
+    return detail;
+  }
+  if (isDecisionTree(draft)) {
+    const variables = projectVariables?.length ? projectVariables : [];
+    const validation = validateDecisionTree(draft, bom, variables);
+    detail.validationWarnings = [];
+    detail.decisionTreeLeaves = decisionTreeLeaves(draft);
+    try { detail.content = decisionTreeDrl(draft, bom, item.id, variables); }
+    catch (error) { detail.content = `// 当前草稿无法生成 DRL：${error.message}`; }
+    if (validation) detail.bomIssue ||= validation;
+    return detail;
+  }
+  if (isScorecard(draft)) {
+    const variables = projectVariables?.length ? projectVariables : [];
+    detail.validationWarnings = [];
+    try { detail.content = scorecardDrl(draft, bom, item.id, variables); }
     catch (error) { detail.content = `// 当前草稿无法生成 DRL：${error.message}`; }
     return detail;
   }
@@ -159,16 +246,44 @@ export function projectAssetDetail(item, type, bom, changeSets = [], projectVari
 export function projectBomModel({ rules, tables, flows }, bom) {
   const references = new Map(bom.fields.map(field => [field.key, 0]));
   const count = key => { if (references.has(key)) references.set(key, references.get(key) + 1); };
+  const scanExpression = node => {
+    if (!node || typeof node !== 'object') return;
+    if (node.type === 'field' && node.fieldSource !== 'variable') count(node.field);
+    else if (node.type === 'binary') { scanExpression(node.left); scanExpression(node.right); }
+    else if (node.type === 'function') for (const argument of node.args || []) scanExpression(argument);
+    else if (node.type === 'method') scanExpression((bom.methods || []).find(method => method.name === node.name)?.expression);
+  };
   const scanRule = rule => {
-    for (const condition of rule?.conditions || []) {
+    for (const condition of ruleConditions(rule || {})) {
       if (!condition.pattern && !condition.raw) {
         count(condition.field);
         if (condition.valueSource === 'field') count(condition.valueField);
       }
     }
-    for (const action of rule?.actions || []) count(action.field);
+    for (const action of rule?.actions || []) { count(action.field); scanExpression(action.valueExpression); }
   };
   const scanTable = table => {
+    if (isScorecard(table)) {
+      count(table.scoreOutputField);
+      for (const characteristic of table.characteristics || []) count(characteristic.field);
+      for (const band of table.bands || []) for (const action of band.actions || []) { count(action.field); scanExpression(action.valueExpression); }
+      return;
+    }
+    if (isDecisionTree(table)) {
+      const visit = node => {
+        if (!node) return;
+        if (node.type === 'condition') {
+          count(node.condition?.field);
+          if (node.condition?.valueSource === 'field') count(node.condition.valueField);
+          visit(node.trueChild);
+          visit(node.falseChild);
+          return;
+        }
+        for (const action of node.actions || []) { count(action.field); scanExpression(action.valueExpression); }
+      };
+      visit(table.root);
+      return;
+    }
     for (const condition of table?.conditions || []) count(condition.field);
     for (const row of table?.rows || []) for (const cell of row.conditions || []) if (cell?.valueSource === 'field') count(cell.valueField);
     for (const action of table?.actions || []) count(action.field);
@@ -181,7 +296,7 @@ export function projectBomModel({ rules, tables, flows }, bom) {
   };
   const scanFlow = flow => {
     scanFlowSteps(flow?.steps);
-    for (const branch of flow?.branches || []) {
+    for (const branch of flowBranches(flow)) {
       if (!branch.default) count(branch.condition?.field);
       scanFlowSteps(branch.steps);
     }
@@ -190,7 +305,7 @@ export function projectBomModel({ rules, tables, flows }, bom) {
   for (const item of tables) scanTable(item.draft);
   for (const item of flows) scanFlow(item.draft);
 
-  const fields = bom.fields.map(field => ({
+  const fields = resolvedBomFields(bom).map(field => ({
     key: field.key,
     label: field.label,
     type: inferSemanticType(field),
@@ -204,6 +319,7 @@ export function projectBomModel({ rules, tables, flows }, bom) {
     control: field.control || null,
     factType: field.factType || null,
     factTypeLabel: field.factTypeLabel || null,
+    domainId: field.domainId || null,
   }));
   const facts = new Map();
   for (const field of fields) {
@@ -219,6 +335,8 @@ export function projectBomModel({ rules, tables, flows }, bom) {
     updatedAt: bom.updatedAt,
     updatedBy: 'Team Server',
     eventTypes: bom.eventTypes || [],
+    domains: bom.domains || [],
+    methods: bom.methods || [],
     factTypes,
     vocabulary: fields.map(field => ({
       property: `${field.factType || 'RuleInput'}.${field.key}`,
@@ -242,6 +360,10 @@ export function projectTestSuite(suite, { rules, tables, flows, eventStreams = [
 }
 
 function projectFlowAssets({ rules, tables }) {
+  const treeActions = tree => decisionTreeLeaves(tree).flatMap(leaf => leaf.actions || []);
+  const structuredActions = draft => isScorecard(draft)
+    ? [{ field: draft.scoreOutputField }, ...(draft.bands || []).flatMap(band => band.actions || [])]
+    : isDecisionTree(draft) ? treeActions(draft) : draft.actions || [];
   return [
     ...rules.filter(item => item.published).map(item => ({
       id: item.id, name: item.draft.name, type: 'rule', category: item.draft.category || '未分类',
@@ -251,13 +373,14 @@ function projectFlowAssets({ rules, tables }) {
     ...tables.filter(item => item.published).map(item => ({
       id: item.id, name: item.draft.name, type: 'table', category: item.draft.category || '未分类',
       version: item.versions.at(-1)?.number || 1,
-      outputFields: [...new Set((item.published.actions || []).map(action => action.field))],
+      assetKind: isScorecard(item.published) ? 'scorecard' : isDecisionTree(item.published) ? 'decision-tree' : 'decision-table',
+      outputFields: [...new Set(structuredActions(item.published).map(action => action.field))],
     })),
   ];
 }
 
 function allFlowSteps(flow) {
-  return [...(flow?.steps || []), ...(flow?.branches || []).flatMap(branch => branch.steps || [])];
+  return flowSteps(flow);
 }
 
 export function flowPackageSelectors(flow) {
@@ -269,6 +392,11 @@ export function flowReferencesPackage(flow, packageName) {
 }
 
 function projectFlowPackages(data) {
+  const structuredActions = draft => isDecisionTree(draft)
+    ? decisionTreeLeaves(draft).flatMap(leaf => leaf.actions || [])
+    : isScorecard(draft)
+      ? [{ field: draft.scoreOutputField }, ...(draft.bands || []).flatMap(band => band.actions || [])]
+      : draft.actions || [];
   const records = data.packageRecords || [];
   const names = new Set([
     ...records.map(pkg => pkg.name),
@@ -294,7 +422,7 @@ function projectFlowPackages(data) {
       excludedDraftCount: directRules.length + directTables.length - members.length,
       outputFields: [...new Set([
         ...publishedRules.flatMap(item => (item.published.actions || []).map(action => action.field)),
-        ...publishedTables.flatMap(item => (item.published.actions || []).map(action => action.field)),
+        ...publishedTables.flatMap(item => structuredActions(item.published).map(action => action.field)),
       ])],
       members,
     };
@@ -304,10 +432,7 @@ function projectFlowPackages(data) {
 export function projectRuleset(item, data) {
   const assetMap = new Map(projectFlowAssets(data).map(asset => [asset.id, asset]));
   const source = item.published && typeof item.published === 'object' ? item.published : (item.draft || {});
-  const steps = [
-    ...(source.steps || []),
-    ...(source.branches || []).flatMap(branch => branch.steps || []),
-  ];
+  const steps = flowSteps(source);
   const packages = [...new Set(steps.map(step => step.type === 'rule-group' ? step.packageName || step.selector?.packageName : assetMap.get(step.id)?.category).filter(Boolean))];
   const outdatedDependencies = steps.flatMap(step => {
     if (step.type === 'rule-group') {
@@ -329,19 +454,36 @@ export function projectRuleset(item, data) {
     return current && step.version && step.version < current.version
       ? [{ id: step.id, name: step.name || current.name, publishedVersion: step.version, latestVersion: current.version }]
       : [];
-  }).filter((dependency, index, all) => all.findIndex(item => (item.kind || 'asset') === (dependency.kind || 'asset') && (item.id || item.nodeId) === (dependency.id || dependency.nodeId)) === index);
-  const flowSteps = [
-    ...(source.steps || []).map((step, index) => ({
-      order: index + 1, type: step.type, id: step.id,
-      name: step.name || assetMap.get(step.id)?.name || step.selector?.packageName || step.id,
-      version: step.version || assetMap.get(step.id)?.version || 0, branchName: null,
-    })),
-    ...(source.branches || []).flatMap(branch => (branch.steps || []).map((step, index) => ({
-      order: index + 1, type: step.type, id: step.id,
-      name: step.name || assetMap.get(step.id)?.name || step.selector?.packageName || step.id,
-      version: step.version || assetMap.get(step.id)?.version || 0, branchName: branch.name,
-    }))),
-  ];
+  });
+  for (const subflow of source.subflows || []) {
+    const current = (data.flows || []).find(flow => flow.id === subflow.id && !flow.archived && flow.lifecycleStatus !== 'deprecated');
+    const latestVersion = current?.versions?.at(-1)?.number || 0;
+    if (!current || latestVersion !== subflow.version) outdatedDependencies.push({
+      kind: 'subflow', id: subflow.id, name: subflow.name || current?.published?.name || current?.draft?.name || subflow.id,
+      publishedVersion: subflow.version, latestVersion,
+    });
+  }
+  const uniqueOutdatedDependencies = outdatedDependencies.filter((dependency, index, all) => all.findIndex(entry => (entry.kind || 'asset') === (dependency.kind || 'asset') && (entry.id || entry.nodeId) === (dependency.id || dependency.nodeId)) === index);
+  const graphMode = Boolean(source.graph?.nodes);
+  const parallelNodes = graphMode ? source.graph.nodes.filter(node => node.type === 'parallel') : [];
+  const presentedSteps = graphMode
+    ? source.graph.nodes.filter(node => node.type === 'step').map((node, index) => ({
+        order: index + 1, type: node.step.type, id: node.step.id,
+        name: node.step.name || assetMap.get(node.step.id)?.name || node.step.selector?.packageName || node.step.id,
+        version: node.step.version || assetMap.get(node.step.id)?.version || 0, branchName: '图节点',
+      }))
+    : [
+        ...(source.steps || []).map((step, index) => ({
+          order: index + 1, type: step.type, id: step.id,
+          name: step.name || assetMap.get(step.id)?.name || step.selector?.packageName || step.id,
+          version: step.version || assetMap.get(step.id)?.version || 0, branchName: null,
+        })),
+        ...flowBranches(source).flatMap(branch => (branch.steps || []).map((step, index) => ({
+          order: index + 1, type: step.type, id: step.id,
+          name: step.name || assetMap.get(step.id)?.name || step.selector?.packageName || step.id,
+          version: step.version || assetMap.get(step.id)?.version || 0, branchName: branch.name,
+        }))),
+      ];
   return {
     id: item.id,
     name: source.name || item.draft.name,
@@ -352,15 +494,20 @@ export function projectRuleset(item, data) {
     inputs: ['RuleInput'],
     outputs: ['RuleInput'],
     packages,
-    branchCount: (source.branches || []).length,
-    stepCount: flowSteps.length,
-    steps: flowSteps,
-    sequential: true,
+    branchCount: flowBranches(source).length + parallelNodes.reduce((total, node) => total + node.branches.length, 0),
+    gatewayCount: flowGateways(source).length,
+    parallelCount: parallelNodes.length,
+    joinCount: graphMode ? source.graph.nodes.filter(node => node.type === 'join').length : 0,
+    stepCount: presentedSteps.length,
+    steps: presentedSteps,
+    sequential: parallelNodes.length === 0,
     revision: item.revision || 1,
     status: assetWorkflowStatus(item, data.changeSets || []),
     version: item.versions.at(-1)?.number || 0,
-    needsRepublish: outdatedDependencies.length > 0,
-    outdatedDependencies,
+    owner: assetOwner(item),
+    ...presentedGovernance(item),
+    needsRepublish: uniqueOutdatedDependencies.length > 0,
+    outdatedDependencies: uniqueOutdatedDependencies,
     updatedAt: item.updatedAt,
   };
 }
@@ -373,6 +520,10 @@ export function projectFlowDetail(item, data) {
     draft: structuredClone(item.draft),
     availableAssets: projectFlowAssets(data),
     availablePackages: projectFlowPackages(data),
+    availableFlows: (data.flows || [])
+      .filter(flow => flow.id !== item.id && !flow.archived && flow.lifecycleStatus !== 'deprecated' && flow.published && flow.versions?.length)
+      .map(flow => ({ id: flow.id, name: flow.published.name || flow.draft.name, version: flow.versions.at(-1).number }))
+      .sort((left, right) => left.name.localeCompare(right.name)),
   };
 }
 
@@ -398,6 +549,8 @@ export function projectEventStreamSummary(item) {
     statementLabels,
     updatedAt: item.updatedAt,
     modifiedBy: item.updatedBy || 'Team Server',
+    owner: assetOwner(item),
+    ...presentedGovernance(item),
   };
 }
 

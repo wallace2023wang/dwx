@@ -3,6 +3,7 @@ import {
   Braces,
   FileText,
   GitBranch,
+  Calculator,
   LoaderCircle,
   RefreshCw,
   Search,
@@ -16,6 +17,8 @@ import { type ExploreItem, type ExploreKind, useExploreCatalog } from '../api/ex
 const kindMeta: Record<ExploreKind, { label: string; icon: typeof FileText; className: string }> = {
   rule: { label: 'BAL 规则', icon: FileText, className: 'bg-brand-primary-l text-brand-primary' },
   'decision-table': { label: '决策表', icon: Table2, className: 'bg-[#ede9fe] text-[#6d28d9]' },
+  'decision-tree': { label: '决策树', icon: GitBranch, className: 'bg-[#e8f5e9] text-[#287a3d]' },
+  scorecard: { label: '计分卡', icon: Calculator, className: 'bg-[#fff3e0] text-[#a15c00]' },
   flow: { label: '规则集', icon: GitBranch, className: 'bg-[#e8f5e9] text-env-production' },
   'event-stream': { label: '事件流', icon: GitBranch, className: 'bg-[#e8f5e9] text-env-production' },
   bom: { label: 'BOM 字段', icon: Braces, className: 'bg-[#fff3e0] text-[#a15c00]' },
@@ -112,7 +115,7 @@ export default function Explore() {
             <select className="control-input" aria-label="筛选资产类型" value={kind} onChange={event => updateParam('type', event.target.value)}>
               <option value="all">全部类型</option>
               <option value="rule">BAL 规则</option>
-              <option value="decision-table">决策表</option>
+              <option value="decision-table">决策表</option><option value="decision-tree">决策树</option><option value="scorecard">计分卡</option>
               <option value="flow">规则集</option>
               <option value="event-stream">事件流</option>
               <option value="bom">BOM 字段</option>

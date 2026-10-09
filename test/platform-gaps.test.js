@@ -125,8 +125,14 @@ test('PLATFORM-GAP-R4: settle options and feedback mappings reach the active RES
   const env = await startTestEnv();
   try {
     const rule = await publishedRule(env, '多轮执行规则');
+    const flow = (await env.request('/api/projects/default/flows', 'POST')).body;
+    const savedFlow = (await env.request(`/api/projects/default/flows/${flow.id}`, 'PUT', {
+      revision: flow.revision,
+      draft: { ...flow.draft, name: '多轮执行规则集', steps: [{ nodeId: 'settle-rule', type: 'rule', id: rule.id }] },
+    })).body;
+    const publishedFlow = (await env.request(`/api/projects/default/flows/${flow.id}/publish`, 'POST', { revision: savedFlow.revision })).body;
     const release = (await env.request('/api/projects/default/releases', 'POST', {
-      decisionService: 'default/settle', name: '多轮 Release', target: { type: 'rule', id: rule.id },
+      decisionService: 'default/settle', name: '多轮 Release', target: { type: 'flow', id: publishedFlow.id },
     })).body;
     await env.request(`/api/projects/default/releases/${release.id}/deploy`, 'POST', { environment: 'local' });
     const executed = await env.request('/api/projects/default/services/settle/execute', 'POST', {

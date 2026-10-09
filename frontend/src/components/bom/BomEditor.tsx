@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react'
 import { AlertTriangle, Check, Pencil, Plus, Save, Trash2, X } from 'lucide-react'
 import { bomDrlPreview, loadBomReferences, type BomReference, type SaveBomResult } from '../../api/bom'
-import type { BomDataType, BomFactType, BomField, BomModel } from '../../types'
+import type { BomDataType, BomDomain, BomFactType, BomField, BomMethod, BomModel, RuleActionValueExpression } from '../../types'
+import { ExpressionEditor } from '../assets/BalRuleView'
 import DrlPreview from './DrlPreview'
 
 interface BomEditorProps {
@@ -82,10 +83,11 @@ function fieldKind(type: BomDataType) {
   return 'text'
 }
 
-function FieldDialog({ fact, allFields, initial, onClose, onSubmit }: {
+function FieldDialog({ fact, allFields, initial, domains = [], onClose, onSubmit }: {
   fact: BomFactType
   allFields: BomField[]
   initial?: BomField
+  domains?: BomDomain[]
   onClose: () => void
   onSubmit: (field: BomField) => void
 }) {
@@ -97,6 +99,7 @@ function FieldDialog({ fact, allFields, initial, onClose, onSubmit }: {
   const [min, setMin] = useState(initial?.min?.toString() || '')
   const [max, setMax] = useState(initial?.max?.toString() || '')
   const [enumText, setEnumText] = useState(initial?.enum?.join('，') || '')
+  const [domainId, setDomainId] = useState(initial?.domainId || '')
   const [maxLength, setMaxLength] = useState(initial?.maxLength?.toString() || '')
   const [regex, setRegex] = useState(initial?.regex || '')
   const [allowDuplicates, setAllowDuplicates] = useState(initial?.allowDuplicates ?? true)
@@ -108,7 +111,7 @@ function FieldDialog({ fact, allFields, initial, onClose, onSubmit }: {
     ? '字段名需转换为 2-32 位小驼峰英文标识符'
     : keyTaken ? '字段名在 BOM 中必须全局唯一'
       : !label.trim() ? '请填写业务说法'
-        : type === 'Enum' && enumValues.length < 1 ? 'Enum 至少需要一个枚举值'
+        : type === 'Enum' && !domainId && enumValues.length < 1 ? 'Enum 至少需要一个静态枚举值或动态域'
           : min && max && Number(min) > Number(max) ? '最小值不能大于最大值' : null
   const typeChanged = initial && initial.type !== type
 
@@ -120,7 +123,8 @@ function FieldDialog({ fact, allFields, initial, onClose, onSubmit }: {
     runtimeType: type === 'Decimal' ? 'Double' : ['Enum', 'Date', 'List<String>'].includes(type) ? 'String' : type as BomField['runtimeType'],
     direction,
     references: initial?.references || 0,
-    enum: type === 'Enum' ? enumValues : null,
+    enum: type === 'Enum' && !domainId ? enumValues : null,
+    domainId: type === 'Enum' && domainId ? domainId : null,
     unit: ['Integer', 'Decimal'].includes(type) ? unit.trim() || null : null,
     min: ['Integer', 'Decimal'].includes(type) && min !== '' ? Number(min) : null,
     max: ['Integer', 'Decimal'].includes(type) && max !== '' ? Number(max) : null,
@@ -146,7 +150,7 @@ function FieldDialog({ fact, allFields, initial, onClose, onSubmit }: {
           <label className="text-[11px] font-semibold text-ink-2">最大值<input className="control-input mt-1 h-9 font-mono text-xs" type="number" step={type === 'Integer' ? 1 : 0.01} value={max} onChange={event => setMax(event.target.value)} /></label>
           <label className="text-[11px] font-semibold text-ink-2">单位<input className="control-input mt-1 h-9 text-xs" value={unit} onChange={event => setUnit(event.target.value)} placeholder="元 / 岁 / 月" /></label>
         </>}
-        {type === 'Enum' && <label className="col-span-2 text-[11px] font-semibold text-ink-2 max-sm:col-span-1">枚举值<input className="control-input mt-1 h-9 text-xs" value={enumText} onChange={event => setEnumText(event.target.value)} placeholder="低，中，高，拒绝" /><span className="mt-1 block font-normal text-ink-3">{enumValues.length} 个枚举值</span></label>}
+        {type === 'Enum' && <><label className="text-[11px] font-semibold text-ink-2">值域来源<select className="control-input mt-1 h-9 text-xs" value={domainId ? `domain:${domainId}` : 'static'} onChange={event => setDomainId(event.target.value.startsWith('domain:') ? event.target.value.slice(7) : '')}><option value="static">字段静态枚举</option>{domains.map(domain => <option key={domain.id} value={`domain:${domain.id}`}>动态域 · {domain.label}</option>)}</select></label>{!domainId && <label className="col-span-2 text-[11px] font-semibold text-ink-2 max-sm:col-span-1">枚举值<input className="control-input mt-1 h-9 text-xs" value={enumText} onChange={event => setEnumText(event.target.value)} placeholder="低，中，高，拒绝" /><span className="mt-1 block font-normal text-ink-3">{enumValues.length} 个枚举值</span></label>}</>}
         {type === 'String' && <>
           <label className="text-[11px] font-semibold text-ink-2">最大长度<input className="control-input mt-1 h-9 font-mono text-xs" type="number" min={1} value={maxLength} onChange={event => setMaxLength(event.target.value)} /></label>
           <label className="text-[11px] font-semibold text-ink-2">正则约束<input className="control-input mt-1 h-9 font-mono text-xs" value={regex} onChange={event => setRegex(event.target.value)} placeholder="可选" /></label>
@@ -172,7 +176,45 @@ function impactItems(original: BomModel, draft: BomModel): ImpactItem[] {
     const removedEnums = (previous.field.enum || []).filter(value => !(next.field.enum || []).includes(value))
     if (removedEnums.length && previous.field.references > 0) impacts.push({ key: `enum:${key}`, text: `${previous.fact.name}.${key} 删除枚举值：${removedEnums.join('、')}` })
   }
+  const originalDomains = new Map((original.domains || []).map(domain => [domain.id, domain]))
+  const draftDomains = new Map((draft.domains || []).map(domain => [domain.id, domain]))
+  for (const [id, domain] of originalDomains) {
+    const next = draftDomains.get(id)
+    if (!next) impacts.push({ key: `domain-remove:${id}`, text: `删除动态域 ${domain.label}（${id}）` })
+    else {
+      const removed = domain.values.filter(value => !next.values.includes(value))
+      if (removed.length) impacts.push({ key: `domain-values:${id}`, text: `动态域 ${domain.label} 删除值：${removed.join('、')}` })
+    }
+  }
+  const originalMethods = new Map((original.methods || []).map(method => [method.name, method]))
+  const draftMethods = new Map((draft.methods || []).map(method => [method.name, method]))
+  for (const [name, method] of originalMethods) {
+    const next = draftMethods.get(name)
+    if (!next) impacts.push({ key: `method-remove:${name}`, text: `删除业务方法 ${method.label}（${name}）` })
+    else if (JSON.stringify(method) !== JSON.stringify(next)) impacts.push({ key: `method-change:${name}`, text: `修改业务方法 ${method.label}（${name}）定义` })
+  }
   return impacts
+}
+
+function DomainDialog({ initial, domains, onClose, onSubmit }: { initial?: BomDomain; domains: BomDomain[]; onClose: () => void; onSubmit: (domain: BomDomain) => void }) {
+  const [id, setId] = useState(initial?.id || '')
+  const [label, setLabel] = useState(initial?.label || '')
+  const [values, setValues] = useState((initial?.values || []).join('，'))
+  const normalized = toCamelCase(id)
+  const parsed = values.split(/[,，\n]/).map(value => value.trim()).filter(Boolean)
+  const error = !/^[a-z][a-zA-Z0-9_]{1,31}$/.test(normalized) ? '域标识需为 2-32 位小驼峰英文' : domains.some(domain => domain.id === normalized && domain !== initial) ? '动态域标识重复' : !label.trim() ? '请填写业务名称' : !parsed.length ? '请至少填写一个值' : new Set(parsed).size !== parsed.length ? '动态域值不能重复' : null
+  return <Modal title={initial ? '编辑动态域' : '新增动态域'} onClose={onClose}><div className="space-y-3 p-4"><label className="block text-[11px] font-semibold text-ink-2">域标识<input className="control-input mt-1 h-9 font-mono text-xs" value={id} onChange={event => setId(event.target.value)} placeholder="riskLevels" /></label><label className="block text-[11px] font-semibold text-ink-2">业务名称<input className="control-input mt-1 h-9 text-xs" value={label} onChange={event => setLabel(event.target.value)} placeholder="风险等级域" /></label><label className="block text-[11px] font-semibold text-ink-2">值列表<textarea className="control-input mt-1 min-h-24 py-2 text-xs" value={values} onChange={event => setValues(event.target.value)} placeholder="低，中，高" /></label>{error && <p className="text-[11px] text-[#c62828]">{error}</p>}</div><footer className="flex justify-end gap-2 border-t border-ink-border bg-[#fafafa] px-4 py-3"><button className="h-8 border border-ink-border bg-white px-3 text-[11px]" onClick={onClose}>取消</button><button className="h-8 bg-brand-primary px-3 text-[11px] text-white disabled:opacity-40" disabled={Boolean(error)} onClick={() => onSubmit({ id: normalized, label: label.trim(), values: parsed })}>应用</button></footer></Modal>
+}
+
+function MethodDialog({ initial, methods, fields, onClose, onSubmit }: { initial?: BomMethod; methods: BomMethod[]; fields: BomField[]; onClose: () => void; onSubmit: (method: BomMethod) => void }) {
+  const [name, setName] = useState(initial?.name || '')
+  const [label, setLabel] = useState(initial?.label || '')
+  const [returnType, setReturnType] = useState<'Integer' | 'Decimal'>(initial?.returnType || 'Decimal')
+  const [description, setDescription] = useState(initial?.description || '')
+  const [expression, setExpression] = useState<RuleActionValueExpression>(initial?.expression || { type: 'field', field: fields.find(field => field.direction === 'input' && ['Integer', 'Decimal'].includes(field.type))?.key || '', fieldSource: 'bom' })
+  const normalized = toCamelCase(name)
+  const error = !/^[a-z][a-zA-Z0-9_]{1,31}$/.test(normalized) ? '方法名需为 2-32 位小驼峰英文' : methods.some(method => method.name === normalized && method !== initial) ? '方法名重复' : !label.trim() ? '请填写业务名称' : null
+  return <Modal title={initial ? '编辑业务方法' : '新增业务方法'} onClose={onClose} width="max-w-2xl"><div className="grid grid-cols-2 gap-3 p-4"><label className="text-[11px] font-semibold text-ink-2">方法名<input className="control-input mt-1 h-9 font-mono text-xs" value={name} onChange={event => setName(event.target.value)} placeholder="recommendedLimit" /></label><label className="text-[11px] font-semibold text-ink-2">业务名称<input className="control-input mt-1 h-9 text-xs" value={label} onChange={event => setLabel(event.target.value)} placeholder="建议授信额度" /></label><label className="text-[11px] font-semibold text-ink-2">返回类型<select className="control-input mt-1 h-9 text-xs" value={returnType} onChange={event => setReturnType(event.target.value as 'Integer' | 'Decimal')}><option value="Integer">Integer</option><option value="Decimal">Decimal</option></select></label><label className="text-[11px] font-semibold text-ink-2">说明<input className="control-input mt-1 h-9 text-xs" value={description} onChange={event => setDescription(event.target.value)} /></label><div className="col-span-2"><p className="mb-1 text-[11px] font-semibold text-ink-2">计算表达式</p><ExpressionEditor expression={expression} fields={fields} variables={[]} onChange={setExpression} /></div>{error && <p className="col-span-2 text-[11px] text-[#c62828]">{error}</p>}</div><footer className="flex justify-end gap-2 border-t border-ink-border bg-[#fafafa] px-4 py-3"><button className="h-8 border border-ink-border bg-white px-3 text-[11px]" onClick={onClose}>取消</button><button className="h-8 bg-brand-primary px-3 text-[11px] text-white disabled:opacity-40" disabled={Boolean(error)} onClick={() => onSubmit({ name: normalized, label: label.trim(), returnType, description: description.trim(), expression })}>应用</button></footer></Modal>
 }
 
 export default function BomEditor({ model, projectId = 'default', saving, onSave, onCancel, onSaved }: BomEditorProps) {
@@ -184,6 +226,8 @@ export default function BomEditor({ model, projectId = 'default', saving, onSave
   const [saveConfirm, setSaveConfirm] = useState(false)
   const [acknowledged, setAcknowledged] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [domainDialog, setDomainDialog] = useState<number | 'new' | null>(null)
+  const [methodDialog, setMethodDialog] = useState<number | 'new' | null>(null)
   const allFields = draft.factTypes.flatMap(fact => fact.fields)
   const impacts = useMemo(() => impactItems(model, draft), [model, draft])
   const emptyFact = draft.factTypes.find(fact => fact.fields.length === 0)
@@ -270,6 +314,8 @@ export default function BomEditor({ model, projectId = 'default', saving, onSave
         </div>
 
         <div className="min-w-0 space-y-[14px]">
+          <section className="border border-ink-border bg-white"><header className="flex items-center border-b border-ink-border bg-[#fafafa] px-3 py-2 text-xs font-semibold">动态域<span className="ml-2 text-[10px] font-normal text-ink-3">字段可复用，随 BOM 版本冻结</span><button type="button" className="ml-auto inline-flex h-7 items-center gap-1 px-2 text-[11px] text-brand-primary hover:bg-brand-primary-l" onClick={() => setDomainDialog('new')}><Plus size={12} />新增</button></header><div>{(draft.domains || []).length ? (draft.domains || []).map((domain, index) => <div key={domain.id} className="flex min-h-10 items-center gap-2 border-b border-[#e8e8e8] px-3 text-[11px]"><code className="font-mono text-brand-primary">{domain.id}</code><span>{domain.label}</span><span className="truncate text-ink-3">{domain.values.join('、')}</span><button className="ml-auto text-ink-3 hover:text-brand-primary" onClick={() => setDomainDialog(index)}><Pencil size={12} /></button><button className="text-ink-3 hover:text-[#c62828]" onClick={() => setDraft(current => ({ ...current, domains: (current.domains || []).filter((_, position) => position !== index) }))}><Trash2 size={12} /></button></div>) : <p className="px-3 py-3 text-[11px] text-ink-3">暂无动态域。</p>}</div></section>
+          <section className="border border-ink-border bg-white"><header className="flex items-center border-b border-ink-border bg-[#fafafa] px-3 py-2 text-xs font-semibold">业务方法<span className="ml-2 text-[10px] font-normal text-ink-3">规则动作可复用的安全数值计算</span><button type="button" className="ml-auto inline-flex h-7 items-center gap-1 px-2 text-[11px] text-brand-primary hover:bg-brand-primary-l" onClick={() => setMethodDialog('new')}><Plus size={12} />新增</button></header><div>{(draft.methods || []).length ? (draft.methods || []).map((method, index) => <div key={method.name} className="flex min-h-10 items-center gap-2 border-b border-[#e8e8e8] px-3 text-[11px]"><code className="font-mono text-brand-primary">{method.name}()</code><span>{method.label}</span><span className="text-ink-3">→ {method.returnType}</span><button className="ml-auto text-ink-3 hover:text-brand-primary" onClick={() => setMethodDialog(index)}><Pencil size={12} /></button><button className="text-ink-3 hover:text-[#c62828]" onClick={() => setDraft(current => ({ ...current, methods: (current.methods || []).filter((_, position) => position !== index) }))}><Trash2 size={12} /></button></div>) : <p className="px-3 py-3 text-[11px] text-ink-3">暂无业务方法。</p>}</div></section>
           <section className="overflow-hidden border border-ink-border bg-white">
             <header className="border-b border-ink-border bg-[#fafafa] px-3 py-2 text-xs font-semibold">业务词汇表</header>
             <div className="overflow-x-auto"><table className="w-full min-w-[620px] border-collapse text-left text-xs"><thead className="bg-[#fafafa] text-[11px] text-ink-2"><tr><th className="border-b border-ink-border px-3 py-2">BOM 属性</th><th className="border-b border-ink-border px-3 py-2">业务说法</th><th className="border-b border-ink-border px-3 py-2">类型</th><th className="w-16 border-b border-ink-border px-3 py-2 text-right">引用</th></tr></thead><tbody>
@@ -281,7 +327,9 @@ export default function BomEditor({ model, projectId = 'default', saving, onSave
       </div>
 
       {factDialog && <FactDialog facts={draft.factTypes} onClose={() => setFactDialog(false)} onSubmit={fact => { setDraft(current => ({ ...current, factTypes: [...current.factTypes, fact] })); setFactDialog(false) }} />}
-      {fieldDialog && <FieldDialog key={`${fieldDialog.factIndex}:${fieldDialog.fieldIndex}:${fieldDialog.mode}`} fact={draft.factTypes[fieldDialog.factIndex]} allFields={allFields} initial={fieldDialog.mode === 'edit' ? draft.factTypes[fieldDialog.factIndex].fields[fieldDialog.fieldIndex] : undefined} onClose={() => setFieldDialog(null)} onSubmit={field => { setDraft(current => ({ ...current, factTypes: current.factTypes.map((fact, index) => index === fieldDialog.factIndex ? { ...fact, fields: fieldDialog.mode === 'edit' ? fact.fields.map((item, position) => position === fieldDialog.fieldIndex ? field : item) : [...fact.fields, field] } : fact) })); setFieldDialog(null) }} />}
+      {fieldDialog && <FieldDialog key={`${fieldDialog.factIndex}:${fieldDialog.fieldIndex}:${fieldDialog.mode}`} fact={draft.factTypes[fieldDialog.factIndex]} allFields={allFields} domains={draft.domains || []} initial={fieldDialog.mode === 'edit' ? draft.factTypes[fieldDialog.factIndex].fields[fieldDialog.fieldIndex] : undefined} onClose={() => setFieldDialog(null)} onSubmit={field => { setDraft(current => ({ ...current, factTypes: current.factTypes.map((fact, index) => index === fieldDialog.factIndex ? { ...fact, fields: fieldDialog.mode === 'edit' ? fact.fields.map((item, position) => position === fieldDialog.fieldIndex ? field : item) : [...fact.fields, field] } : fact) })); setFieldDialog(null) }} />}
+      {domainDialog != null && <DomainDialog initial={domainDialog === 'new' ? undefined : (draft.domains || [])[domainDialog]} domains={draft.domains || []} onClose={() => setDomainDialog(null)} onSubmit={domain => { setDraft(current => ({ ...current, domains: domainDialog === 'new' ? [...(current.domains || []), domain] : (current.domains || []).map((item, index) => index === domainDialog ? domain : item) })); setDomainDialog(null) }} />}
+      {methodDialog != null && <MethodDialog initial={methodDialog === 'new' ? undefined : (draft.methods || [])[methodDialog]} methods={draft.methods || []} fields={allFields} onClose={() => setMethodDialog(null)} onSubmit={method => { setDraft(current => ({ ...current, methods: methodDialog === 'new' ? [...(current.methods || []), method] : (current.methods || []).map((item, index) => index === methodDialog ? method : item) })); setMethodDialog(null) }} />}
       {deleteTarget && <Modal title={deleteTarget.fieldIndex == null ? '删除事实类型' : '删除字段'} onClose={() => setDeleteTarget(null)}><div className="space-y-3 p-4 text-xs"><p>确定删除 <b>{deleteTarget.fieldIndex == null ? draft.factTypes[deleteTarget.factIndex].label : `${draft.factTypes[deleteTarget.factIndex].name}.${draft.factTypes[deleteTarget.factIndex].fields[deleteTarget.fieldIndex].key}`}</b>？</p>{references == null ? <p className="text-ink-3">正在读取引用...</p> : references.length ? <><p className="text-[#a31515]">该对象被以下 {references.length} 个资产引用，删除后资产将标红：</p><ul className="max-h-40 overflow-auto border border-[#ef9a9a] bg-[#fffafa] p-2">{references.map(reference => <li key={`${reference.type}:${reference.id}`} className="flex justify-between py-1"><span>{reference.name}</span><span className="text-[10px] text-ink-3">{reference.type === 'decision-table' ? '决策表' : reference.type === 'flow' ? '规则集' : '规则'}</span></li>)}</ul></> : <p className="text-ink-3">没有资产引用该对象。</p>}</div><footer className="flex justify-end gap-2 border-t border-ink-border bg-[#fafafa] px-4 py-3"><button className="h-8 border border-ink-border bg-white px-3 text-[11px]" onClick={() => setDeleteTarget(null)}>取消</button><button className="h-8 bg-[#c62828] px-3 text-[11px] text-white disabled:opacity-40" disabled={references == null} onClick={confirmDelete}>确认删除</button></footer></Modal>}
       {saveConfirm && <Modal title="确认 BOM 变更影响" onClose={() => setSaveConfirm(false)}><div className="space-y-3 p-4 text-xs"><p>以下变更可能使现有规则失效：</p><ul className="border border-[#f3c65f] bg-[#fff8e1] p-2">{impacts.map(impact => <li key={impact.key} className="flex gap-2 py-1"><AlertTriangle size={13} className="mt-0.5 shrink-0" />{impact.text}</li>)}</ul><label className="flex items-start gap-2"><input className="mt-0.5" type="checkbox" checked={acknowledged} onChange={event => setAcknowledged(event.target.checked)} /><span>我已知晓这些影响，并确认保存 BOM。</span></label></div><footer className="flex justify-end gap-2 border-t border-ink-border bg-[#fafafa] px-4 py-3"><button className="h-8 border border-ink-border bg-white px-3 text-[11px]" onClick={() => setSaveConfirm(false)}>取消</button><button className="inline-flex h-8 items-center gap-1 bg-brand-primary px-3 text-[11px] text-white disabled:opacity-40" disabled={!acknowledged || saving} onClick={() => void commit(true)}><Check size={13} />确认保存</button></footer></Modal>}
     </>

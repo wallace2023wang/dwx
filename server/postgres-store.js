@@ -56,6 +56,11 @@ export class PostgresStore {
       deprecatedBy: row.deprecated_by || null,
       deprecationReason: row.deprecation_reason || null,
       replacedByAssetId: row.replaced_by_asset_id || null,
+      ownerId: row.owner_id || null,
+      ownerName: row.owner_name || null,
+      tags: Array.isArray(row.tags) ? row.tags : [],
+      effectiveFrom: iso(row.effective_from) || null,
+      effectiveTo: iso(row.effective_to) || null,
       updatedAt: iso(row.updated_at),
     }, Number(row.revision)));
   }
@@ -74,12 +79,14 @@ export class PostgresStore {
         if (!existing.rowCount) {
           await client.query(`INSERT INTO assets
             (id, project_id, asset_type, revision, draft, published, archived, created_at, updated_at,
-             lifecycle_status, deprecated_at, deprecated_by, deprecation_reason, replaced_by_asset_id)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`, [
+             lifecycle_status, deprecated_at, deprecated_by, deprecation_reason, replaced_by_asset_id,
+             owner_id, owner_name, tags, effective_from, effective_to)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`, [
             asset.id, projectId, type, asset.revision || 1, asset.draft, asset.published, asset.archived === true,
             asset.revisions?.[0]?.createdAt || now, now,
             asset.lifecycleStatus || (asset.archived ? 'archived' : 'active'), asset.deprecatedAt || null,
             asset.deprecatedBy || null, asset.deprecationReason || null, asset.replacedByAssetId || null,
+            asset.ownerId || null, asset.ownerName || null, JSON.stringify(asset.tags || []), asset.effectiveFrom || null, asset.effectiveTo || null,
           ]);
         } else {
           const current = Number(existing.rows[0].revision);
@@ -87,10 +94,12 @@ export class PostgresStore {
           if (current !== expected) throw new StorageConflictError(`${type}:${asset.id}`, current);
           await client.query(`UPDATE assets SET revision = $2, draft = $3, published = $4,
             archived = $5, updated_at = $6, lifecycle_status = $7, deprecated_at = $8,
-            deprecated_by = $9, deprecation_reason = $10, replaced_by_asset_id = $11 WHERE id = $1`, [
+            deprecated_by = $9, deprecation_reason = $10, replaced_by_asset_id = $11,
+            owner_id = $12, owner_name = $13, tags = $14, effective_from = $15, effective_to = $16 WHERE id = $1`, [
             asset.id, asset.revision || current, asset.draft, asset.published, asset.archived === true, now,
             asset.lifecycleStatus || (asset.archived ? 'archived' : 'active'), asset.deprecatedAt || null,
             asset.deprecatedBy || null, asset.deprecationReason || null, asset.replacedByAssetId || null,
+            asset.ownerId || null, asset.ownerName || null, JSON.stringify(asset.tags || []), asset.effectiveFrom || null, asset.effectiveTo || null,
           ]);
         }
         for (const revision of asset.revisions || []) {

@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { newFlow, validateFlow } from '../../shared/assets.js';
 import { nextRulesetName, rulesetNameConflict } from '../../shared/ruleset-names.js';
 import { bodyOf, operationError, reply, revisionConflict } from '../http-utils.js';
+import { assignAssetOwner, claimAssetDraft, draftOwnershipError } from '../asset-ownership.js';
 
 export function createProjectFlowHandler({
   canAccessAsset,
@@ -15,6 +16,7 @@ export function createProjectFlowHandler({
   advanceAssetRevision,
   compileProjectFlow,
   publishProjectFlow,
+  actorOf,
 }) {
   return async function handleProjectFlows(req, res, segments, projectId, data, packageRecords) {
     if (segments.length === 4 && segments[3] === 'rulesets' && req.method === 'GET') {
@@ -31,6 +33,7 @@ export function createProjectFlowHandler({
         const item = initializeAssetRevision({
           id: crypto.randomUUID(), draft, published: null, versions: [], archived: false, updatedAt: now,
         });
+        claimAssetDraft(item, req.principal);
         flows.unshift(item);
         return { item };
       }, projectId);
@@ -49,13 +52,21 @@ export function createProjectFlowHandler({
       if (locked) return reply(res, locked.status, { error: locked.error, changeSetId: locked.changeSetId });
       const payload = await bodyOf(req);
       if (!Number.isInteger(payload?.revision) || payload.revision < 1) return reply(res, 400, { error: '修订号无效' });
-      const validation = validateFlow(payload?.draft, data.rules, data.tables, data.bom, packageRecords, { allowEmptyRuleGroups: true });
+      const validation = validateFlow(payload?.draft, data.rules, data.tables, data.bom, packageRecords, {
+        allowEmptyRuleGroups: true,
+        currentFlowId: id,
+        flows: data.flows,
+        projectVariables: data.project?.variables,
+      });
       if (validation) return reply(res, 400, { error: validation });
       const result = await mutateAssets('flows', flows => {
         const item = flows.find(flow => flow.id === id && !flow.archived);
         if (!item) return { status: 404, error: '规则集不存在' };
+        const ownership = draftOwnershipError(req.principal, item);
+        if (ownership) return ownership;
         const conflict = revisionConflict(item, payload.revision);
         if (conflict) return conflict;
+        claimAssetDraft(item, req.principal);
         const nameConflict = rulesetNameConflict(flows, item, payload.draft.name, { allowUnchanged: true });
         if (nameConflict) return nameConflict;
         item.draft = structuredClone(payload.draft);
@@ -72,14 +83,38 @@ export function createProjectFlowHandler({
       const item = data.flows.find(flow => flow.id === id);
       if (!item) return reply(res, 404, { error: '规则集不存在' });
       const payload = await bodyOf(req);
+      if (segments[5] === 'transfer-owner') {
+        const ownerId = typeof payload?.ownerId === 'string' ? payload.ownerId.trim() : '';
+        const ownerName = typeof payload?.ownerName === 'string' ? payload.ownerName.trim() : ownerId;
+        if (!ownerId || ownerId.length > 120 || ownerName.length > 120) return reply(res, 400, { error: '负责人无效' });
+        const result = await mutateAssets('flows', flows => {
+          const target = flows.find(flow => flow.id === id && !flow.archived);
+          if (!target) return { status: 404, error: '规则集不存在' };
+          const ownership = draftOwnershipError(req.principal, target);
+          if (ownership) return ownership;
+          const conflict = revisionConflict(target, payload?.revision);
+          if (conflict) return conflict;
+          const previousOwnerId = target.ownerId || null;
+          assignAssetOwner(target, ownerId, ownerName);
+          advanceAssetRevision(target, 'owner-transferred');
+          return { item: target, previousOwnerId };
+        }, projectId);
+        if (result.error) return reply(res, result.status, operationError(result));
+        await appendAuditEvent('asset.owner-transferred', 'flow', id, `转交负责人：${result.item.draft.name}`, {
+          revision: result.item.revision, previousOwnerId: result.previousOwnerId, ownerId, actor: actorOf(req),
+        }, req);
+        return reply(res, 200, projectFlowDetail(result.item, data));
+      }
       if (segments[5] === 'compile') {
         const result = await compileProjectFlow(item, payload, data);
         return result.error ? reply(res, result.status, operationError(result)) : reply(res, 200, result.result);
       }
       if (segments[5] === 'publish') {
+        const ownership = draftOwnershipError(req.principal, item);
+        if (ownership) return reply(res, ownership.status, { error: ownership.error });
         const locked = reviewLock(data.changeSets, id);
         if (locked) return reply(res, locked.status, { error: locked.error, changeSetId: locked.changeSetId });
-        const result = await publishProjectFlow(id, payload?.revision, data, projectId);
+        const result = await publishProjectFlow(id, payload?.revision, data, projectId, req.principal);
         if (result.error) return reply(res, result.status, operationError(result));
         await appendAuditEvent('asset.publish', 'flow', id, `发布规则集：${result.item.draft.name}`, {
           revision: result.item.revision, version: result.item.versions.at(-1)?.number || null,

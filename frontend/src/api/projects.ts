@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import axios from 'axios'
 import type { AssetDetail, AssetDraft, DecisionTableAnalysis, DecisionTableDraft, PackageNode, Project } from '../types'
 import { http } from './client'
+import { requestError } from './errors'
 
 function normalizeServerProject(project: Project): Project {
   const parsed = new Date(project.updatedAt)
@@ -35,13 +35,6 @@ export async function loadPackages(projectId: string, includeArchived = false): 
 async function loadAssetDetail(projectId: string, assetId: string): Promise<AssetDetail | null> {
   const { data } = await http.get<AssetDetail>(`/projects/${encodeURIComponent(projectId)}/rules/${encodeURIComponent(assetId)}`)
   return data
-}
-
-function requestError(error: unknown): Error {
-  if (axios.isAxiosError<{ error?: string }>(error)) {
-    return new Error(error.response?.data?.error || error.message)
-  }
-  return error instanceof Error ? error : new Error('操作失败')
 }
 
 async function saveAsset(projectId: string, assetId: string, revision: number, draft: AssetDraft): Promise<AssetDetail> {
@@ -80,7 +73,7 @@ async function submitAsset(projectId: string, assetId: string, revision: number)
   }
 }
 
-async function createAsset(projectId: string, payload: { type: 'rule' | 'decision-table'; name?: string; category?: string; conditionFields?: string[]; actionFields?: string[]; hitPolicy?: string }): Promise<AssetDetail> {
+async function createAsset(projectId: string, payload: { type: 'rule' | 'decision-table' | 'decision-tree' | 'scorecard'; name?: string; category?: string; conditionFields?: string[]; actionFields?: string[]; hitPolicy?: string }): Promise<AssetDetail> {
   try {
     const { data } = await http.post<AssetDetail>(`/projects/${encodeURIComponent(projectId)}/rules`, payload)
     return data
@@ -164,7 +157,7 @@ export function useAssetDetail(projectId: string | undefined, assetId: string | 
 export function useCreateAsset(projectId: string | undefined) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (payload: { type: 'rule' | 'decision-table'; name?: string; category?: string; conditionFields?: string[]; actionFields?: string[]; hitPolicy?: string }) => {
+    mutationFn: (payload: { type: 'rule' | 'decision-table' | 'decision-tree' | 'scorecard'; name?: string; category?: string; conditionFields?: string[]; actionFields?: string[]; hitPolicy?: string }) => {
       if (!projectId) throw new Error('项目不存在')
       return createAsset(projectId, payload)
     },
@@ -192,6 +185,51 @@ export function useRenameAsset(projectId: string | undefined) {
     onSuccess: async detail => {
       queryClient.setQueryData(['projects', projectId, 'assets', detail.id], detail)
       await queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'packages'] })
+    },
+  })
+}
+
+export function useTransferAssetOwner(projectId: string | undefined) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ assetId, revision, ownerId, ownerName }: { assetId: string; revision: number; ownerId: string; ownerName?: string }) => {
+      if (!projectId) throw new Error('项目不存在')
+      try {
+        return (await http.post<AssetDetail>(
+          `/projects/${encodeURIComponent(projectId)}/rules/${encodeURIComponent(assetId)}/transfer-owner`,
+          { revision, ownerId, ownerName },
+        )).data
+      } catch (error) { throw requestError(error) }
+    },
+    onSuccess: async detail => {
+      queryClient.setQueryData(['projects', projectId, 'assets', detail.id], detail)
+      await queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'packages'] })
+    },
+  })
+}
+
+export type BatchAssetType = 'rule' | 'table' | 'flow' | 'event-stream'
+export type BatchAssetItem = { id: string; type: BatchAssetType; revision: number }
+export type BatchAssetAction =
+  | { action: 'metadata'; items: BatchAssetItem[]; tags: string[]; effectiveFrom: string | null; effectiveTo: string | null }
+  | { action: 'move'; items: BatchAssetItem[]; targetPackage: string }
+  | { action: 'owner'; items: BatchAssetItem[]; ownerId: string; ownerName?: string }
+  | { action: 'archive'; items: BatchAssetItem[] }
+
+export function useBatchAssets(projectId: string | undefined) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (payload: BatchAssetAction) => {
+      if (!projectId) throw new Error('项目不存在')
+      try {
+        return (await http.post<{ ok: true; count: number }>(`/projects/${encodeURIComponent(projectId)}/assets/batch`, payload)).data
+      } catch (error) { throw requestError(error) }
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'packages'] })
+      await queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'assets'] })
+      await queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'rulesets'] })
+      await queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'event-streams'] })
     },
   })
 }

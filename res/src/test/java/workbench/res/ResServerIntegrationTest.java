@@ -11,6 +11,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.List;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -376,6 +377,216 @@ final class ResServerIntegrationTest {
       JsonNode second = call("/execute", "POST", isolated, 200);
       assertFalse(second.path("variables").path("seenA").asBoolean());
       assertFalse(second.path("facts").has("outcome"));
+    } finally {
+      call("/undeploy", "POST", JSON.createObjectNode().put("releaseId", id), 200);
+    }
+  }
+
+  @Test
+  void exclusiveChainMergesBranchesBackIntoCommonSteps() throws Exception {
+    String id = "exclusive-chain-it";
+    String declaration = """
+        package workbench
+        declare RuleInput
+          segment : String
+          stage : String
+          outcome : String
+        end
+        """;
+    ObjectNode release = releaseWithSteps(id, model(
+        "segment:String:input:true", "stage:String:output:false", "outcome:String:output:false"),
+        declaration + """
+        rule "start" when $i : RuleInput(segment == "A") then modify($i) { setStage("common") } end
+        """,
+        declaration + """
+        rule "after merge" when $i : RuleInput(stage == "branch-one") then modify($i) { setStage("merged") } end
+        """,
+        declaration + """
+        rule "first branch" when $i : RuleInput(stage == "common") then modify($i) { setStage("branch-one") } end
+        """,
+        declaration + """
+        rule "second branch" when $i : RuleInput(stage == "merged") then modify($i) { setOutcome("done") } end
+        """);
+    ObjectNode routing = release.putObject("routing");
+    routing.put("type", "exclusive-chain").put("commonStepCount", 2);
+    ArrayNode gateways = routing.putArray("gateways");
+    ObjectNode firstGateway = gateways.addObject();
+    firstGateway.put("id", "gateway-one").put("name", "准入网关").put("afterStep", 1);
+    ObjectNode firstBranch = firstGateway.putArray("branches").addObject();
+    firstBranch.put("id", "branch-one").put("name", "A 路径").put("default", false);
+    firstBranch.putObject("condition").put("field", "segment").put("operator", "==").put("value", "A");
+    firstBranch.putArray("stepIndexes").add(2);
+    ObjectNode secondGateway = gateways.addObject();
+    secondGateway.put("id", "gateway-two").put("name", "复核网关").put("afterStep", 2);
+    ObjectNode secondBranch = secondGateway.putArray("branches").addObject();
+    secondBranch.put("id", "branch-two").put("name", "完成路径").put("default", false);
+    secondBranch.putObject("condition").put("field", "segment").put("operator", "==").put("value", "A");
+    secondBranch.putArray("stepIndexes").add(3);
+    release.put("checksum", ResServer.checksum(release));
+    try {
+      call("/deploy", "POST", release, 201);
+      ObjectNode request = JSON.createObjectNode();
+      request.put("releaseId", id).putObject("facts").put("segment", "A");
+      JsonNode executed = call("/execute", "POST", request, 200);
+      assertEquals("done", executed.path("facts").path("outcome").asText(), executed.toPrettyString());
+      assertFalse(executed.has("path"));
+      assertEquals(2, executed.path("paths").size());
+      assertEquals("branch-one", executed.path("paths").get(0).path("branchId").asText());
+      assertEquals("branch-two", executed.path("paths").get(1).path("branchId").asText());
+      assertEquals(6, executed.path("trace").size());
+      assertEquals("common:0", executed.path("trace").get(0).path("nodeId").asText());
+      assertEquals("gateway-one", executed.path("trace").get(1).path("nodeId").asText());
+      assertEquals("branch:branch-one:0", executed.path("trace").get(2).path("nodeId").asText());
+      assertEquals("common:1", executed.path("trace").get(3).path("nodeId").asText());
+      assertEquals("gateway-two", executed.path("trace").get(4).path("nodeId").asText());
+      assertEquals("branch:branch-two:0", executed.path("trace").get(5).path("nodeId").asText());
+    } finally {
+      call("/undeploy", "POST", JSON.createObjectNode().put("releaseId", id), 200);
+    }
+  }
+
+  @Test
+  void exclusiveDagExecutesNestedGatewaysAndMergeNode() throws Exception {
+    String id = "exclusive-dag-it";
+    String declaration = """
+        package workbench
+        declare RuleInput
+          segment : String
+          stage : String
+          outcome : String
+        end
+        """;
+    ObjectNode release = releaseWithSteps(id, model(
+        "segment:String:input:true", "stage:String:output:false", "outcome:String:output:false"),
+        declaration + """
+        rule "entry" when $i : RuleInput(segment == "A") then modify($i) { setStage("entry") } end
+        """,
+        declaration + """
+        rule "adult path" when $i : RuleInput(stage == "entry") then modify($i) { setStage("adult") } end
+        """,
+        declaration + """
+        rule "nested path" when $i : RuleInput(stage == "adult") then modify($i) { setStage("nested") } end
+        """,
+        declaration + """
+        rule "merge" when $i : RuleInput(stage == "nested") then modify($i) { setOutcome("done") } end
+        """);
+    ObjectNode routing = release.putObject("routing");
+    routing.put("type", "exclusive-dag").put("entry", "entry-step");
+    ArrayNode nodes = routing.putArray("nodes");
+    nodes.addObject().put("id", "entry-step").put("type", "step").put("stepIndex", 0).put("next", "age-gateway");
+    ObjectNode ageGateway = nodes.addObject().put("id", "age-gateway").put("type", "gateway").put("name", "年龄判断");
+    ObjectNode adult = ageGateway.putArray("branches").addObject();
+    adult.put("id", "adult").put("name", "成年人").put("default", false).put("next", "adult-step");
+    adult.putObject("condition").put("field", "segment").put("operator", "==").put("value", "A");
+    ageGateway.withArray("branches").addObject().put("id", "minor").put("name", "默认").put("default", true).putNull("condition").put("next", "merge-step");
+    nodes.addObject().put("id", "adult-step").put("type", "step").put("stepIndex", 1).put("next", "nested-gateway");
+    ObjectNode nestedGateway = nodes.addObject().put("id", "nested-gateway").put("type", "gateway").put("name", "嵌套判断");
+    ObjectNode nested = nestedGateway.putArray("branches").addObject();
+    nested.put("id", "nested").put("name", "嵌套路径").put("default", false).put("next", "nested-step");
+    nested.putObject("condition").put("field", "segment").put("operator", "==").put("value", "A");
+    nestedGateway.withArray("branches").addObject().put("id", "nested-default").put("name", "默认").put("default", true).putNull("condition").put("next", "merge-step");
+    nodes.addObject().put("id", "nested-step").put("type", "step").put("stepIndex", 2).put("next", "merge-step");
+    nodes.addObject().put("id", "merge-step").put("type", "step").put("stepIndex", 3).put("next", "end");
+    release.put("checksum", ResServer.checksum(release));
+    try {
+      call("/deploy", "POST", release, 201);
+      ObjectNode request = JSON.createObjectNode();
+      request.put("releaseId", id).putObject("facts").put("segment", "A");
+      JsonNode executed = call("/execute", "POST", request, 200);
+      assertEquals("done", executed.path("facts").path("outcome").asText(), executed.toPrettyString());
+      assertEquals(2, executed.path("paths").size());
+      assertEquals("adult", executed.path("paths").get(0).path("branchId").asText());
+      assertEquals("nested", executed.path("paths").get(1).path("branchId").asText());
+      assertEquals("entry-step", executed.path("trace").get(0).path("nodeId").asText());
+      assertEquals("age-gateway", executed.path("trace").get(1).path("nodeId").asText());
+      assertEquals("adult-step", executed.path("trace").get(2).path("nodeId").asText());
+      assertEquals("nested-gateway", executed.path("trace").get(3).path("nodeId").asText());
+      assertEquals("nested-step", executed.path("trace").get(4).path("nodeId").asText());
+      assertEquals("merge-step", executed.path("trace").get(5).path("nodeId").asText());
+    } finally {
+      call("/undeploy", "POST", JSON.createObjectNode().put("releaseId", id), 200);
+    }
+  }
+
+  @Test
+  void decisionDagMergesIndependentParallelOutputs() throws Exception {
+    String id = "decision-dag-parallel-it";
+    String declaration = """
+        package workbench
+        declare RuleInput
+          segment : String
+          riskLevel : String
+          reviewRequired : Boolean
+          outcome : String
+        end
+        """;
+    ObjectNode release = releaseWithSteps(id, model(
+        "segment:String:input:true", "riskLevel:String:output:false", "reviewRequired:Boolean:output:false", "outcome:String:output:false"),
+        declaration + """
+        rule "risk branch" when $i : RuleInput(segment == "A") then modify($i) { setRiskLevel("high") } end
+        """,
+        declaration + """
+        rule "review branch" when $i : RuleInput(segment == "A") then modify($i) { setReviewRequired(true) } end
+        """,
+        declaration + """
+        rule "after join" when $i : RuleInput(riskLevel == "high", reviewRequired == true) then modify($i) { setOutcome("done") } end
+        """);
+    ObjectNode routing = release.putObject("routing");
+    routing.put("type", "decision-dag").put("entry", "parallel");
+    ArrayNode nodes = routing.putArray("nodes");
+    ObjectNode parallel = nodes.addObject().put("id", "parallel").put("type", "parallel").put("name", "并行检查").put("join", "join");
+    parallel.putArray("branches").addObject().put("id", "risk").put("name", "风险检查").put("next", "risk-step");
+    parallel.withArray("branches").addObject().put("id", "review").put("name", "复核检查").put("next", "review-step");
+    nodes.addObject().put("id", "risk-step").put("type", "step").put("stepIndex", 0).put("next", "join");
+    nodes.addObject().put("id", "review-step").put("type", "step").put("stepIndex", 1).put("next", "join");
+    nodes.addObject().put("id", "join").put("type", "join").put("name", "结果聚合").put("next", "after-join");
+    nodes.addObject().put("id", "after-join").put("type", "step").put("stepIndex", 2).put("next", "end");
+    release.put("checksum", ResServer.checksum(release));
+    try {
+      call("/deploy", "POST", release, 201);
+      ObjectNode request = JSON.createObjectNode();
+      request.put("releaseId", id).putObject("facts").put("segment", "A");
+      JsonNode executed = call("/execute", "POST", request, 200);
+      assertEquals("high", executed.path("facts").path("riskLevel").asText(), executed.toPrettyString());
+      assertTrue(executed.path("facts").path("reviewRequired").asBoolean(), executed.toPrettyString());
+      assertEquals("done", executed.path("facts").path("outcome").asText(), executed.toPrettyString());
+      assertEquals(List.of("parallel", "risk-step", "review-step", "join", "after-join"),
+          JSON.convertValue(executed.path("trace").findValues("nodeId"), new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {}));
+    } finally {
+      call("/undeploy", "POST", JSON.createObjectNode().put("releaseId", id), 200);
+    }
+  }
+
+  @Test
+  void decisionDagRejectsConflictingParallelOutputs() throws Exception {
+    String id = "decision-dag-conflict-it";
+    String declaration = """
+        package workbench
+        declare RuleInput
+          segment : String
+          riskLevel : String
+        end
+        """;
+    ObjectNode release = releaseWithSteps(id, model("segment:String:input:true", "riskLevel:String:output:false"),
+        declaration + "rule \"high\" when $i : RuleInput(segment == \"A\") then modify($i) { setRiskLevel(\"high\") } end",
+        declaration + "rule \"low\" when $i : RuleInput(segment == \"A\") then modify($i) { setRiskLevel(\"low\") } end");
+    ObjectNode routing = release.putObject("routing");
+    routing.put("type", "decision-dag").put("entry", "parallel");
+    ArrayNode nodes = routing.putArray("nodes");
+    ObjectNode parallel = nodes.addObject().put("id", "parallel").put("type", "parallel").put("name", "并行检查").put("join", "join");
+    parallel.putArray("branches").addObject().put("id", "high").put("name", "高风险").put("next", "high-step");
+    parallel.withArray("branches").addObject().put("id", "low").put("name", "低风险").put("next", "low-step");
+    nodes.addObject().put("id", "high-step").put("type", "step").put("stepIndex", 0).put("next", "join");
+    nodes.addObject().put("id", "low-step").put("type", "step").put("stepIndex", 1).put("next", "join");
+    nodes.addObject().put("id", "join").put("type", "join").put("name", "结果聚合").put("next", "end");
+    release.put("checksum", ResServer.checksum(release));
+    try {
+      call("/deploy", "POST", release, 201);
+      ObjectNode request = JSON.createObjectNode();
+      request.put("releaseId", id).putObject("facts").put("segment", "A");
+      JsonNode executed = call("/execute", "POST", request, 409);
+      assertTrue(executed.path("error").asText().contains("riskLevel"), executed.toPrettyString());
+      assertEquals("join", executed.path("failedStep").path("type").asText());
     } finally {
       call("/undeploy", "POST", JSON.createObjectNode().put("releaseId", id), 200);
     }

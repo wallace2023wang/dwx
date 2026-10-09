@@ -18,6 +18,7 @@ export const SEMANTIC_RUNTIME_TYPES = Object.freeze({
 });
 
 const KEY_RE = /^[a-z][a-zA-Z0-9_]{1,31}$/;
+const METHOD_RE = /^[a-z][a-zA-Z0-9_]{1,31}$/;
 const EVENT_NAME_RE = /^[A-Z][a-zA-Z0-9_]{0,63}$/;
 const DURATION_RE = /^\d+(ms|s|m|h|d)$/;
 const EVENT_ENVELOPE_KEYS = new Set(['eventId', 'eventTime', 'ingestTime', 'source', 'eventKey', 'schemaVersion', 'traceId']);
@@ -92,15 +93,26 @@ export function defaultBom() {
 }
 
 export function inputFields(bom) {
-  return bom.fields.filter(f => f.kind === 'input');
+  return resolvedBomFields(bom).filter(f => f.kind === 'input');
 }
 
 export function outputFields(bom) {
-  return bom.fields.filter(f => f.kind === 'output');
+  return resolvedBomFields(bom).filter(f => f.kind === 'output');
 }
 
 export function findField(bom, key) {
-  return bom.fields.find(f => f.key === key) || null;
+  const field = bom.fields.find(f => f.key === key) || null;
+  if (!field?.domainId) return field;
+  const domain = (bom.domains || []).find(candidate => candidate.id === field.domainId);
+  return domain ? { ...field, enum: [...domain.values] } : field;
+}
+
+export function findBomMethod(bom, name) {
+  return (bom?.methods || []).find(method => method.name === name) || null;
+}
+
+export function resolvedBomFields(bom) {
+  return (bom?.fields || []).map(field => findField(bom, field.key));
 }
 
 export function inferSemanticType(field) {
@@ -118,6 +130,17 @@ export function validateBom(bom) {
   if (!Array.isArray(bom.fields)) return 'BOM 必须包含 fields 数组';
   if (bom.fields.length < 2) return 'BOM 至少需要 2 个字段';
   const keys = new Set();
+  const domains = new Map();
+  if (bom.domains != null && (!Array.isArray(bom.domains) || bom.domains.length > 50)) return 'BOM 动态域必须是最多 50 项的数组';
+  for (const [index, domain] of (bom.domains || []).entries()) {
+    const label = `第 ${index + 1} 个动态域`;
+    if (!domain || typeof domain !== 'object' || typeof domain.id !== 'string' || !METHOD_RE.test(domain.id)) return `${label}标识无效`;
+    if (domains.has(domain.id)) return `动态域 ${domain.id} 重复`;
+    if (typeof domain.label !== 'string' || !domain.label.trim() || domain.label.length > 40) return `${label}显示名需为 1-40 字`;
+    if (!Array.isArray(domain.values) || domain.values.length < 1 || domain.values.length > 200) return `${label}需包含 1-200 个值`;
+    if (domain.values.some(value => typeof value !== 'string' || !value.trim() || value.length > 200) || new Set(domain.values).size !== domain.values.length) return `${label}包含无效或重复值`;
+    domains.set(domain.id, domain);
+  }
   for (const f of bom.fields) {
     if (!f || typeof f !== 'object') return '字段定义无效';
     if (typeof f.key !== 'string' || !KEY_RE.test(f.key)) return `字段 key "${f.key}" 不合法（小驼峰标识符，1-32 字符）`;
@@ -130,7 +153,9 @@ export function validateBom(bom) {
     if (f.semanticType != null && !SEMANTIC_TYPES.includes(f.semanticType)) return `字段 ${f.key} 的业务类型必须是 ${SEMANTIC_TYPES.join('/')}`;
     const semanticType = inferSemanticType(f);
     if (f.semanticType != null && SEMANTIC_RUNTIME_TYPES[semanticType] !== f.type) return `字段 ${f.key} 的业务类型 ${semanticType} 必须映射为运行时类型 ${SEMANTIC_RUNTIME_TYPES[semanticType]}`;
-    if (semanticType === 'Enum' && (!Array.isArray(f.enum) || f.enum.length < 1)) return `字段 ${f.key} 的 Enum 类型必须配置枚举值`;
+    if (f.domainId != null && (typeof f.domainId !== 'string' || !domains.has(f.domainId))) return `字段 ${f.key} 引用了不存在的动态域`;
+    if (f.domainId != null && semanticType !== 'Enum') return `字段 ${f.key} 只有 Enum 类型能引用动态域`;
+    if (semanticType === 'Enum' && f.domainId == null && (!Array.isArray(f.enum) || f.enum.length < 1)) return `字段 ${f.key} 的 Enum 类型必须配置枚举值或动态域`;
     if (!FIELD_KINDS.includes(f.kind)) return `字段 ${f.key} 的 kind 必须是 input/output`;
     if (f.required != null && (typeof f.required !== 'boolean' || f.kind !== 'input')) return `字段 ${f.key} 的 required 只能用于 input 字段`;
     if (f.group != null && typeof f.group !== 'string') return `字段 ${f.key} 的分组必须是字符串`;
@@ -153,7 +178,7 @@ export function validateBom(bom) {
       if (f.min != null || f.max != null) return `字段 ${f.key} 不是数值类型，不能配置 min/max`;
     }
     // 枚举
-    if (f.enum != null) {
+    if (f.enum != null && f.domainId == null) {
       if (!Array.isArray(f.enum) || f.enum.length < 1) return `字段 ${f.key} 的 enum 必须是非空数组或 null`;
       if (semanticType !== 'Enum') return `字段 ${f.key} 是 ${semanticType} 类型，只有 Enum 字段能配置枚举`;
       for (const v of f.enum) {
@@ -167,6 +192,63 @@ export function validateBom(bom) {
   if (!bom.fields.some(f => f.kind === 'output')) return 'BOM 至少需要一个 output 字段';
   const eventTypeError = validateBomEventTypes(bom);
   if (eventTypeError) return eventTypeError;
+  const methodError = validateBomMethods(bom);
+  if (methodError) return methodError;
+  return null;
+}
+
+function methodExpressionType(node, bom, depth = 1, state = { nodes: 0 }) {
+  state.nodes += 1;
+  if (depth > 10 || state.nodes > 100) return { error: 'BOM 方法表达式最多支持 10 层、100 个节点' };
+  if (!node || typeof node !== 'object' || Array.isArray(node)) return { error: 'BOM 方法表达式节点无效' };
+  if (node.type === 'literal') {
+    if (typeof node.value !== 'string' || !node.value.trim() || !Number.isFinite(Number(node.value))) return { error: 'BOM 方法数值常量无效' };
+    return { type: /^-?\d+$/.test(node.value.trim()) ? 'Integer' : 'Decimal' };
+  }
+  if (node.type === 'field') {
+    if (node.fieldSource === 'variable') return { error: 'BOM 方法不能引用 Rule Project 变量' };
+    const field = findField(bom, node.field);
+    const semanticType = field && field.kind === 'input' ? inferSemanticType(field) : null;
+    return ['Integer', 'Decimal'].includes(semanticType) ? { type: semanticType } : { error: `BOM 方法字段 ${node.field || ''} 不存在或不是数值输入字段` };
+  }
+  if (node.type === 'binary') {
+    if (!['+', '-', '*', '/'].includes(node.operator)) return { error: 'BOM 方法运算符无效' };
+    const left = methodExpressionType(node.left, bom, depth + 1, state);
+    if (left.error) return left;
+    const right = methodExpressionType(node.right, bom, depth + 1, state);
+    if (right.error) return right;
+    if (node.operator === '/' && node.right?.type === 'literal' && Number(node.right.value) === 0) return { error: 'BOM 方法不能除以 0' };
+    return { type: node.operator === '/' || left.type === 'Decimal' || right.type === 'Decimal' ? 'Decimal' : 'Integer' };
+  }
+  if (node.type === 'function') {
+    if (!['min', 'max', 'round', 'abs'].includes(node.name) || !Array.isArray(node.args)) return { error: 'BOM 方法函数无效' };
+    const expected = ['round', 'abs'].includes(node.name) ? 1 : 2;
+    if (node.args.length !== expected) return { error: `BOM 方法函数 ${node.name} 需要 ${expected} 个参数` };
+    const types = [];
+    for (const argument of node.args) {
+      const result = methodExpressionType(argument, bom, depth + 1, state);
+      if (result.error) return result;
+      types.push(result.type);
+    }
+    return { type: node.name === 'round' ? 'Integer' : types.includes('Decimal') ? 'Decimal' : 'Integer' };
+  }
+  return { error: 'BOM 方法只支持数值、字段、四则运算和白名单函数' };
+}
+
+function validateBomMethods(bom) {
+  if (bom.methods != null && (!Array.isArray(bom.methods) || bom.methods.length > 50)) return 'BOM 方法必须是最多 50 项的数组';
+  const names = new Set();
+  for (const [index, method] of (bom.methods || []).entries()) {
+    const label = `第 ${index + 1} 个 BOM 方法`;
+    if (!method || typeof method !== 'object' || typeof method.name !== 'string' || !METHOD_RE.test(method.name)) return `${label}名称无效`;
+    if (names.has(method.name)) return `BOM 方法 ${method.name} 重复`;
+    names.add(method.name);
+    if (typeof method.label !== 'string' || !method.label.trim() || method.label.length > 40) return `${label}显示名需为 1-40 字`;
+    if (!['Integer', 'Decimal'].includes(method.returnType)) return `${label}返回类型必须是 Integer 或 Decimal`;
+    const result = methodExpressionType(method.expression, bom);
+    if (result.error) return `${method.label || method.name}：${result.error}`;
+    if (method.returnType === 'Integer' && result.type !== 'Integer') return `${method.label || method.name}：Integer 方法不能返回小数表达式`;
+  }
   return null;
 }
 
@@ -218,6 +300,8 @@ export function diffBom(oldBom, newBom, usedKeys = new Set()) {
   const warnings = [];
   const oldMap = new Map(oldBom.fields.map(f => [f.key, f]));
   const newMap = new Map(newBom.fields.map(f => [f.key, f]));
+  const oldDomains = new Map((oldBom.domains || []).map(domain => [domain.id, domain]));
+  const newDomains = new Map((newBom.domains || []).map(domain => [domain.id, domain]));
 
   for (const [key, oldField] of oldMap) {
     if (!newMap.has(key)) {
@@ -242,6 +326,19 @@ export function diffBom(oldBom, newBom, usedKeys = new Set()) {
       const removed = oldField.enum.filter(v => !newField.enum.includes(v));
       if (removed.length) warnings.push(`字段 "${oldField.label}" 枚举收缩，移除了 [${removed.join(', ')}]，已发布规则可能引用这些值`);
     }
+    if ((oldField.domainId || null) !== (newField.domainId || null)) warnings.push(`字段 "${oldField.label}" 动态域由 ${oldField.domainId || '未绑定'} 变更为 ${newField.domainId || '未绑定'}`);
+  }
+  for (const [id, oldDomain] of oldDomains) {
+    const next = newDomains.get(id);
+    if (!next) { warnings.push(`动态域 "${oldDomain.label}"(${id}) 已删除`); continue; }
+    const removed = oldDomain.values.filter(value => !next.values.includes(value));
+    if (removed.length) warnings.push(`动态域 "${oldDomain.label}" 收缩，移除了 [${removed.join(', ')}]`);
+  }
+  const oldMethods = new Map((oldBom.methods || []).map(method => [method.name, method]));
+  const newMethods = new Map((newBom.methods || []).map(method => [method.name, method]));
+  for (const [name, method] of oldMethods) {
+    if (!newMethods.has(name)) warnings.push(`BOM 方法 "${method.label}"(${name}) 已删除，引用它的规则将失效`);
+    else if (JSON.stringify(method) !== JSON.stringify(newMethods.get(name))) warnings.push(`BOM 方法 "${method.label}"(${name}) 定义已变更`);
   }
   return { errors, warnings };
 }

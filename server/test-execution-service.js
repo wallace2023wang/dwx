@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
 import { generateDrl } from '../shared/rules.js';
-import { applyFlowMappings, selectFlowBranch, tableCollectedHits, tableDrl, tableExecutionTrace } from '../shared/assets.js';
+import { applyFlowMappings, flowBranches, flowGateways, isFlowGraph, selectFlowBranch, tableCollectedHits, tableDrl, tableExecutionTrace } from '../shared/assets.js';
+import { decisionTreeDrl, decisionTreeExecutionTrace, decisionTreeLeaves, isDecisionTree } from '../shared/decision-trees.js';
+import { isScorecard, scorecardDrl, scorecardExecutionTrace } from '../shared/scorecards.js';
 import { inputFields, outputFields } from '../shared/bom.js';
 import { evaluateCepTestCase, evaluateTestCase, expandTestCases, validateTestSuite } from '../shared/test-suites.js';
 import { validateEventPayloads } from '../shared/event-streams.js';
@@ -38,7 +40,11 @@ export function createTestExecutionService({
       const table = version.draft || item.published;
       return {
         type: target.type, item, version: version.number, bom, table, project,
-        drl: version.drl || tableDrl(table, bom, item.id, project.variables || []),
+        drl: version.drl || (isScorecard(table)
+          ? scorecardDrl(table, bom, item.id, project.variables || [])
+          : isDecisionTree(table)
+          ? decisionTreeDrl(table, bom, item.id, project.variables || [])
+          : tableDrl(table, bom, item.id, project.variables || [])),
       };
     }
     if (target.type === 'event-stream') {
@@ -57,16 +63,19 @@ export function createTestExecutionService({
 
   async function executeFlow(flow, initialFacts, options = {}) {
     const facts = { ...initialFacts };
+    const gateways = flowGateways(flow).sort((left, right) => left.afterStep - right.afterStep);
     const nodeIds = new Set();
     const nodeAddress = (step, legacyNodeId) => ({ nodeId: step.nodeId || legacyNodeId, legacyNodeId });
-    flow.steps.forEach((step, index) => {
+    if (isFlowGraph(flow)) for (const node of flow.graph.nodes) nodeIds.add(node.id);
+    else flow.steps.forEach((step, index) => {
       const address = nodeAddress(step, `common:${index}`);
       nodeIds.add(address.nodeId);
       nodeIds.add(address.legacyNodeId);
     });
-    if (flow.branches?.length) {
-      nodeIds.add('gateway');
-      for (const branch of flow.branches) branch.steps.forEach((step, index) => {
+    for (const gateway of isFlowGraph(flow) ? [] : gateways) {
+      nodeIds.add(gateway.id);
+      if (gateways.length === 1) nodeIds.add('gateway');
+      for (const branch of gateway.branches) branch.steps.forEach((step, index) => {
         const address = nodeAddress(step, `branch:${branch.id}:${index}`);
         nodeIds.add(address.nodeId);
         nodeIds.add(address.legacyNodeId);
@@ -76,7 +85,7 @@ export function createTestExecutionService({
     if (stopAfter != null && (typeof stopAfter !== 'string' || !nodeIds.has(stopAfter))) return { status: 400, error: '调试停止节点无效' };
     const expectsPath = Object.prototype.hasOwnProperty.call(options, 'expectedPath');
     const expectedPath = options.expectedPath;
-    if (expectsPath && expectedPath !== null && (typeof expectedPath !== 'string' || !flow.branches?.some(branch => branch.id === expectedPath))) {
+    if (expectsPath && expectedPath !== null && (typeof expectedPath !== 'string' || !flowBranches(flow).some(branch => branch.id === expectedPath))) {
       return { status: 400, error: '期望流程路径无效' };
     }
 
@@ -84,33 +93,34 @@ export function createTestExecutionService({
     const outFields = outputFields(flow.bom || getCurrentBom());
     let limitReached = false;
     let stoppedAt = null;
-    let selectedBranch = null;
-    let gatewayEvaluated = false;
-    const runSteps = async (steps, scope) => {
+    const selectedPaths = [];
+    const runSteps = async (steps, scope, targetFacts = facts, targetTrace = trace) => {
       for (const [index, step] of steps.entries()) {
-        const legacyNodeId = scope.kind === 'common' ? `common:${index}` : `branch:${scope.branch.id}:${index}`;
-        const nodeId = step.nodeId || legacyNodeId;
-        const inputMappings = applyFlowMappings(step.inputMappings, facts);
-        const checked = await engine('/test', { drl: step.drl, facts });
+        const legacyNodeId = scope.nodeId || (scope.kind === 'common' ? `common:${scope.offset + index}` : `branch:${scope.branch.id}:${index}`);
+        const nodeId = scope.nodeId || step.nodeId || legacyNodeId;
+        const inputMappings = applyFlowMappings(step.inputMappings, targetFacts);
+        const checked = await engine('/test', { drl: step.drl, facts: targetFacts });
         if (checked.error) {
           return {
             error: `${step.name}：${checked.error}`,
             status: checked.status,
             failedStep: {
               nodeId, legacyNodeId, name: step.name, type: step.type, version: step.version,
-              branchId: scope.branch?.id || null, branchName: scope.branch?.name || null,
+              gatewayId: scope.gateway?.id || null, branchId: scope.branch?.id || null, branchName: scope.branch?.name || null,
             },
           };
         }
         for (const field of outFields) {
           const value = checked.result.facts[field.key];
-          if (value !== undefined && value !== null) facts[field.key] = value;
+          if (value !== undefined && value !== null) targetFacts[field.key] = value;
         }
-        const outputMappings = applyFlowMappings(step.outputMappings, facts);
-        trace.push({
+        const outputMappings = applyFlowMappings(step.outputMappings, targetFacts);
+        targetTrace.push({
           nodeId, legacyNodeId, name: step.name, type: step.type, version: step.version, fired: checked.result.fired,
+          gatewayId: scope.gateway?.id || null, branchId: scope.branch?.id || null, branchName: scope.branch?.name || null,
           decisionHits: checked.result.decisionHits || [],
-          count: checked.result.count, facts: { ...facts }, mappings: { inputs: inputMappings, outputs: outputMappings },
+          parallelId: scope.parallel?.id || null, parallelBranchId: scope.parallelBranch?.id || null,
+          count: checked.result.count, facts: { ...targetFacts }, mappings: { inputs: inputMappings, outputs: outputMappings },
         });
         if (checked.result.limitReached) { limitReached = true; break; }
         if (stopAfter === nodeId || stopAfter === legacyNodeId) { stoppedAt = nodeId; break; }
@@ -119,39 +129,139 @@ export function createTestExecutionService({
     };
     const failure = async failed => ({ status: failed.status, result: {
       error: failed.error, failedStep: failed.failedStep, facts, trace,
-      path: selectedBranch ? { branchId: selectedBranch.id, branchName: selectedBranch.name, default: selectedBranch.default } : null,
+      path: selectedPaths.length === 1 ? selectedPaths[0] : null, paths: selectedPaths,
       debug: { requestedStop: stopAfter, stoppedAt },
     } });
 
-    const commonError = await runSteps(flow.steps, { kind: 'common' });
-    if (commonError) return failure(commonError);
-    if (!limitReached && !stoppedAt && flow.branches?.length) {
-      selectedBranch = selectFlowBranch(flow.branches, facts);
-      gatewayEvaluated = true;
-      trace.push({
-        nodeId: 'gateway', name: '条件网关', type: 'gateway', count: 0, facts: { ...facts },
-        branchId: selectedBranch?.id || null, branchName: selectedBranch?.name || null, default: selectedBranch?.default === true,
-      });
-      if (stopAfter === 'gateway') stoppedAt = 'gateway';
-      if (selectedBranch && !stoppedAt) {
-        const branchError = await runSteps(selectedBranch.steps, { kind: 'branch', branch: selectedBranch });
-        if (branchError) return failure(branchError);
+    if (isFlowGraph(flow)) {
+      const nodes = new Map(flow.graph.nodes.map(node => [node.id, node]));
+      const sameValue = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+      const walkGraph = async (startId, targetFacts = facts, targetTrace = trace, stopId = 'end', parallel = null, parallelBranch = null) => {
+        let currentId = startId;
+        while (currentId !== stopId && currentId !== 'end' && !limitReached && !stoppedAt) {
+          const node = nodes.get(currentId);
+          if (!node) return { error: `图节点 ${currentId} 不存在`, status: 500, failedStep: { nodeId: currentId, name: currentId, type: 'flow-node' } };
+        if (node.type === 'step') {
+            const stepError = await runSteps([node.step], { kind: 'common', offset: 0, nodeId: node.id, parallel, parallelBranch }, targetFacts, targetTrace);
+            if (stepError) return stepError;
+          currentId = node.next;
+          continue;
+        }
+          if (node.type === 'gateway') {
+            const selectedBranch = selectFlowBranch(node.branches, targetFacts);
+            const path = {
+              gatewayId: node.id, gatewayName: node.name || '排他网关',
+              branchId: selectedBranch?.id || null, branchName: selectedBranch?.name || null, default: selectedBranch?.default === true,
+            };
+            selectedPaths.push(path);
+            targetTrace.push({
+              nodeId: node.id, name: node.name || '排他网关', type: 'gateway', count: 0, facts: { ...targetFacts },
+              branchId: path.branchId, branchName: path.branchName, default: path.default,
+              parallelId: parallel?.id || null, parallelBranchId: parallelBranch?.id || null,
+            });
+            if (stopAfter === node.id) stoppedAt = node.id;
+            currentId = selectedBranch?.next || 'end';
+            continue;
+          }
+          if (node.type === 'parallel') {
+            const join = nodes.get(node.join);
+            const baseFacts = structuredClone(targetFacts);
+            const branchResults = [];
+            targetTrace.push({ nodeId: node.id, name: node.name || '并行网关', type: 'parallel', count: 0, facts: { ...targetFacts }, branches: node.branches.map(branch => ({ id: branch.id, name: branch.name })) });
+            for (const branch of node.branches) {
+              const branchFacts = structuredClone(baseFacts);
+              const branchTrace = [];
+              const branchError = await walkGraph(branch.next, branchFacts, branchTrace, node.join, node, branch);
+              targetTrace.push(...branchTrace);
+              if (branchError) return branchError;
+              branchResults.push({ branch, facts: branchFacts });
+            }
+            const changes = new Map();
+            for (const { branch, facts: branchFacts } of branchResults) {
+              for (const [key, value] of Object.entries(branchFacts)) {
+                if (sameValue(value, baseFacts[key])) continue;
+                changes.set(key, [...(changes.get(key) || []), { branchId: branch.id, branchName: branch.name, value }]);
+              }
+            }
+            const conflicts = [...changes].flatMap(([field, values]) => values.some(item => !sameValue(item.value, values[0].value)) ? [{ field, values }] : []);
+            if (conflicts.length) return {
+              error: `聚合节点“${join?.name || node.join}”存在并行输出冲突：${conflicts.map(item => item.field).join('、')}`,
+              status: 409,
+              failedStep: { nodeId: node.join, name: join?.name || '聚合节点', type: 'join', conflicts },
+            };
+            for (const [key, values] of changes) targetFacts[key] = values[0].value;
+            targetTrace.push({ nodeId: node.join, name: join?.name || '聚合节点', type: 'join', count: 0, facts: { ...targetFacts }, mergedFields: [...changes.keys()] });
+            if (stopAfter === node.id || stopAfter === node.join) stoppedAt = stopAfter;
+            currentId = join?.next || 'end';
+            continue;
+          }
+          if (node.type === 'join') return { error: `聚合节点 ${node.id} 不能脱离并行网关执行`, status: 500, failedStep: { nodeId: node.id, name: node.name, type: 'join' } };
+        }
+        return null;
+      };
+      const graphError = await walkGraph(flow.graph.entry);
+      if (graphError) return failure(graphError);
+      const assertions = [];
+      if (expectsPath) {
+        const matchedPath = selectedPaths.find(path => path.branchId === expectedPath);
+        const expectedBranch = flowBranches(flow).find(branch => branch.id === expectedPath);
+        const actual = matchedPath?.branchId ?? (selectedPaths.length === 1 ? selectedPaths[0].branchId : null);
+        assertions.push({
+          type: 'path', expected: expectedPath, actual,
+          expectedName: expectedBranch?.name || (expectedPath === null ? '无匹配分支' : null),
+          actualName: matchedPath?.branchName || (selectedPaths.length === 1 ? selectedPaths[0].branchName : null),
+          evaluated: selectedPaths.length > 0, passed: expectedPath === null ? selectedPaths.some(path => path.branchId === null) : Boolean(matchedPath),
+        });
+      }
+      return { status: 200, result: {
+        ok: true, facts, trace, limitReached,
+        path: selectedPaths.length === 1 ? selectedPaths[0] : null, paths: selectedPaths,
+        debug: { requestedStop: stopAfter, stoppedAt }, assertions,
+        passed: assertions.every(assertion => assertion.passed),
+        count: trace.reduce((total, step) => total + step.count, 0),
+      } };
+    }
+
+    const gatewaysByPosition = new Map(gateways.map(gateway => [gateway.afterStep, gateway]));
+    for (let position = 0; position <= flow.steps.length && !limitReached && !stoppedAt; position++) {
+      const gateway = gatewaysByPosition.get(position);
+      if (gateway) {
+        const selectedBranch = selectFlowBranch(gateway.branches, facts);
+        const path = {
+          gatewayId: gateway.id, gatewayName: gateway.name || '排他网关',
+          branchId: selectedBranch?.id || null, branchName: selectedBranch?.name || null, default: selectedBranch?.default === true,
+        };
+        selectedPaths.push(path);
+        trace.push({
+          nodeId: gateway.id, name: gateway.name || '排他网关', type: 'gateway', count: 0, facts: { ...facts },
+          branchId: path.branchId, branchName: path.branchName, default: path.default,
+        });
+        if (stopAfter === gateway.id || (gateways.length === 1 && stopAfter === 'gateway')) stoppedAt = gateway.id;
+        if (selectedBranch && !stoppedAt) {
+          const branchError = await runSteps(selectedBranch.steps, { kind: 'branch', gateway, branch: selectedBranch, offset: 0 });
+          if (branchError) return failure(branchError);
+        }
+      }
+      if (position < flow.steps.length && !limitReached && !stoppedAt) {
+        const commonError = await runSteps([flow.steps[position]], { kind: 'common', offset: position });
+        if (commonError) return failure(commonError);
       }
     }
     const assertions = [];
     if (expectsPath) {
-      const actual = gatewayEvaluated ? selectedBranch?.id || null : null;
-      const expectedBranch = flow.branches?.find(branch => branch.id === expectedPath);
+      const matchedPath = selectedPaths.find(path => path.branchId === expectedPath);
+      const expectedBranch = flowBranches(flow).find(branch => branch.id === expectedPath);
+      const actual = matchedPath?.branchId ?? (selectedPaths.length === 1 ? selectedPaths[0].branchId : null);
       assertions.push({
         type: 'path', expected: expectedPath, actual,
         expectedName: expectedBranch?.name || (expectedPath === null ? '无匹配分支' : null),
-        actualName: selectedBranch?.name || (gatewayEvaluated ? '无匹配分支' : null),
-        evaluated: gatewayEvaluated, passed: gatewayEvaluated && actual === expectedPath,
+        actualName: matchedPath?.branchName || (selectedPaths.length === 1 ? selectedPaths[0].branchName : null),
+        evaluated: selectedPaths.length > 0, passed: expectedPath === null ? selectedPaths.some(path => path.branchId === null) : Boolean(matchedPath),
       });
     }
     return { status: 200, result: {
       ok: true, facts, trace, limitReached,
-      path: selectedBranch ? { branchId: selectedBranch.id, branchName: selectedBranch.name, default: selectedBranch.default } : null,
+      path: selectedPaths.length === 1 ? selectedPaths[0] : null, paths: selectedPaths,
       debug: { requestedStop: stopAfter, stoppedAt }, assertions,
       passed: assertions.every(assertion => assertion.passed),
       count: trace.reduce((total, step) => total + step.count, 0),
@@ -178,7 +288,13 @@ export function createTestExecutionService({
     }
     const checked = await engine('/test', { drl: resolved.drl, facts });
     if (checked.error) return { ...checked, targetVersion: resolved.version, bom: resolved.bom };
-    const result = resolved.type === 'table' ? {
+    const result = resolved.type === 'table' && isScorecard(resolved.table) ? {
+      ...checked.result,
+      scorecardTrace: scorecardExecutionTrace(resolved.table, checked.result.fired, facts, resolved.bom),
+    } : resolved.type === 'table' && isDecisionTree(resolved.table) ? {
+      ...checked.result,
+      decisionTreeTrace: decisionTreeExecutionTrace(resolved.table, checked.result.fired, resolved.bom, resolved.project?.variables || []),
+    } : resolved.type === 'table' ? {
       ...checked.result,
       hitPolicy: resolved.table.hitPolicy || 'ALL',
       decisionTrace: tableExecutionTrace(resolved.table, checked.result.fired, resolved.bom, resolved.project?.variables || []),
@@ -199,6 +315,14 @@ export function createTestExecutionService({
       return { kind: 'rule', items: [{ id: resolved.item.id, label: rule?.name || resolved.item.id }] };
     }
     if (resolved.type === 'table') {
+      if (isScorecard(resolved.table)) return {
+        kind: 'scorecard-band',
+        items: resolved.table.bands.map(band => ({ id: `band:${band.id}`, label: band.label })),
+      };
+      if (isDecisionTree(resolved.table)) return {
+        kind: 'tree-leaf',
+        items: decisionTreeLeaves(resolved.table).map(leaf => ({ id: `leaf:${leaf.id}`, label: leaf.label })),
+      };
       return {
         kind: 'table-row',
         items: resolved.table.rows.flatMap((row, index) => row.enabled === false ? [] : [{
@@ -216,7 +340,7 @@ export function createTestExecutionService({
           : [{ id: 'event-stream', label: resolved.item?.draft?.name || '事件流' }],
       };
     }
-    const branches = resolved.flow.branches || [];
+    const branches = flowBranches(resolved.flow);
     return {
       kind: 'flow-path',
       items: branches.length
@@ -225,15 +349,26 @@ export function createTestExecutionService({
     };
   }
 
+  function eventStatementIds(resolved, statementName) {
+    const statements = resolved.module?.statements || [];
+    const statement = statements.find(item => item.name === statementName
+      || item.epl?.match(/@Name\s*\(\s*['"]([^'"]+)['"]\s*\)/)?.[1] === statementName);
+    return statement ? [statement.name] : [statementName];
+  }
+
   function coverageHits(resolved, executionResult) {
     if (resolved.type === 'rule') return executionResult.fired?.length ? [resolved.item.id] : [];
     if (resolved.type === 'table') {
+      if (isScorecard(resolved.table)) return executionResult.scorecardTrace?.firedBandId ? [`band:${executionResult.scorecardTrace.firedBandId}`] : [];
+      if (isDecisionTree(resolved.table)) return (executionResult.decisionTreeTrace || [])
+        .filter(entry => entry.leafId)
+        .map(entry => `leaf:${entry.leafId}`);
       return (executionResult.decisionTrace || [])
         .filter(entry => entry.rowIndex !== null)
         .map(entry => `row:${entry.rowIndex}`);
     }
-    if (resolved.type === 'event-stream') return (executionResult.detections || []).map(event => event.statement || 'event-stream');
-    if (resolved.flow.branches?.length) return executionResult.path?.branchId ? [executionResult.path.branchId] : [];
+    if (resolved.type === 'event-stream') return (executionResult.detections || []).flatMap(event => eventStatementIds(resolved, event.statement || 'event-stream'));
+    if (flowGateways(resolved.flow).length) return (executionResult.paths || (executionResult.path ? [executionResult.path] : [])).flatMap(path => path.branchId ? [path.branchId] : []);
     return executionResult.error ? [] : ['main'];
   }
 
@@ -466,7 +601,7 @@ export function createTestExecutionService({
     const error = validateTestSuite(suite, target.bom);
     if (error) return { status: 400, error };
     if (suite.target.type === 'flow') {
-      const branchIds = new Set((target.flow.branches || []).map(branch => branch.id));
+      const branchIds = new Set(flowBranches(target.flow).map(branch => branch.id));
       for (const testCase of suite.cases) {
         const path = testCase.expected.path;
         if (path !== undefined && path !== null && !branchIds.has(path)) return { status: 400, error: `${testCase.name}的期望路径不在已发布流程中` };

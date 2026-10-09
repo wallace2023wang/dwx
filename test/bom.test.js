@@ -164,3 +164,59 @@ test('未被引用的字段删除不报错', () => {
   const { errors } = diffBom(oldBom, newBom, new Set());
   assert.equal(errors.length, 0);
 });
+
+test('BOM dynamic domains resolve reusable enum values', () => {
+  const bom = defaultBom();
+  bom.domains = [{ id: 'customerKinds', label: '客户类型域', values: ['个人', '企业', '同业'] }];
+  const field = findField(bom, 'customerType');
+  const stored = bom.fields.find(candidate => candidate.key === 'customerType');
+  stored.domainId = 'customerKinds';
+  stored.enum = null;
+
+  assert.equal(validateBom(bom), null);
+  assert.deepEqual(findField(bom, 'customerType').enum, ['个人', '企业', '同业']);
+  const rule = {
+    name: '动态域规则', description: '', category: 'common', priority: 0,
+    conditions: [{ field: 'customerType', operator: '==', value: '企业' }],
+    actions: [{ field: 'riskLevel', value: '高' }],
+  };
+  assert.equal(validateRule(rule, bom), null);
+  rule.conditions[0].value = '未知';
+  assert.match(validateRule(rule, bom), /客户类型/);
+});
+
+test('BOM dynamic domains reject missing references and duplicate values', () => {
+  const bom = defaultBom();
+  bom.fields.find(field => field.key === 'customerType').domainId = 'missingDomain';
+  assert.match(validateBom(bom), /不存在的动态域/);
+  bom.domains = [{ id: 'customerKinds', label: '客户类型域', values: ['个人', '个人'] }];
+  bom.fields.find(field => field.key === 'customerType').domainId = 'customerKinds';
+  assert.match(validateBom(bom), /无效或重复/);
+});
+
+test('BOM methods validate safe expressions and can be called by rule actions', () => {
+  const bom = defaultBom();
+  bom.methods = [{
+    name: 'recommendedLimit', label: '建议授信额度', returnType: 'Decimal',
+    expression: { type: 'function', name: 'min', args: [
+      { type: 'binary', operator: '*', left: { type: 'field', field: 'annualIncome' }, right: { type: 'literal', value: '0.3' } },
+      { type: 'literal', value: '100000' },
+    ] },
+  }];
+  assert.equal(validateBom(bom), null);
+  const rule = {
+    name: '方法动作', description: '', category: 'common', priority: 0,
+    conditions: [{ field: 'customerAge', operator: '>=', value: '18' }],
+    actions: [{ field: 'approvedLimit', value: '', valueExpression: { type: 'method', name: 'recommendedLimit' } }],
+  };
+  assert.equal(validateRule(rule, bom), null);
+  assert.match(generateDrl([rule], bom), /setApprovedLimit\(\(double\) \(Math\.min\(\(\$input\.getAnnualIncome\(\) \* 0\.3d\), 100000\)\)\)/);
+});
+
+test('BOM methods reject unsafe field and variable references', () => {
+  const bom = defaultBom();
+  bom.methods = [{ name: 'unsafeMethod', label: '不安全方法', returnType: 'Decimal', expression: { type: 'field', field: 'riskLevel' } }];
+  assert.match(validateBom(bom), /不是数值输入字段/);
+  bom.methods[0].expression = { type: 'field', fieldSource: 'variable', field: 'rate' };
+  assert.match(validateBom(bom), /不能引用 Rule Project 变量/);
+});

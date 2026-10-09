@@ -40,6 +40,15 @@
     @apply inline-flex size-8 shrink-0 items-center justify-center rounded-[2px] text-white/80 transition-colors hover:bg-white/10 hover:text-white;
   }
 
+  .collaboration-selection { border-radius: 2px; }
+  .collaboration-cursor { border-left: 2px solid currentColor; }
+  .collaboration-color-0 { color: #8a3ffc; background: rgb(138 63 252 / 16%); }
+  .collaboration-color-1 { color: #007d79; background: rgb(0 125 121 / 16%); }
+  .collaboration-color-2 { color: #d12771; background: rgb(209 39 113 / 16%); }
+  .collaboration-color-3 { color: #b28600; background: rgb(178 134 0 / 18%); }
+  .collaboration-color-4 { color: #005d5d; background: rgb(0 93 93 / 16%); }
+  .collaboration-color-5 { color: #a2191f; background: rgb(162 25 31 / 14%); }
+
   .report-page {
     min-height: 100%;
     background: #f4f4f4;

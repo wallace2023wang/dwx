@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { startTestEnv } from './helpers.js';
 
-async function publishProjectRuleset(env, projectId, ruleId, name = '项目业务规则集') {
+async function publishProjectRuleset(env, projectId, ruleId, name = '项目业务规则集', type = 'rule') {
   const created = await env.request(`/api/projects/${projectId}/flows`, 'POST');
   assert.equal(created.status, 201);
   const saved = await env.request(`/api/projects/${projectId}/flows/${created.body.id}`, 'PUT', {
@@ -12,7 +12,7 @@ async function publishProjectRuleset(env, projectId, ruleId, name = '项目业�
     draft: {
       ...created.body.draft,
       name,
-      steps: [{ type: 'rule', id: ruleId }],
+      steps: [{ type, id: ruleId }],
       branches: [],
     },
   });
@@ -101,6 +101,234 @@ test('advanced rule conditions survive project API save and compile unchanged', 
     assert.equal(compiled.status, 200);
     assert.match(compiled.body.drl, /not RuleInput\( creditScore < 0 \)/);
     assert.match(compiled.body.drl, /customerAge >= 18, creditScore >= customerAge/);
+  } finally {
+    await env.stop();
+  }
+});
+
+test('nested groups and action expressions survive save, publish, and release checksum freezing', async () => {
+  const env = await startTestEnv();
+  try {
+    const created = await env.request('/api/projects/default/rules', 'POST', {
+      type: 'rule', name: '规则语言 v2 往返测试', category: 'languagev2',
+    });
+    assert.equal(created.status, 201);
+    const conditionTree = {
+      type: 'group', operator: 'or', children: [
+        { type: 'group', operator: 'and', children: [
+          { type: 'condition', condition: { field: 'customerAge', operator: '>=', value: '18' } },
+          { type: 'condition', condition: { field: 'creditScore', operator: '>=', value: '600' } },
+        ] },
+        { type: 'group', operator: 'and', children: [
+          { type: 'condition', condition: { field: 'customerType', operator: '==', value: '企业' } },
+          { type: 'condition', condition: { field: 'overdue', operator: '==', value: 'false' } },
+        ] },
+      ],
+    };
+    const valueExpression = {
+      type: 'function', name: 'min', args: [
+        { type: 'binary', operator: '*', left: { type: 'field', field: 'annualIncome' }, right: { type: 'literal', value: '0.3' } },
+        { type: 'literal', value: '100000' },
+      ],
+    };
+    const saved = await env.request(`/api/projects/default/rules/${created.body.id}`, 'PUT', {
+      revision: created.body.revision,
+      draft: { ...created.body.draft, conditions: [], conditionTree, actions: [{ field: 'approvedLimit', value: '', valueExpression }] },
+    });
+    assert.equal(saved.status, 200);
+    assert.deepEqual(saved.body.draft.conditionTree, conditionTree);
+    assert.deepEqual(saved.body.draft.actions[0].valueExpression, valueExpression);
+
+    const compiled = await env.request(`/api/projects/default/rules/${created.body.id}/compile`, 'POST', {
+      revision: saved.body.revision, draft: saved.body.draft,
+    });
+    assert.equal(compiled.status, 200);
+    assert.match(compiled.body.drl, /\$input\.getAnnualIncome\(\)/);
+    assert.match(compiled.body.drl, /Math\.min/);
+
+    const published = await env.request(`/api/projects/default/rules/${created.body.id}/publish`, 'POST', { revision: saved.body.revision });
+    assert.equal(published.status, 200);
+    const reloaded = await env.request(`/api/projects/default/rules/${created.body.id}`);
+    assert.deepEqual(reloaded.body.draft.conditionTree, conditionTree);
+    const flow = await publishProjectRuleset(env, 'default', created.body.id, '规则语言 v2 规则集');
+    const release = await env.request('/api/projects/default/releases', 'POST', {
+      decisionService: 'language-v2-service', name: '规则语言 v2 Release', description: '', target: { type: 'flow', id: flow.id },
+    });
+    assert.equal(release.status, 201);
+    assert.match(release.body.steps[0].drl, /Math\.min/);
+    assert.match(release.body.checksum, /^sha256:/);
+  } finally {
+    await env.stop();
+  }
+});
+
+test('decision trees survive create, compile, publish, ruleset, and release freezing', async () => {
+  const env = await startTestEnv();
+  try {
+    const created = await env.request('/api/projects/default/rules', 'POST', {
+      type: 'decision-tree', name: '授信决策树', category: 'trees',
+    });
+    assert.equal(created.status, 201);
+    assert.equal(created.body.type, 'decision-tree');
+    assert.equal(created.body.draft.kind, 'decision-tree');
+
+    const draft = {
+      ...created.body.draft,
+      name: '授信决策树',
+      root: {
+        id: 'age', type: 'condition', condition: { field: 'customerAge', operator: '>=', value: '18' },
+        trueChild: {
+          id: 'score', type: 'condition', condition: { field: 'creditScore', operator: '>=', value: '600' },
+          trueChild: { id: 'approved', type: 'result', label: '通过', actions: [{ field: 'riskLevel', value: '低' }] },
+          falseChild: { id: 'manual', type: 'result', label: '人工审核', actions: [{ field: 'riskLevel', value: '中' }] },
+        },
+        falseChild: { id: 'rejected', type: 'result', label: '拒绝', actions: [{ field: 'riskLevel', value: '高' }] },
+      },
+    };
+    const saved = await env.request(`/api/projects/default/rules/${created.body.id}`, 'PUT', {
+      revision: created.body.revision, draft,
+    });
+    assert.equal(saved.status, 200);
+    assert.equal(saved.body.type, 'decision-tree');
+    assert.deepEqual(saved.body.decisionTreeLeaves.map(leaf => leaf.id), ['approved', 'manual', 'rejected']);
+
+    const compiled = await env.request(`/api/projects/default/rules/${created.body.id}/compile`, 'POST', {
+      revision: saved.body.revision, draft: saved.body.draft,
+    });
+    assert.equal(compiled.status, 200);
+    assert.match(compiled.body.drl, new RegExp(`activation-group "decision-tree:${created.body.id}"`));
+    assert.match(compiled.body.drl, /customerAge >= 18, creditScore < 600/);
+
+    const published = await env.request(`/api/projects/default/rules/${created.body.id}/publish`, 'POST', { revision: saved.body.revision });
+    assert.equal(published.status, 200);
+    const flow = await publishProjectRuleset(env, 'default', created.body.id, '决策树规则集', 'table');
+    const release = await env.request('/api/projects/default/releases', 'POST', {
+      decisionService: 'decision-tree-service', name: '决策树 Release', description: '', target: { type: 'flow', id: flow.id },
+    });
+    assert.equal(release.status, 201);
+    assert.match(release.body.steps[0].drl, new RegExp(`activation-group "decision-tree:${created.body.id}"`));
+    assert.match(release.body.checksum, /^sha256:/);
+  } finally {
+    await env.stop();
+  }
+});
+
+test('scorecards survive create, compile, publish, ruleset, and release freezing', async () => {
+  const env = await startTestEnv();
+  try {
+    const created = await env.request('/api/projects/default/rules', 'POST', {
+      type: 'scorecard', name: '授信计分卡', category: 'scorecards',
+    });
+    assert.equal(created.status, 201);
+    assert.equal(created.body.type, 'scorecard');
+    assert.equal(created.body.draft.kind, 'scorecard');
+
+    const draft = {
+      ...created.body.draft,
+      name: '授信计分卡',
+      scoreOutputField: 'approvedLimit',
+      initialScore: 20,
+      characteristics: [
+        { id: 'age', name: '年龄', field: 'customerAge', rows: [
+          { id: 'age-young', label: '未满 25', operator: '<', value: '25', score: -10 },
+          { id: 'age-default', label: '25 岁及以上', default: true, score: 15 },
+        ] },
+        { id: 'credit', name: '信用评分', field: 'creditScore', rows: [
+          { id: 'credit-low', label: '低于 600', operator: '<', value: '600', score: -30 },
+          { id: 'credit-default', label: '600 及以上', default: true, score: 40 },
+        ] },
+      ],
+      bands: [
+        { id: 'reject', label: '拒绝', min: null, max: 30, actions: [{ field: 'riskLevel', value: '高' }] },
+        { id: 'review', label: '人工审核', min: 30, max: 60, actions: [{ field: 'riskLevel', value: '中' }] },
+        { id: 'approve', label: '通过', min: 60, max: null, actions: [{ field: 'riskLevel', value: '低' }] },
+      ],
+    };
+    const saved = await env.request(`/api/projects/default/rules/${created.body.id}`, 'PUT', {
+      revision: created.body.revision, draft,
+    });
+    assert.equal(saved.status, 200);
+    assert.equal(saved.body.type, 'scorecard');
+    assert.deepEqual(saved.body.draft.characteristics, draft.characteristics);
+    assert.deepEqual(saved.body.draft.bands, draft.bands);
+
+    const compiled = await env.request(`/api/projects/default/rules/${created.body.id}/compile`, 'POST', {
+      revision: saved.body.revision, draft: saved.body.draft,
+    });
+    assert.equal(compiled.status, 200);
+    assert.match(compiled.body.drl, new RegExp(`activation-group "scorecard:${created.body.id}"`));
+    assert.match(compiled.body.drl, /setApprovedLimit\(\(double\)/);
+
+    const published = await env.request(`/api/projects/default/rules/${created.body.id}/publish`, 'POST', { revision: saved.body.revision });
+    assert.equal(published.status, 200);
+    const flow = await publishProjectRuleset(env, 'default', created.body.id, '计分卡规则集', 'table');
+    const release = await env.request('/api/projects/default/releases', 'POST', {
+      decisionService: 'scorecard-service', name: '计分卡 Release', description: '', target: { type: 'flow', id: flow.id },
+    });
+    assert.equal(release.status, 201);
+    assert.match(release.body.steps[0].drl, new RegExp(`activation-group "scorecard:${created.body.id}"`));
+    assert.match(release.body.steps[0].drl, /setApprovedLimit\(\(double\)/);
+    assert.match(release.body.checksum, /^sha256:/);
+  } finally {
+    await env.stop();
+  }
+});
+
+test('BOM methods and dynamic domains persist and freeze into rule releases', async () => {
+  const env = await startTestEnv();
+  try {
+    const rawBomResponse = await env.request('/api/bom');
+    assert.equal(rawBomResponse.status, 200);
+    const rawBom = structuredClone(rawBomResponse.body);
+    const customerType = rawBom.fields.find(field => field.key === 'customerType');
+    customerType.domainId = 'customerKinds';
+    customerType.enum = null;
+    const domains = [{ id: 'customerKinds', label: '客户类型动态域', values: ['个人', '企业', '同业'] }];
+    const methods = [{
+      name: 'recommendedLimit', label: '建议授信额度', returnType: 'Decimal', description: '年收入三成，上限十万',
+      expression: { type: 'function', name: 'min', args: [
+        { type: 'binary', operator: '*', left: { type: 'field', field: 'annualIncome' }, right: { type: 'literal', value: '0.3' } },
+        { type: 'literal', value: '100000' },
+      ] },
+    }];
+    const savedBom = await env.request('/api/projects/default/bom', 'PUT', {
+      version: rawBom.version, fields: rawBom.fields, domains, methods,
+    });
+    assert.equal(savedBom.status, 200);
+    assert.deepEqual(savedBom.body.bom.domains, domains);
+    assert.deepEqual(savedBom.body.bom.methods, methods);
+
+    const model = await env.request('/api/projects/default/bom');
+    assert.equal(model.status, 200);
+    assert.deepEqual(model.body.domains, domains);
+    assert.deepEqual(model.body.methods, methods);
+    assert.deepEqual(model.body.factTypes.flatMap(fact => fact.fields).find(field => field.key === 'customerType').enum, domains[0].values);
+
+    const created = await env.request('/api/projects/default/rules', 'POST', {
+      type: 'rule', name: 'BOM 方法规则', category: 'bommethods',
+    });
+    assert.equal(created.status, 201);
+    assert.deepEqual(created.body.bomMethods, methods);
+    const saved = await env.request(`/api/projects/default/rules/${created.body.id}`, 'PUT', {
+      revision: created.body.revision,
+      draft: {
+        ...created.body.draft,
+        conditions: [{ field: 'customerType', operator: '==', value: '企业' }],
+        actions: [{ field: 'approvedLimit', value: '', valueExpression: { type: 'method', name: 'recommendedLimit' } }],
+      },
+    });
+    assert.equal(saved.status, 200);
+    assert.match(saved.body.content, /Math\.min/);
+    const published = await env.request(`/api/projects/default/rules/${created.body.id}/publish`, 'POST', { revision: saved.body.revision });
+    assert.equal(published.status, 200);
+    const flow = await publishProjectRuleset(env, 'default', created.body.id, 'BOM 方法规则集');
+    const release = await env.request('/api/projects/default/releases', 'POST', {
+      decisionService: 'bom-method-service', name: 'BOM 方法 Release', description: '', target: { type: 'flow', id: flow.id },
+    });
+    assert.equal(release.status, 201);
+    assert.match(release.body.steps[0].drl, /Math\.min/);
+    assert.equal(release.body.model.methods[0].name, 'recommendedLimit');
+    assert.equal(release.body.model.domains[0].id, 'customerKinds');
   } finally {
     await env.stop();
   }
@@ -591,6 +819,8 @@ test('project compatibility API exposes the default workspace without duplicatin
     });
     assert.equal(staleRule.status, 409);
     assert.equal(staleRule.body.currentRevision, 5);
+    assert.equal(staleRule.body.current.revision, 5);
+    assert.equal(staleRule.body.current.draft.name, '项目 API 已保存规则');
 
     const tableDetail = await env.request(`/api/projects/default/rules/${table.id}`);
     assert.equal(tableDetail.status, 200);
@@ -675,6 +905,8 @@ test('project compatibility API exposes the default workspace without duplicatin
     });
     assert.equal(staleFlow.status, 409);
     assert.equal(staleFlow.body.currentRevision, 3);
+    assert.equal(staleFlow.body.current.revision, 3);
+    assert.equal(staleFlow.body.current.draft.name, savedFlow.body.draft.name);
     const republishedFlow = await env.request(`/api/projects/default/flows/${createdFlow.body.id}/publish`, 'POST', {
       revision: publishedFlow.body.revision,
     });
@@ -1227,7 +1459,7 @@ test('CEP project supports event-stream publish, suite gate, release and local e
 
     const created = await env.request(`/api/projects/${projectId}/event-streams`, 'POST', {
       name: '高温事件流',
-      statements: [{ name: 'HighTemperature', epl: 'insert into HighTemperatureEvent select * from GrainStore where averageTemperature > 25' }],
+      statements: [{ name: 'STATEMENT_1', epl: "@Name('HighTemperature') insert into HighTemperatureEvent select * from GrainStore where averageTemperature > 25" }],
     });
     assert.equal(created.status, 201);
     assert.equal(created.body.type, 'event-stream');
@@ -1273,6 +1505,10 @@ test('CEP project supports event-stream publish, suite gate, release and local e
     const run = await env.request(`/api/projects/${projectId}/test-suites/${suite.body.id}/run`, 'POST');
     assert.equal(run.status, 200);
     assert.equal(run.body.report.passed, true);
+    assert.deepEqual(run.body.report.coverage, {
+      kind: 'event-statement', hit: 1, total: 1, percentage: 100,
+      items: [{ id: 'STATEMENT_1', label: 'STATEMENT_1', hit: true }],
+    });
 
     const release = await env.request(`/api/projects/${projectId}/releases`, 'POST', {
       decisionService: 'grain-cep', name: 'CEP v1', target: { type: 'event-stream', id: created.body.id },
@@ -1458,6 +1694,99 @@ test('CEP event-stream deletion is revision-safe and preserves immutable release
     assert.equal((await env.request(`/api/projects/${projectId}/event-streams`)).body[0].id, created.body.id);
     const audit = await env.request(`/api/projects/${projectId}/audit-events`);
     assert.ok(audit.body.some(event => event.action === 'asset.restored' && event.resourceId === created.body.id));
+  } finally {
+    await env.stop();
+  }
+});
+
+test('CEP release exposes alert instances and audits acknowledgement', async () => {
+  const env = await startTestEnv({ cepApiKey: 'cep-test-key' });
+  try {
+    const project = await env.request('/api/projects', 'POST', {
+      name: 'CEP 告警状态', description: '告警确认回归', icon: 'warehouse', engine: 'cep', bomTemplate: 'grain',
+    });
+    const stream = await env.request(`/api/projects/${project.body.id}/event-streams`, 'POST', {
+      name: '温度告警', statements: [{ name: 'HighTemperature', mode: 'advanced', epl: 'select * from GrainStore where averageTemperature > 25' }],
+    });
+    const published = await env.request(`/api/projects/${project.body.id}/event-streams/${stream.body.id}/publish`, 'POST', { revision: stream.body.revision });
+    const release = await env.request(`/api/projects/${project.body.id}/releases`, 'POST', {
+      decisionService: 'temperature-alerts', name: '温度告警发布包', target: { type: 'event-stream', id: stream.body.id },
+    });
+    assert.equal(release.status, 201);
+    assert.equal((await env.request(`/api/projects/${project.body.id}/releases/${release.body.id}/deploy`, 'POST', { environment: 'local' })).status, 200);
+    const alertId = `${release.body.id}:HighTemperature:HighTemperatureEvent:warehouse-1`;
+    env.cepAlerts.set(alertId, {
+      id: alertId, releaseId: release.body.id, statement: 'HighTemperature', eventType: 'HighTemperatureEvent',
+      key: alertId, correlationKey: 'warehouse-1', status: 'ACTIVE', lastFiredAt: '2026-10-09T07:59:00.000Z',
+    });
+
+    const listed = await env.request(`/api/projects/${project.body.id}/releases/${release.body.id}/alerts`);
+    assert.equal(listed.status, 200);
+    assert.equal(listed.body[0].status, 'ACTIVE');
+    const acknowledged = await env.request(`/api/projects/${project.body.id}/releases/${release.body.id}/alerts`, 'POST', { alertId, action: 'ack' });
+    assert.equal(acknowledged.status, 200);
+    assert.equal(acknowledged.body.status, 'ACKED');
+    assert.equal(acknowledged.body.ackedBy, 'local-user');
+    const ackCall = env.cepCalls.find(call => call.path.startsWith('/alerts/') && call.body.action === 'ack');
+    assert.equal(ackCall.body.releaseId, release.body.id);
+    const audit = await env.request(`/api/projects/${project.body.id}/audit-events`);
+    assert.ok(audit.body.some(event => event.action === 'alert.acknowledged' && event.details.alertId === alertId));
+  } finally {
+    await env.stop();
+  }
+});
+
+test('project assets support atomic batch governance metadata and archive', async () => {
+  const env = await startTestEnv();
+  try {
+    const project = await env.request('/api/projects', 'POST', {
+      name: '资产批量治理', description: '标签、有效期和批量操作', icon: 'shield', engine: 'rules', bomTemplate: 'loan',
+    });
+    const createdPackage = await env.request(`/api/projects/${project.body.id}/packages`, 'POST', { name: 'governance', label: '治理规则', parentId: null });
+    const category = createdPackage.body.id;
+    const first = await env.request(`/api/projects/${project.body.id}/rules`, 'POST', { type: 'rule', name: '批量规则一', category });
+    const second = await env.request(`/api/projects/${project.body.id}/rules`, 'POST', { type: 'decision-table', name: '批量规则二', category });
+    const firstDraft = structuredClone(first.body.draft);
+    firstDraft.conditions[0].value = '18';
+    firstDraft.actions[0].value = '低';
+    const saved = await env.request(`/api/projects/${project.body.id}/rules/${first.body.id}`, 'PUT', { revision: first.body.revision, draft: firstDraft });
+    const published = await env.request(`/api/projects/${project.body.id}/rules/${first.body.id}/publish`, 'POST', { revision: saved.body.revision });
+    const items = [
+      { id: first.body.id, type: 'rule', revision: published.body.revision },
+      { id: second.body.id, type: 'table', revision: second.body.revision },
+    ];
+
+    const metadata = await env.request(`/api/projects/${project.body.id}/assets/batch`, 'POST', {
+      action: 'metadata', items, tags: ['核心', '2026', '核心'], effectiveFrom: '2026-10-01', effectiveTo: '2026-12-31',
+    });
+    assert.equal(metadata.status, 200);
+    assert.equal(metadata.body.count, 2);
+    const listed = (await env.request(`/api/projects/${project.body.id}/packages`)).body.flatMap(pkg => pkg.assets);
+    assert.deepEqual(listed.find(asset => asset.id === first.body.id).tags, ['核心', '2026']);
+    assert.equal(listed.find(asset => asset.id === first.body.id).effectiveStatus, 'effective');
+    assert.equal(listed.find(asset => asset.id === first.body.id).status, 'published');
+
+    const stale = await env.request(`/api/projects/${project.body.id}/assets/batch`, 'POST', {
+      action: 'archive', items: [
+        { id: first.body.id, type: 'rule', revision: metadata.body.items[0].revision },
+        { id: second.body.id, type: 'table', revision: second.body.revision },
+      ],
+    });
+    assert.equal(stale.status, 409);
+    const afterConflict = (await env.request(`/api/projects/${project.body.id}/packages`)).body.flatMap(pkg => pkg.assets);
+    assert.ok(afterConflict.some(asset => asset.id === first.body.id));
+    assert.ok(afterConflict.some(asset => asset.id === second.body.id));
+
+    const archive = await env.request(`/api/projects/${project.body.id}/assets/batch`, 'POST', {
+      action: 'archive', items: metadata.body.items,
+    });
+    assert.equal(archive.status, 200);
+    const active = (await env.request(`/api/projects/${project.body.id}/packages`)).body.flatMap(pkg => pkg.assets);
+    assert.ok(!active.some(asset => asset.id === first.body.id));
+    assert.ok(!active.some(asset => asset.id === second.body.id));
+    const audit = await env.request(`/api/projects/${project.body.id}/audit-events`);
+    assert.ok(audit.body.some(event => event.action === 'asset.batch-metadata' && event.details.count === 2));
+    assert.ok(audit.body.some(event => event.action === 'asset.batch-archive' && event.details.count === 2));
   } finally {
     await env.stop();
   }

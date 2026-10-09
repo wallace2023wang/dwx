@@ -16,6 +16,7 @@ export function createProjectQueryService({
     return {
       allRules: rules,
       allTables: tables,
+      allFlows: flows,
       allEventStreams: eventStreams,
       rules: rules.filter(item => !item.archived),
       tables: tables.filter(item => !item.archived),

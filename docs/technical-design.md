@@ -318,6 +318,14 @@ RES 使用部署时已经编译的容器和会话池依次执行步骤。每一�
 
 RES 会话池大小由 `res/config/res.properties` 的 `kie.session.pool.size` 配置，默认值为 `2`；也可用 `RES_CONFIG_FILE` 指向其他配置文件。
 
+### CEP 告警状态
+
+CEP Runtime 在每次语句输出时，以 `releaseId:statement:eventType:correlationKey` 作为告警实例 ID；关联键依次取输出数据的 `eventKey`、`warehouseId`、`sensorId`，都不存在时使用 `default`。状态机仅包含 `ACTIVE`、`ACKED`、`CLEARED`：首次命中与清除后重开进入 `ACTIVE`，`POST /alerts/{alertId}` 在同时匹配请求 `releaseId` 时迁移到 `ACKED`，调度器超过 `clearedAfterMs` 后迁移到 `CLEARED`。ACK 不修改 `lastFiredAt`，因此不会重置消退计时；`ACKED` 状态再次命中只刷新最近命中时间，`CLEARED` 状态再次命中则清空旧确认信息。
+
+`GET /alerts?releaseId=...` 返回告警列表。Team Server 暴露同一 Release 范围的查询和 ACK 代理，ACK actor 只取可信 principal，并追加 `alert.acknowledged` 审计；运行时再次核对告警所属 Release，防止跨项目或跨 Release 确认。发布中心每 5 秒刷新告警实例，并仅允许确认 `ACTIVE` 状态。
+
+CEP Runtime 将告警原子写入 `${CEP_DATA_DIR}/alerts.json`，启动时与不可变 Release 一起恢复；卸载 Release 时同步删除所属告警。告警实例不依赖 webhook 是否启用，但首版自动消退窗口仍来自该 Release 的 webhook `clearedAfterMs` 配置；没有有效消退窗口的告警保持活动或已确认。当前存储为单实例本地文件，多节点一致性需在企业运行阶段迁移到共享状态存储。
+
 存在 `routing` 时，RES 先执行 `afterStep` 之前的公共步骤，再用此时的事实选择分支，仅执行该分支的 `stepIndexes`。轨迹在公共步骤与分支步骤之间增加 `type: "gateway"` 项，响应顶层 `path` 返回分支 ID、名称和是否默认分支。没有 `routing` 的历史 Release 仍按原有线性语义执行。
 
 ## 5. 存储与一致性
@@ -342,9 +350,45 @@ Team Server 支持两种存储适配器。未设置 `DATABASE_URL` 时使用 JSO
 
 `npm run db:import-json` 在一个数据库事务内导入现有 `data/*.json`。任一对象失败则全部回滚；目标库已有任意业务数据时拒绝执行，防止覆盖或重复导入。
 
-资产和测试套件 API 使用期望 `revision`，BOM 使用期望 `version`。应用层先返回结构化冲突，PostgreSQL 写入事务再通过行锁比较数据库当前修订，防止多个 Team Server 进程绕过检查。冲突响应为 `409`，包含 `currentRevision` 和可用时的 `current` 快照。前端保留本地编辑并要求用户显式载入服务器版本。
+资产和测试套件 API 使用期望 `revision`，BOM 使用期望 `version`。应用层先返回结构化冲突，PostgreSQL 写入事务再通过行锁比较数据库当前修订，防止多个 Team Server 进程绕过检查。冲突响应为 `409`，包含 `currentRevision` 和可用时的 `current` 快照。
+
+规则、决策表、规则集和 CEP 事件流编辑器保留开始编辑时的基础草稿。保存冲突后，以基础草稿、本地草稿和 `current.draft` 执行递归三方合并；对象按字段合并，结构化数组优先按 `nodeId`、`id`、`name` 或 `field` 稳定标识匹配。只有一侧修改的路径自动采用该侧，两侧相同修改直接采用，两侧不同修改生成显式冲突。无冲突时使用 `currentRevision` 自动重试保存，有冲突时用户逐项选择本地或服务器值后再保存。该过程只合并可变 `draft`，不合并负责人、发布版本、Release 内容或运行时制品。
+
+实时协同使用项目级 `/collaboration` 协议。浏览器标签页生成独立 `clientId`，每 4 秒通过 `POST /api/projects/:projectId/collaboration` 上报资产类型、资产 ID、查看/编辑状态和本地修订；`GET .../collaboration/events` 建立 SSE 长连接，即时接收在线成员、服务器修订、文本帧和远端光标。停止心跳 12 秒或显式 `DELETE` 离开即从在线列表移除。
+
+高级 EPL 是首个字符级共同编辑文档。每个资产和 `documentId` 在 Team Server 内存中维护 `value/sequence/updatedBy`；客户端以 `baseSequence + value` 串行提交实时全文帧，序列一致才递增并广播，过期序列返回 `409` 和服务器当前文档。客户端只自动合并两侧不重叠的单段文本变更；同一段冲突保留本地内容并提示，最终保存继续执行资产 `revision` 乐观锁与草稿三方合并。光标按约 100ms 节流上报，Monaco 用远端选区装饰展示协作者位置。EPL 上限为 4,000 字符，文本写入同时校验草稿负责人和 `advanced-epl` 权限。
+
+协作会话、实时文档和光标均不持久化、不写审计、不改变资产修订，也不进入发布版本或 Release。资产修订变化后实时文档序列重新开始，防止旧草稿帧覆盖新修订。BAL、决策表和流程图等结构化编辑器不把 JSON 当字符流同步，继续使用稳定字段与数组标识的三方合并。当前消息层只覆盖单个 Team Server 进程；多实例部署必须引入 Redis/NATS 等共享 presence、文档序列和发布订阅层，并保持相同 HTTP/SSE 契约。
+
+### 规则语言 v2 结构化 AST
+
+BAL 草稿可选使用 `conditionTree` 保存嵌套条件组；叶子仍复用原 `RuleConditionDraft`，旧资产继续读取扁平 `conditions`。新结构限制为 5 层、20 个条件叶子，生成 DRL 时保留显式括号和 AND/OR 优先级，不把复杂树静默降级为扁平连接词。
+
+数值动作可选使用 `valueExpression`，仅允许数值字面量、BOM 输入字段、数值 Rule Project 变量、四则运算和 `min/max/round/abs`。服务端执行类型推断、函数白名单、除零常量检查、层级与节点上限校验；发布版本和 Release DRL/checksum 冻结完整 AST。任意 DRL/Java 表达式不进入该结构化入口。
+
+BOM `methods[]` 在同一安全 AST 上定义可复用、无参数的数值业务方法；规则动作通过 `{ type: "method", name }` 引用，生成 DRL 时确定性内联方法表达式。方法只能读取 BOM 数值输入字段，不能访问项目变量、网络或任意 Java API。
+
+BOM `domains[]` 保存 `{ id, label, values[] }` 版本化动态域，Enum 字段通过 `domainId` 引用。设计时解析为字段枚举下拉，服务端仍执行白名单校验；域值缩减、删除和方法变更进入 BOM 影响确认，完整定义随资产 BOM 快照和 Release checksum 冻结。首版“动态”指集中维护与版本化切换，不在规则执行时调用外部 URL。
+
+### 决策树资产
+
+决策树以 `kind: "decision-tree"` 的结构化草稿存入既有 `tables` 资产集合，从而复用决策资产的修订、审批、发布、Rule Group、测试和 Release 管线，而不新增存储迁移。条件节点固定包含 `trueChild/falseChild`，结果节点保存可复用的规则动作 AST；根节点必须是条件节点，当前限制 8 层、63 个节点、32 个结果叶子。
+
+编译器按稳定的“是分支优先、否分支随后”深度遍历把每条根到叶路径生成一条 Drools 规则，所有路径共享 `decision-tree:<assetId>` activation group，路径顺序映射到 salience，确保只执行一个结果。否分支只允许安全反转的比较符：`==/!=`、`>/<=`、`>=/<`、`</>=`、`<=/>`；`between`、字符串 contains、正则等不能确定性补集的操作不进入首版。生成 DRL、BOM 快照与树草稿随资产版本和 Release checksum 一并冻结，运行测试按叶节点计算覆盖率。
+
+### 计分卡资产
+
+计分卡以 `kind: "scorecard"` 的结构化草稿存入既有 `tables` 资产集合，复用决策资产的修订、审批、发布、Rule Group、测试和 Release 管线。草稿包含初始分、一个数值输出总分字段、1–20 个评分特征和 1–20 个连续结果分段；每个特征按显示顺序匹配条件分箱，必须以唯一默认分箱收尾，结果区间统一采用 `[min, max)`，第一段和最后一段分别覆盖负无穷与正无穷。
+
+编译器把“初始分 + 每个特征命中分值”冻结为确定性的嵌套条件表达式，并为每个结果分段生成一条规则。全部分段共享 `scorecard:<assetId>` activation group，按显示顺序生成 salience，确保一次执行只选择一个结果分段；总分 setter 使用受信任的内部表达式通道，普通规则 API 仍禁止注入任意 DRL。计分卡结构、生成 DRL、BOM 快照与结果分段标识随资产版本和 Release checksum 一并冻结，运行测试按结果分段计算覆盖率。
 
 项目记录持久化审核策略，Change Set 在提交时保存策略快照和逐人批准记录；1/2 人审核使用串行评审锁与乐观修订，只有最后一票触发发布。后续存储工作包括 Change Set 与 Release 强制关联；大型测试数据、构建日志和制品可迁移到对象存储，并补充备份恢复流程。
+
+资产外层记录 `ownerId/ownerName` 草稿负责人，不进入规则草稿、发布版本、Release 内容或运行时校验和。创建时绑定可信 principal；历史资产首次编辑原子认领；转交与内容写入共用资产写队列和乐观修订，避免旧负责人用过期页面覆盖新负责人的草稿。`local` 模式保留单机自编辑能力，OIDC 模式执行负责人/管理员门禁。
+
+资产治理元数据继续存放在资产外层：`tags[]` 最多 10 个且单项不超过 24 字符，`effectiveFrom/effectiveTo` 使用 `YYYY-MM-DD` 并允许单边界。它们用于资产筛选、待生效/已过期提示和治理审计，不进入不可变版本、Release checksum，也不在首版自动部署、激活或下线运行版本。
+
+`POST /api/projects/:projectId/assets/batch` 支持最多 100 项的 `metadata`、`owner`、`move` 和 `archive` 操作。请求逐项携带资产类型、ID 与期望修订号；服务在同一串行写队列中先完成所有目标的资产授权、负责人、审核锁、生命周期和乐观锁校验，再统一修改，因此业务校验失败不会产生部分写入。JSON 模式按项目四类资产文件统一落盘；PostgreSQL 模式由同一应用写队列调用各资产表保存，后续多实例部署仍应升级为数据库事务封装。
 
 ## 6. 安全演进
 
@@ -367,9 +411,17 @@ MVP 的本机端口仅绑定 `127.0.0.1`。生产前必须完成：
 
 仅保存资产 ID 无法保证历史可重放。Release 同时保存结构化来源元数据和实际执行 DRL，RES 不回查 Team Server。
 
-### ADR-003：规则集先采用短事务顺序执行
+### ADR-003：规则集采用短事务串行编排
 
-当前业务目标是决策编排。第一阶段只支持“公共步骤 + 单个排他网关 + 分支步骤”，不支持多级网关、并行、聚合、子流程或循环。人工任务和长事务交给 BPMN 引擎，避免 RES 演变为不完整的工作流系统。
+当前业务目标是决策编排。规则集草稿使用 `steps[]` 表示公共主线，使用 `gateways[]` 表示最多 4 个串行排他网关；每个网关的 `afterStep` 指定 0..`steps.length` 的公共步骤边界，同一边界只允许一个网关。选中分支执行后立即汇合回公共主线，然后继续后续公共步骤或下一网关。历史 `branches[]` 草稿按“末尾单网关”兼容读取，编辑后保存为 `gateways[]`。
+
+新 Release 冻结为 `routing.type = exclusive-chain`，包含 `commonStepCount` 和按边界定位的 `gateways[]`；历史单网关 Release 继续使用 `routing.type = exclusive`。Team Server 与 RES 都支持两种格式；单网关继续返回 `path`，多网关返回按执行顺序排列的 `paths`，轨迹节点携带 `gatewayId` 和 `branchId`。
+
+需要嵌套判断或任意汇合时，草稿升级为 `graph = { entry, nodes[] }`。步骤节点保存冻结前步骤定义和唯一后继，排他网关节点保存有序分支及各自目标；多个边指向同一步骤即表示汇合，不引入独立汇合节点。Release 冻结为 `routing.type = exclusive-dag`，步骤节点通过 `stepIndex` 引用不可变 `steps[]`。校验要求入口和所有目标存在、全部节点从入口可达、图中无环且所有路径最终到达 `end`；Team Server 与 RES 都按单路径遍历并返回实际 `paths` 与节点轨迹。旧 `branches[]`、`gateways[]`、`exclusive` 和 `exclusive-chain` 保持兼容。
+
+含并行节点时 Release 使用 `routing.type = decision-dag`。`parallel` 节点保存 2–8 条无条件分支和唯一 `join` 节点 ID；分支在聚合前不得共享节点、提前结束或包含嵌套并行。运行时复制进入并行网关时的 facts 与 Ruleset Variables，逐分支隔离执行并保留分支轨迹；聚合时只比较相对入口快照发生变化的键，不同键或相同值自动合并，同一键不同值返回 409 和聚合节点定位。该确定性策略不等同于最低优先级待办中的通用最大值、优先级或集合归并策略。
+
+当前不支持嵌套并行或循环执行。子流程采用设计期引用、发布时内联冻结：父规则集快照将子流程展开为带命名空间的普通 DAG 节点，并在步骤上保留 `subflowPath` 来源元数据；Release 与 RES 均不回查子规则集或子 Release ID。系统限制最大嵌套深度为 4，拒绝直接/间接循环、BOM 版本不一致和规则集变量不兼容。人工任务和长事务交给 BPMN 引擎，避免 RES 演变为不完整的工作流系统。
 
 ### ADR-004：当前仓库采用单仓多项目
 

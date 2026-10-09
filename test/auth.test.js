@@ -84,9 +84,58 @@ test('AUTH-01: OIDC JWT 验签并按角色执行 API 权限门禁', async () => 
     assert.equal(separatedApproval.status, 200);
     assert.equal(separatedApproval.body.status, 'APPROVED');
 
+    const ownerA = await token('owner-a', ['author']);
+    const ownerB = await token('owner-b', ['author']);
+    const ownerAHeaders = { authorization: `Bearer ${ownerA}` };
+    const ownerBHeaders = { authorization: `Bearer ${ownerB}` };
+    const owned = await env.request('/api/projects/default/rules', 'POST', {
+      type: 'rule', name: '草稿所有权规则', category: 'governance',
+    }, ownerAHeaders);
+    assert.equal(owned.status, 201);
+    assert.equal(owned.body.owner.id, 'owner-a');
+    const ownedDraft = structuredClone(owned.body.draft);
+    ownedDraft.description = '只有负责人可以保存';
+    ownedDraft.conditions[0].value = '18';
+    ownedDraft.actions[0].value = '低';
+    const blockedSave = await env.request(`/api/projects/default/rules/${owned.body.id}`, 'PUT', {
+      revision: owned.body.revision, draft: ownedDraft,
+    }, ownerBHeaders);
+    assert.equal(blockedSave.status, 403);
+    const transferred = await env.request(`/api/projects/default/rules/${owned.body.id}/transfer-owner`, 'POST', {
+      revision: owned.body.revision, ownerId: 'owner-b', ownerName: '负责人 B',
+    }, ownerAHeaders);
+    assert.equal(transferred.status, 200);
+    assert.equal(transferred.body.owner.id, 'owner-b');
+    assert.equal(transferred.body.revision, owned.body.revision + 1);
+    assert.equal((await env.request(`/api/projects/default/rules/${owned.body.id}`, 'PUT', {
+      revision: owned.body.revision, draft: ownedDraft,
+    }, ownerAHeaders)).status, 403);
+    const ownerBSave = await env.request(`/api/projects/default/rules/${owned.body.id}`, 'PUT', {
+      revision: transferred.body.revision, draft: ownedDraft,
+    }, ownerBHeaders);
+    assert.equal(ownerBSave.status, 200);
+    assert.equal(ownerBSave.body.owner.id, 'owner-b');
+
+    const ownerBPresence = await env.request('/api/projects/default/collaboration', 'POST', {
+      assetType: 'rule', assetId: owned.body.id, clientId: 'owner-b-tab', revision: ownerBSave.body.revision, mode: 'editing',
+    }, ownerBHeaders);
+    assert.equal(ownerBPresence.status, 200);
+    assert.equal(ownerBPresence.body.currentRevision, ownerBSave.body.revision);
+    assert.deepEqual(ownerBPresence.body.members.map(member => ({ userId: member.userId, mode: member.mode })), [{ userId: 'owner-b', mode: 'editing' }]);
+    const ownerAViewer = await env.request('/api/projects/default/collaboration', 'POST', {
+      assetType: 'rule', assetId: owned.body.id, clientId: 'owner-a-tab', revision: transferred.body.revision, mode: 'viewing',
+    }, ownerAHeaders);
+    assert.equal(ownerAViewer.status, 200);
+    assert.equal(ownerAViewer.body.currentRevision, ownerBSave.body.revision);
+    assert.equal(ownerAViewer.body.members.length, 2);
+    assert.equal((await env.request('/api/projects/default/collaboration', 'DELETE', {
+      assetType: 'rule', assetId: owned.body.id, clientId: 'owner-a-tab', revision: transferred.body.revision, mode: 'viewing',
+    }, ownerAHeaders)).body.members.length, 1);
+
     const audit = await env.request('/api/audit-events', 'GET', undefined, reviewerHeaders);
     assert.equal(audit.status, 200);
     assert.ok(audit.body.some(event => event.action === 'asset.created' && event.actor === 'rule-author'));
+    assert.ok(audit.body.some(event => event.action === 'asset.owner-transferred' && event.resourceId === owned.body.id));
 
     const releaseManager = await token('release-admin', [], {
       claims: { resource_access: { 'rules-web': { roles: ['release-manager'] } } },

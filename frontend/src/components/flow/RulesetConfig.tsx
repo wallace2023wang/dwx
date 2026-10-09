@@ -56,6 +56,7 @@ export default function RulesetConfig({ rulesets, selectedId, onSelect }: Rulese
           </select>
         </ConfigItem>
         <ConfigItem label="执行模型">{selected.flowName}</ConfigItem>
+        <ConfigItem label="草稿负责人">{selected.owner?.name || '未认领'}</ConfigItem>
         <ConfigItem label="依赖状态">{selected.needsRepublish ? <span className="text-[#b26a00]">依赖资产已升版，需要重新发布</span> : <span className="text-env-production">当前</span>}</ConfigItem>
         <ConfigItem label="命中策略">{hitPolicyLabels[selected.hitPolicy]}</ConfigItem>
         <ConfigItem label="最大 firing 次数"><span className="font-mono">{selected.maxFirings}</span></ConfigItem>

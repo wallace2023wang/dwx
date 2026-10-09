@@ -513,6 +513,133 @@ test('rule flow freezes typed exclusive branches and selects default fallback', 
   assert.equal(selectFlowBranch(snapshot.branches, { creditScore: 650 }).id, 'fallback');
 });
 
+test('rule flow freezes typed DAG gateway conditions and step mappings', () => {
+  const rule = { name: '图节点规则', description: '', conditions: [{ field: 'customerAge', operator: '>=', value: '18' }], actions: [{ field: 'approvedLimit', value: '1000' }], category: '通用', priority: 0 };
+  const rules = [{ id: 'rule-dag', archived: false, published: rule, versions: [{ number: 1 }] }];
+  const step = nodeId => ({ nodeId, type: 'rule', id: 'rule-dag', outputMappings: [{ source: 'approvedLimit', target: 'annualIncome' }] });
+  const flow = {
+    ...newFlow(), name: 'DAG 冻结流程', steps: [], gateways: [],
+    graph: {
+      entry: 'gateway',
+      nodes: [
+        { id: 'gateway', type: 'gateway', name: '评分判断', branches: [
+          { id: 'high', name: '高分', condition: { field: 'creditScore', operator: '>=', value: '700' }, next: 'step' },
+          { id: 'fallback', name: '默认', default: true, next: 'step' },
+        ] },
+        { id: 'step', type: 'step', step: step('step'), next: 'end' },
+      ],
+    },
+  };
+  assert.equal(validateFlow(flow, rules, []), null);
+  const snapshot = flowSnapshot(flow, rules, []);
+  assert.equal(snapshot.graph.nodes[0].branches[0].condition.value, 700);
+  assert.deepEqual(snapshot.graph.nodes[1].step.outputMappings, [{ source: 'approvedLimit', target: 'annualIncome' }]);
+});
+
+test('rule flow validates parallel branches against their declared join', () => {
+  const rule = { name: '并行规则', description: '', conditions: [{ field: 'customerAge', operator: '>=', value: '18' }], actions: [{ field: 'riskLevel', value: '高' }], category: '通用', priority: 0 };
+  const rules = [{ id: 'rule-parallel', archived: false, published: rule, versions: [{ number: 1 }] }];
+  const step = nodeId => ({ nodeId, type: 'rule', id: 'rule-parallel' });
+  const flow = { ...newFlow(), name: '并行校验流程', steps: [], gateways: [], graph: { entry: 'parallel', nodes: [
+    { id: 'parallel', type: 'parallel', name: '并行检查', join: 'join', branches: [{ id: 'a', name: 'A', next: 'a-step' }, { id: 'b', name: 'B', next: 'b-step' }] },
+    { id: 'a-step', type: 'step', step: step('a-step'), next: 'join' },
+    { id: 'b-step', type: 'step', step: step('b-step'), next: 'join' },
+    { id: 'join', type: 'join', name: '聚合', next: 'end' },
+  ] } };
+  assert.equal(validateFlow(flow, rules, []), null);
+  const snapshot = flowSnapshot(flow, rules, []);
+  assert.equal(snapshot.graph.nodes[0].type, 'parallel');
+  assert.equal(snapshot.graph.nodes[3].type, 'join');
+  flow.graph.nodes[2].next = 'end';
+  assert.match(validateFlow(flow, rules, []), /必须汇入聚合节点/);
+});
+
+test('rule flow freezes published subflows into a self-contained namespaced graph', () => {
+  const rule = { name: '子流程规则', description: '', conditions: [{ field: 'customerAge', operator: '>=', value: '18' }], actions: [{ field: 'riskLevel', value: '低' }], category: 'common', priority: 0 };
+  const rules = [{ id: 'subflow-rule', archived: false, published: rule, versions: [{ number: 1 }] }];
+  const childDraft = { ...newFlow(), name: '身份检查', steps: [{ nodeId: 'child-step', type: 'rule', id: 'subflow-rule' }] };
+  const childSnapshot = flowSnapshot(childDraft, rules, []);
+  const child = {
+    id: 'child-flow', archived: false, draft: childDraft, published: childSnapshot,
+    versions: [{ number: 2, bomVersion: defaultBom().version, draft: childDraft, snapshot: childSnapshot }],
+  };
+  const parent = {
+    ...newFlow(), name: '授信主流程',
+    steps: [
+      { nodeId: 'before', type: 'rule', id: 'subflow-rule' },
+      { nodeId: 'identity', type: 'subflow', id: child.id },
+      { nodeId: 'after', type: 'rule', id: 'subflow-rule' },
+    ],
+  };
+  const options = { flows: [child], currentFlowId: 'parent-flow' };
+  assert.equal(validateFlow(parent, rules, [], defaultBom(), [], options), null);
+  const snapshot = flowSnapshot(parent, rules, [], defaultBom(), [], null, options);
+  assert.equal(snapshot.steps.length, 0);
+  assert.equal(snapshot.graph.entry, 'before');
+  assert.deepEqual(snapshot.graph.nodes.filter(node => node.type === 'step').map(node => node.id), ['before', 'identity/child-step', 'after']);
+  assert.equal(snapshot.graph.nodes.find(node => node.id === 'identity/child-step').next, 'after');
+  assert.deepEqual(snapshot.subflows, [{ id: child.id, name: '身份检查', version: 2, nodeId: 'identity' }]);
+  assert.equal(snapshot.graph.nodes.find(node => node.id === 'identity/child-step').step.subflowPath[0].id, child.id);
+});
+
+test('repeated subflow references namespace internal gateway and branch ids', () => {
+  const rule = { name: '分支子流程规则', description: '', conditions: [{ field: 'customerAge', operator: '>=', value: '18' }], actions: [{ field: 'riskLevel', value: '低' }], category: 'common', priority: 0 };
+  const rules = [{ id: 'branch-subflow-rule', archived: false, published: rule, versions: [{ number: 1 }] }];
+  const childDraft = { ...newFlow(), name: '带分支子流程', steps: [], gateways: [], graph: { entry: 'choice', nodes: [
+    { id: 'choice', type: 'gateway', name: '年龄分支', branches: [
+      { id: 'adult', name: '成年', condition: { field: 'customerAge', operator: '>=', value: '18' }, next: 'work' },
+      { id: 'fallback', name: '默认', default: true, next: 'work' },
+    ] },
+    { id: 'work', type: 'step', step: { nodeId: 'work', type: 'rule', id: 'branch-subflow-rule' }, next: 'end' },
+  ] } };
+  const childSnapshot = flowSnapshot(childDraft, rules, []);
+  const child = { id: 'branch-child', archived: false, draft: childDraft, published: childSnapshot, versions: [{ number: 1, bomVersion: defaultBom().version, draft: childDraft }] };
+  const parent = { ...newFlow(), name: '重复子流程', steps: [
+    { nodeId: 'first-call', type: 'subflow', id: child.id },
+    { nodeId: 'second-call', type: 'subflow', id: child.id },
+  ] };
+  const snapshot = flowSnapshot(parent, rules, [], defaultBom(), [], null, { flows: [child], currentFlowId: 'parent' });
+  const gateways = snapshot.graph.nodes.filter(node => node.type === 'gateway');
+  assert.deepEqual(gateways.map(node => node.id), ['first-call/choice', 'second-call/choice']);
+  assert.deepEqual(gateways.flatMap(node => node.branches.map(branch => branch.id)), [
+    'first-call/adult', 'first-call/fallback', 'second-call/adult', 'second-call/fallback',
+  ]);
+});
+
+test('subflow expansion rejects nested parallel graphs', () => {
+  const rule = { name: '嵌套并行规则', description: '', conditions: [{ field: 'customerAge', operator: '>=', value: '18' }], actions: [{ field: 'riskLevel', value: '低' }], category: 'common', priority: 0 };
+  const rules = [{ id: 'nested-parallel-rule', archived: false, published: rule, versions: [{ number: 1 }] }];
+  const step = nodeId => ({ nodeId, type: 'rule', id: 'nested-parallel-rule' });
+  const childDraft = { ...newFlow(), name: '并行子流程', steps: [], gateways: [], graph: { entry: 'inner', nodes: [
+    { id: 'inner', type: 'parallel', name: '内部并行', join: 'inner-join', branches: [{ id: 'ia', name: 'IA', next: 'ia-step' }, { id: 'ib', name: 'IB', next: 'ib-step' }] },
+    { id: 'ia-step', type: 'step', step: step('ia-step'), next: 'inner-join' },
+    { id: 'ib-step', type: 'step', step: step('ib-step'), next: 'inner-join' },
+    { id: 'inner-join', type: 'join', name: '内部聚合', next: 'end' },
+  ] } };
+  const childSnapshot = flowSnapshot(childDraft, rules, []);
+  const child = { id: 'parallel-child', archived: false, draft: childDraft, published: childSnapshot, versions: [{ number: 1, bomVersion: defaultBom().version, draft: childDraft }] };
+  const parent = { ...newFlow(), name: '外部并行', steps: [], gateways: [], graph: { entry: 'outer', nodes: [
+    { id: 'outer', type: 'parallel', name: '外部并行', join: 'outer-join', branches: [{ id: 'oa', name: 'OA', next: 'call-child' }, { id: 'ob', name: 'OB', next: 'ob-step' }] },
+    { id: 'call-child', type: 'step', step: { nodeId: 'call-child', type: 'subflow', id: child.id }, next: 'outer-join' },
+    { id: 'ob-step', type: 'step', step: step('ob-step'), next: 'outer-join' },
+    { id: 'outer-join', type: 'join', name: '外部聚合', next: 'end' },
+  ] } };
+  assert.throws(() => flowSnapshot(parent, rules, [], defaultBom(), [], null, { flows: [child], currentFlowId: 'parent' }), /嵌套并行/);
+});
+
+test('rule flow rejects direct and indirect subflow cycles', () => {
+  const emptySnapshot = { ...newFlow(), name: '已发布空壳', steps: [] };
+  const firstDraft = { ...newFlow(), name: '流程 A', steps: [{ nodeId: 'to-b', type: 'subflow', id: 'flow-b' }] };
+  const secondDraft = { ...newFlow(), name: '流程 B', steps: [{ nodeId: 'to-a', type: 'subflow', id: 'flow-a' }] };
+  const flows = [
+    { id: 'flow-a', archived: false, draft: firstDraft, published: emptySnapshot, versions: [{ number: 1, bomVersion: defaultBom().version, draft: firstDraft }] },
+    { id: 'flow-b', archived: false, draft: secondDraft, published: emptySnapshot, versions: [{ number: 1, bomVersion: defaultBom().version, draft: secondDraft }] },
+  ];
+  const direct = { ...newFlow(), name: '直接循环', steps: [{ nodeId: 'self', type: 'subflow', id: 'flow-a' }] };
+  assert.match(validateFlow(direct, [], [], defaultBom(), [], { flows, currentFlowId: 'flow-a' }), /自身|循环/);
+  assert.match(validateFlow(firstDraft, [], [], defaultBom(), [], { flows, currentFlowId: 'flow-a' }), /循环/);
+});
+
 test('rule flow rejects duplicate defaults and branches without steps', () => {
   const rule = { name: '分支规则', description: '', conditions: [{ field: 'customerAge', operator: '>=', value: '18' }], actions: [{ field: 'riskLevel', value: '低' }], category: '通用', priority: 0 };
   const rules = [{ id: 'rule-branch', archived: false, published: rule, versions: [{ number: 1 }] }];

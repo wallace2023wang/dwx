@@ -193,7 +193,7 @@ export default function ReleaseWizard({ packages, suggestedVersion, failedTests,
                 <tbody>{assets.map((asset) => (
                   <tr key={asset.id} className="border-b border-[#e8e8e8] last:border-0 hover:bg-[#f0f6fc]">
                     <td className="px-[10px] py-2"><input type={singleTarget ? 'radio' : 'checkbox'} name={singleTarget ? 'release-target' : undefined} aria-label={`选择 ${asset.name}`} checked={draft.assetIds.includes(asset.id)} disabled={asset.needsRepublish} onChange={() => toggleAsset(asset.id)} /></td>
-                    <td className="px-[10px] py-2">{asset.name}<span className="ml-2 text-[10px] text-ink-3">{asset.type === 'flow' ? '规则集' : asset.type === 'decision-table' ? '决策表' : asset.type === 'event-stream' ? '事件流' : '规则'}</span></td>
+                    <td className="px-[10px] py-2">{asset.name}<span className="ml-2 text-[10px] text-ink-3">{asset.type === 'flow' ? '规则集' : asset.type === 'decision-table' ? '决策表' : asset.type === 'decision-tree' ? '决策树' : asset.type === 'scorecard' ? '计分卡' : asset.type === 'event-stream' ? '事件流' : '规则'}</span></td>
                     <td className="px-[10px] py-2 font-mono text-[11px]">{asset.packageName}</td>
                     <td className="px-[10px] py-2 font-mono text-[11px] text-brand-primary">v{asset.version}</td>
                     <td className="px-[10px] py-2"><span className={`rounded-[2px] px-1.5 py-px text-[10px] ${asset.needsRepublish ? 'bg-[#fff3e0] text-[#b26a00]' : asset.status === 'published' ? 'bg-[#e8f5e9] text-env-production' : 'bg-[#fff3e0] text-env-staging'}`}>{asset.needsRepublish ? '需重新发布规则集' : asset.status === 'published' ? '已发布' : '草稿'}</span></td>

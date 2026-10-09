@@ -38,8 +38,13 @@ export interface ApprovalPolicy {
   allowedReviewerRoles: Array<'reviewer' | 'admin'>
 }
 
-export type AssetType = 'rule' | 'decision-table' | 'flow' | 'event-stream'
+export type AssetType = 'rule' | 'decision-table' | 'decision-tree' | 'scorecard' | 'flow' | 'event-stream'
 export type AssetStatus = 'draft' | 'in-review' | 'rejected' | 'published' | 'deprecated' | 'archived'
+
+export interface AssetOwner {
+  id: string
+  name: string
+}
 
 export interface Asset {
   id: string
@@ -53,6 +58,12 @@ export interface Asset {
   lifecycleStatus?: 'active' | 'deprecated' | 'archived'
   needsRepublish?: boolean
   outdatedDependencies?: Ruleset['outdatedDependencies']
+  owner?: AssetOwner | null
+  tags?: string[]
+  effectiveFrom?: string | null
+  effectiveTo?: string | null
+  effectiveStatus?: 'scheduled' | 'effective' | 'expired'
+  revision?: number
 }
 
 export interface RuleAttributes {
@@ -126,12 +137,24 @@ export interface RulePatternConditionDraft extends RuleConditionMetadata {
 
 export type RuleConditionDraft = RuleFieldConditionDraft | RuleRawConditionDraft | RulePatternConditionDraft
 
+export type RuleConditionNode =
+  | { type: 'condition'; condition: RuleConditionDraft }
+  | { type: 'group'; operator: 'and' | 'or'; children: RuleConditionNode[] }
+
+export type RuleActionValueExpression =
+  | { type: 'literal'; value: string }
+  | { type: 'field'; field: string; fieldSource?: 'bom' | 'variable' }
+  | { type: 'binary'; operator: '+' | '-' | '*' | '/'; left: RuleActionValueExpression; right: RuleActionValueExpression }
+  | { type: 'function'; name: 'min' | 'max' | 'round' | 'abs'; args: RuleActionValueExpression[] }
+  | { type: 'method'; name: string }
+
 export interface RuleActionDraft {
   field: string
   value: string
   factType?: string
   actionType?: 'set' | 'add'
   fieldSource?: 'bom' | 'variable'
+  valueExpression?: RuleActionValueExpression
 }
 
 export interface RuleDraft {
@@ -140,6 +163,7 @@ export interface RuleDraft {
   category: string
   priority: number
   conditions: RuleConditionDraft[]
+  conditionTree?: RuleConditionNode
   actions: RuleActionDraft[]
   variables?: RuleSetVariable[]
 }
@@ -161,7 +185,64 @@ export interface DecisionTableDraft {
   }>
 }
 
-export type AssetDraft = RuleDraft | DecisionTableDraft
+export type DecisionTreeNode =
+  | { id: string; type: 'condition'; condition: RuleFieldConditionDraft; trueChild: DecisionTreeNode; falseChild: DecisionTreeNode }
+  | { id: string; type: 'result'; label: string; actions: RuleActionDraft[] }
+
+export interface DecisionTreeDraft {
+  kind: 'decision-tree'
+  name: string
+  description: string
+  category: string
+  priority: number
+  root: DecisionTreeNode
+}
+
+export interface DecisionTreeLeaf {
+  id: string
+  label: string
+  index: number
+  actions: RuleActionDraft[]
+  branches: Array<{ nodeId: string; branch: boolean }>
+}
+
+export interface ScorecardBinDraft {
+  id: string
+  label: string
+  operator?: string
+  value?: string
+  default?: boolean
+  score: number
+}
+
+export interface ScorecardCharacteristicDraft {
+  id: string
+  name: string
+  field: string
+  rows: ScorecardBinDraft[]
+}
+
+export interface ScorecardBandDraft {
+  id: string
+  label: string
+  min: number | null
+  max: number | null
+  actions: RuleActionDraft[]
+}
+
+export interface ScorecardDraft {
+  kind: 'scorecard'
+  name: string
+  description: string
+  category: string
+  priority: number
+  scoreOutputField: string
+  initialScore: number
+  characteristics: ScorecardCharacteristicDraft[]
+  bands: ScorecardBandDraft[]
+}
+
+export type AssetDraft = RuleDraft | DecisionTableDraft | DecisionTreeDraft | ScorecardDraft
 
 export interface AssetDetail extends Asset {
   packageId: string
@@ -172,6 +253,7 @@ export interface AssetDetail extends Asset {
   content?: string
   attributes: RuleAttributes
   decisionTable?: DecisionTableDefinition
+  decisionTreeLeaves?: DecisionTreeLeaf[]
   validationWarnings?: string[]
   changeSetId?: string
   versions?: Array<{ number: number; createdAt?: string; bomVersion: number | null; engineVersion: string | null }>
@@ -183,6 +265,7 @@ export interface AssetDetail extends Asset {
   deprecationReason?: string | null
   replacedByAssetId?: string | null
   projectVariables?: RuleSetVariable[]
+  bomMethods?: BomMethod[]
 }
 
 export type ChangeSetStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED'
@@ -271,6 +354,21 @@ export interface BomField {
   regex?: string | null
   allowDuplicates?: boolean
   required?: boolean
+  domainId?: string | null
+}
+
+export interface BomDomain {
+  id: string
+  label: string
+  values: string[]
+}
+
+export interface BomMethod {
+  name: string
+  label: string
+  returnType: 'Integer' | 'Decimal'
+  expression: RuleActionValueExpression
+  description?: string
 }
 
 export interface BomFactType {
@@ -310,6 +408,8 @@ export interface BomModel {
   updatedAt?: string
   updatedBy: string
   eventTypes?: BomEventType[]
+  domains?: BomDomain[]
+  methods?: BomMethod[]
   factTypes: BomFactType[]
   vocabulary: VocabularyTerm[]
   relationships: string[]
@@ -333,13 +433,22 @@ export interface Ruleset {
   status?: AssetStatus
   version?: number
   updatedAt?: string
+  owner?: AssetOwner | null
+  tags?: string[]
+  effectiveFrom?: string | null
+  effectiveTo?: string | null
+  effectiveStatus?: 'scheduled' | 'effective' | 'expired'
   branchCount?: number
+  gatewayCount?: number
+  parallelCount?: number
+  joinCount?: number
   stepCount?: number
-  steps?: Array<{ order: number; type: 'rule' | 'table' | 'rule-group'; id?: string; name: string; version: number; branchName?: string | null }>
+  steps?: Array<{ order: number; type: 'rule' | 'table' | 'rule-group' | 'subflow'; id?: string; name: string; version: number; branchName?: string | null }>
   needsRepublish?: boolean
   outdatedDependencies?: Array<
     | { kind?: 'asset'; id: string; name: string; publishedVersion: number; latestVersion: number }
     | { kind: 'rule-group'; nodeId: string; packageName: string; reason: 'members-changed' | 'bom-changed' }
+    | { kind: 'subflow'; id: string; name: string; publishedVersion: number; latestVersion: number }
   >
 }
 
@@ -350,7 +459,7 @@ export interface FlowMapping {
 
 export interface FlowStepDraft {
   nodeId: string
-  type: 'rule' | 'table' | 'rule-group'
+  type: 'rule' | 'table' | 'rule-group' | 'subflow'
   id?: string
   selector?: {
     packageName: string
@@ -377,6 +486,53 @@ export interface FlowBranchDraft {
   steps: FlowStepDraft[]
 }
 
+export interface FlowGatewayDraft {
+  id: string
+  name: string
+  afterStep: number
+  branches: FlowBranchDraft[]
+}
+
+export interface FlowGraphStepNodeDraft {
+  id: string
+  type: 'step'
+  step: FlowStepDraft
+  next: string
+}
+
+export interface FlowGraphGatewayNodeDraft {
+  id: string
+  type: 'gateway'
+  name: string
+  branches: Array<{
+    id: string
+    name: string
+    default?: boolean
+    condition?: { field: string; operator: string; value: string }
+    next: string
+  }>
+}
+
+export interface FlowGraphParallelNodeDraft {
+  id: string
+  type: 'parallel'
+  name: string
+  join: string
+  branches: Array<{ id: string; name: string; next: string }>
+}
+
+export interface FlowGraphJoinNodeDraft {
+  id: string
+  type: 'join'
+  name: string
+  next: string
+}
+
+export interface FlowGraphDraft {
+  entry: string
+  nodes: Array<FlowGraphStepNodeDraft | FlowGraphGatewayNodeDraft | FlowGraphParallelNodeDraft | FlowGraphJoinNodeDraft>
+}
+
 export interface FlowDraft {
   name: string
   description: string
@@ -385,6 +541,8 @@ export interface FlowDraft {
   variables?: RuleSetVariable[]
   steps: FlowStepDraft[]
   branches?: FlowBranchDraft[]
+  gateways?: FlowGatewayDraft[]
+  graph?: FlowGraphDraft
   editor?: FlowEditorMetadata
 }
 
@@ -392,6 +550,7 @@ export interface FlowAssetOption {
   id: string
   name: string
   type: 'rule' | 'table'
+  assetKind?: 'decision-table' | 'decision-tree' | 'scorecard'
   category: string
   version: number
   outputFields?: string[]
@@ -408,15 +567,22 @@ export interface FlowPackageOption {
   members: Array<{ id: string; name: string; type: 'rule' | 'table'; version: number }>
 }
 
+export interface FlowSubflowOption {
+  id: string
+  name: string
+  version: number
+}
+
 export interface FlowDetail extends Ruleset {
   description: string
   category: string
   draft: FlowDraft
   availableAssets: FlowAssetOption[]
   availablePackages: FlowPackageOption[]
+  availableFlows?: FlowSubflowOption[]
 }
 
-export type FlowNodeKind = 'start' | 'gateway' | 'ruleTask' | 'tableTask' | 'ruleGroup' | 'end'
+export type FlowNodeKind = 'start' | 'gateway' | 'parallel' | 'join' | 'ruleTask' | 'tableTask' | 'ruleGroup' | 'subflow' | 'end'
 
 export interface FlowNodeDefinition {
   id: string
@@ -425,6 +591,7 @@ export interface FlowNodeDefinition {
   label: string
   detail?: string
   active?: boolean
+  gatewayId?: string | null
   branchId?: string | null
   stepType?: FlowStepDraft['type']
 }

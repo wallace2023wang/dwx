@@ -92,9 +92,16 @@ function formatTableValue(value: unknown) {
 
 function AssetSections({ projectId, packages }: { projectId: string; packages: PackageNode[] }) {
   return <div>{packages.length ? packages.map(pkg => <div className="report-asset-group" key={pkg.id}><h3>{pkg.label} <small>{pkg.name}</small></h3>{pkg.assets.length ? <table className="report-table"><thead><tr><th>资产名称</th><th>类型</th><th>状态</th><th>版本</th><th>中文描述</th><th>BOM</th></tr></thead><tbody>{pkg.assets.flatMap(asset => {
-    const summary = <tr key={`${asset.id}-s`}><td className="report-col-name">{asset.name}</td><td>{asset.type === 'decision-table' ? '决策表' : '规则'}</td><td><span className={`report-status ${asset.status}`}>{({ draft: '草稿', 'in-review': '审核中', rejected: '已驳回', published: '已发布', deprecated: '已废弃', archived: '已归档' } as Record<string, string>)[asset.status] || asset.status}</span></td><td>{asset.version}</td><td className="report-col-desc"><AssetDescription projectId={projectId} assetId={asset.id} /></td><td>{asset.bomInvalid ? <span className="report-warning">BOM 失效</span> : '正常'}</td></tr>
+    const summary = <tr key={`${asset.id}-s`}><td className="report-col-name">{asset.name}</td><td>{assetTypeLabel(asset.type)}</td><td><span className={`report-status ${asset.status}`}>{({ draft: '草稿', 'in-review': '审核中', rejected: '已驳回', published: '已发布', deprecated: '已废弃', archived: '已归档' } as Record<string, string>)[asset.status] || asset.status}</span></td><td>{asset.version}</td><td className="report-col-desc"><AssetDescription projectId={projectId} assetId={asset.id} /></td><td>{asset.bomInvalid ? <span className="report-warning">BOM 失效</span> : '正常'}</td></tr>
     return asset.type === 'decision-table' ? [summary, <DecisionTableDetail key={`${asset.id}-d`} projectId={projectId} assetId={asset.id} />] : [summary]
   })}</tbody></table> : <p className="report-empty">（空）</p>}</div>) : <p className="report-empty">暂无规则资产</p>}</div>
+}
+
+function assetTypeLabel(type: PackageNode['assets'][number]['type']) {
+  if (type === 'decision-table') return '决策表'
+  if (type === 'decision-tree') return '决策树'
+  if (type === 'scorecard') return '计分卡'
+  return '规则'
 }
 
 export default function Report() {

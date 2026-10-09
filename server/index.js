@@ -5,7 +5,7 @@ import { DomainError, domainErrorResult } from '../shared/errors.js';
 import { renderProjectReport } from '../shared/report.js';
 import { PostgresStore, StorageConflictError } from './postgres-store.js';
 import { AuthError, authenticateRequest, authorizeRequest, publicPrincipal, handleAuthRequest, authorizeAsset, canAccessProject, canAccessAsset } from './auth.js';
-import { operationError, reply } from './http-utils.js';
+import { bodyOf, operationError, reply } from './http-utils.js';
 import { advanceAssetRevision, initializeAssetRevision } from './domain-utils.js';
 import { createAdminHandler } from './routes/admin.js';
 import { createEngineClients } from './engine-client.js';
@@ -17,6 +17,7 @@ import { createProjectPackageHandler } from './routes/project-packages.js';
 import { createProjectEventStreamHandler } from './routes/project-event-streams.js';
 import { createProjectFlowHandler } from './routes/project-flows.js';
 import { createProjectRuleHandler } from './routes/project-rules.js';
+import { createProjectAssetHandler } from './routes/project-assets.js';
 import { createProjectHandlers } from './routes/projects.js';
 import { flowPackageSelectors, flowReferencesPackage, projectAssetDetail, projectBomModel, projectEventStreamDetail, projectEventStreamSummary, projectFlowDetail, projectPackages, projectRuleset, projectTestSuite } from './project-presenters.js';
 import { createProjectBuildService } from './project-build-service.js';
@@ -31,6 +32,8 @@ import { createGovernanceService } from './governance-service.js';
 import { createActivityService } from './activity-service.js';
 import { createServerConfig } from './config.js';
 import { createFactParser } from './fact-parser.js';
+import { createCollaborationService } from './collaboration-service.js';
+import { canManageAssetDraft } from './asset-ownership.js';
 
 const {
   storage,
@@ -57,6 +60,7 @@ let currentBom = defaultBom();
 let postgresStore = null;
 
 const parseFacts = createFactParser({ getCurrentBom: () => currentBom });
+const collaboration = createCollaborationService();
 
 function actorOf(req) {
   if (req?.principal?.id) return req.principal.id;
@@ -99,6 +103,7 @@ const {
   mutatePackageRecords,
   mutate,
   mutateAssets,
+  mutateProjectAssets,
   mutateReleases,
   mutateTestSuites,
   mutateChangeSets,
@@ -201,6 +206,7 @@ const { bomFieldReferences, handleBom, updateProjectBom } = createBomHandlers({
   getPostgresStore: () => postgresStore,
   readRules,
   readAssets,
+  readBom,
   collectUsedKeys,
   writeBom,
   appendAuditEvent,
@@ -309,6 +315,7 @@ const handleProjectFlows = createProjectFlowHandler({
   advanceAssetRevision,
   compileProjectFlow,
   publishProjectFlow,
+  actorOf,
 });
 
 const handleProjectRules = createProjectRuleHandler({
@@ -332,6 +339,14 @@ const handleProjectRules = createProjectRuleHandler({
   readAssets,
   actorOf,
   readChangeSets,
+});
+
+const handleProjectAssets = createProjectAssetHandler({
+  authorizeAsset,
+  mutateProjectAssets,
+  appendAuditEvent,
+  reviewLock,
+  actorOf,
 });
 
 const {
@@ -371,12 +386,92 @@ const handleProjects = createProjectRouter({
   handleTestSuites,
   handleReleases,
   handleProjectRules,
+  handleProjectAssets,
   readProjectRecords,
   projectData,
   readPackageRecords,
   normalizeProjectEngine,
   updateProjectBom,
   bomFieldReferences,
+  handleCollaboration: async (req, res, projectId, data, url, actionPath) => {
+    if (!['GET', 'POST', 'DELETE'].includes(req.method)) return reply(res, 405, { error: 'Method not allowed' });
+    if (req.method === 'GET' && actionPath !== 'events') return reply(res, 405, { error: 'Method not allowed' });
+    if (req.method !== 'GET' && actionPath) return reply(res, 404, { error: '未找到资源' });
+    const payload = req.method === 'GET' ? Object.fromEntries(url.searchParams) : await bodyOf(req);
+    const assetType = typeof payload?.assetType === 'string' ? payload.assetType : '';
+    const assetId = typeof payload?.assetId === 'string' ? payload.assetId : '';
+    const clientId = typeof payload?.clientId === 'string' ? payload.clientId.trim() : '';
+    const mode = payload?.mode === 'editing' ? 'editing' : 'viewing';
+    const revision = Number(payload?.revision);
+    if (!['rule', 'table', 'flow', 'event-stream'].includes(assetType) || !assetId || !clientId || clientId.length > 120) {
+      return reply(res, 400, { error: '协作会话参数无效' });
+    }
+    authorizeAsset(req.principal, assetId);
+    const collections = {
+      rule: data.allRules || data.rules,
+      table: data.allTables || data.tables,
+      flow: data.flows,
+      'event-stream': data.allEventStreams || data.eventStreams,
+    };
+    const item = collections[assetType].find(asset => asset.id === assetId);
+    if (!item) return reply(res, 404, { error: '协作资产不存在' });
+    const input = {
+      projectId, assetType, assetId, clientId, principal: req.principal, mode,
+      revision: Number.isInteger(revision) && revision > 0 ? revision : null,
+      currentRevision: item.revision || 1,
+    };
+    if (req.method === 'GET') {
+      const documentId = typeof payload.documentId === 'string' ? payload.documentId.trim() : '';
+      res.writeHead(200, {
+        'content-type': 'text/event-stream; charset=utf-8',
+        'cache-control': 'no-cache, no-transform',
+        connection: 'keep-alive',
+        'x-accel-buffering': 'no',
+      });
+      const writeEvent = event => res.write(`event: ${event.type || 'message'}\ndata: ${JSON.stringify(event)}\n\n`);
+      writeEvent({
+        type: 'snapshot',
+        ...collaboration.snapshot(input),
+        document: documentId ? collaboration.getDocument({ ...input, documentId }) : null,
+      });
+      const unsubscribe = collaboration.subscribe(input, writeEvent);
+      const keepAlive = setInterval(() => res.write(': keep-alive\n\n'), 10_000);
+      req.on('close', () => { clearInterval(keepAlive); unsubscribe(); });
+      return;
+    }
+    if (req.method === 'DELETE') return reply(res, 200, collaboration.leave(input));
+    const action = typeof payload.action === 'string' ? payload.action : 'heartbeat';
+    if (action === 'cursor') {
+      const documentId = typeof payload.documentId === 'string' ? payload.documentId.trim() : '';
+      const selection = payload.selection;
+      const positions = selection && ['startLineNumber', 'startColumn', 'endLineNumber', 'endColumn'].map(key => Number(selection[key]));
+      if (!documentId || documentId.length > 200 || !positions?.every(value => Number.isInteger(value) && value > 0)) {
+        return reply(res, 400, { error: '协作光标参数无效' });
+      }
+      const result = collaboration.updateCursor({ ...input, documentId, selection: Object.fromEntries(['startLineNumber', 'startColumn', 'endLineNumber', 'endColumn'].map((key, index) => [key, positions[index]])) });
+      return result ? reply(res, 200, result) : reply(res, 409, { error: '协作会话已过期，请重新连接' });
+    }
+    if (action === 'text') {
+      if (assetType !== 'event-stream') return reply(res, 400, { error: '当前仅支持高级 EPL 实时共同编辑' });
+      if (input.revision !== input.currentRevision) {
+        return reply(res, 409, { error: `资产修订冲突：客户端 r${input.revision || '-'}，服务器最新 r${input.currentRevision}`, currentRevision: input.currentRevision });
+      }
+      if (!canManageAssetDraft(req.principal, item) || !(req.principal.permissions.includes('*') || (req.principal.permissions.includes('author') && req.principal.permissions.includes('advanced-epl')))) {
+        return reply(res, 403, { error: '当前用户无权共同编辑高级 EPL' });
+      }
+      const documentId = typeof payload.documentId === 'string' ? payload.documentId.trim() : '';
+      const value = typeof payload.value === 'string' ? payload.value : null;
+      const baseSequence = Number(payload.baseSequence);
+      if (!/^statement:\d+:epl$/.test(documentId) || value == null || !Number.isInteger(baseSequence) || baseSequence < 0) {
+        return reply(res, 400, { error: '协作文档参数无效' });
+      }
+      const result = collaboration.updateText({ ...input, documentId, baseSequence, value });
+      return reply(res, result.status, result.status === 200 ? result.document : result);
+    }
+    if (action !== 'heartbeat') return reply(res, 400, { error: '不支持的协作动作' });
+    const result = collaboration.heartbeat(input);
+    return reply(res, 200, result);
+  },
 });
 
 export async function handler(req, res) {

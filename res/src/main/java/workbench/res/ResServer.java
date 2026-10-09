@@ -63,13 +63,21 @@ public final class ResServer {
       for (KieContainerSessionsPool pool : sessionPools) pool.shutdown();
     }
   }
-  private record RoundResult(List<Map<String, Object>> trace, int count, boolean limitReached, Map<String, Object> path) {}
+  private record RoundResult(List<Map<String, Object>> trace, int count, boolean limitReached,
+      Map<String, Object> path, List<Map<String, Object>> paths) {}
+  private record StepResult(int count, boolean limitReached) {}
+  private record GraphResult(int count, boolean limitReached) {}
   private static final class RoundFailure extends Exception {
     private final JsonNode step;
     private final String nodeId;
     private final List<Map<String, Object>> trace;
+    private final int status;
+    private final String publicMessage;
     RoundFailure(Exception cause, JsonNode step, String nodeId, List<Map<String, Object>> trace) {
-      super(cause); this.step = step; this.nodeId = nodeId; this.trace = trace;
+      this(cause, step, nodeId, trace, 500, "规则执行失败");
+    }
+    RoundFailure(Exception cause, JsonNode step, String nodeId, List<Map<String, Object>> trace, int status, String publicMessage) {
+      super(cause); this.step = step; this.nodeId = nodeId; this.trace = trace; this.status = status; this.publicMessage = publicMessage;
     }
   }
   private static final class CompileFailure extends Exception {
@@ -325,6 +333,7 @@ public final class ResServer {
     int total = 0;
     boolean limitReached = false;
     Map<String, Object> finalPath = null;
+    List<Map<String, Object>> finalPaths = List.of();
     int roundLimit = settle ? maxRounds : 1;
     try {
       for (int round = 1; round <= roundLimit; round++) {
@@ -333,6 +342,7 @@ public final class ResServer {
         total += result.count();
         limitReached = result.limitReached();
         finalPath = result.path();
+        finalPaths = result.paths();
         Map<String, Object> beforeFeedback = new LinkedHashMap<>();
         if (settle) for (JsonNode mapping : feedbackMappings) beforeFeedback.put(mapping.path("target").asText(), facts.get(mapping.path("target").asText()));
         List<Map<String, Object>> feedback = settle ? applyMappings(feedbackMappings, facts) : List.of();
@@ -345,14 +355,15 @@ public final class ResServer {
         roundItem.put("trace", result.trace());
         roundItem.put("feedback", feedback);
         if (result.path() != null) roundItem.put("path", result.path());
+        if (!result.paths().isEmpty()) roundItem.put("paths", result.paths());
         rounds.add(roundItem);
         if (limitReached || !settle || result.count() == 0 || !changed) break;
         if (round == roundLimit) limitReached = true;
       }
     } catch (RoundFailure failure) {
-      failure.getCause().printStackTrace();
+      if (failure.status >= 500) failure.getCause().printStackTrace();
       Map<String, Object> response = new LinkedHashMap<>();
-      response.put("error", "规则执行失败");
+      response.put("error", failure.publicMessage);
       Map<String, Object> failedStep = new LinkedHashMap<>();
       failedStep.put("nodeId", failure.nodeId);
       failedStep.put("name", failure.step == null ? null : failure.step.path("name").asText());
@@ -362,7 +373,7 @@ public final class ResServer {
       response.put("facts", facts);
       response.put("variables", variables);
       response.put("trace", failure.trace);
-      send(exchange, 500, response); return;
+      send(exchange, failure.status, response); return;
     }
 
     String requestId = request.path("requestId").isTextual() && request.path("requestId").asText().length() <= 100
@@ -377,6 +388,7 @@ public final class ResServer {
     response.put("variables", variables);
     response.put("trace", trace);
     if (finalPath != null) response.put("path", finalPath);
+    if (!finalPaths.isEmpty()) response.put("paths", finalPaths);
     if (settle) response.put("rounds", rounds);
     response.put("count", total);
     response.put("limitReached", limitReached);
@@ -391,116 +403,267 @@ public final class ResServer {
     boolean limitReached = false;
     JsonNode steps = deployment.release().path("steps");
     JsonNode routing = deployment.release().path("routing");
-    int branchStart = routing.isObject() ? routing.path("afterStep").asInt() : steps.size();
-    Set<Integer> selectedStepIndexes = null;
-    JsonNode selectedBranch = null;
-    Map<Integer, String> routedNodeIds = new HashMap<>();
-    if (routing.isObject()) {
-      for (JsonNode branch : routing.path("branches")) {
-        int ordinal = 0;
-        for (JsonNode value : branch.path("stepIndexes")) {
-          routedNodeIds.put(value.asInt(), "branch:" + branch.path("id").asText() + ":" + ordinal++);
-        }
-      }
-    }
+    boolean directedGraph = routing.isObject() && List.of("exclusive-dag", "decision-dag").contains(routing.path("type").asText());
+    boolean chained = routing.isObject() && "exclusive-chain".equals(routing.path("type").asText());
+    int commonStepCount = chained ? routing.path("commonStepCount").asInt() : routing.isObject() ? routing.path("afterStep").asInt() : steps.size();
+    Map<Integer, JsonNode> gatewaysAt = new HashMap<>();
+    if (chained) for (JsonNode gateway : routing.path("gateways")) gatewaysAt.put(gateway.path("afterStep").asInt(), gateway);
+    else if (routing.isObject()) gatewaysAt.put(commonStepCount, routing);
+    List<Map<String, Object>> paths = new ArrayList<>();
     JsonNode currentStep = null;
     String currentNodeId = null;
     try {
-      for (int index = 0; index < deployment.sessionPools().size(); index++) {
-        if (routing.isObject() && index == branchStart) {
-          selectedBranch = selectBranch(routing.path("branches"), facts);
-          selectedStepIndexes = new HashSet<>();
-          if (selectedBranch != null) for (JsonNode value : selectedBranch.path("stepIndexes")) selectedStepIndexes.add(value.asInt());
+      if (directedGraph) {
+        Map<String, JsonNode> nodes = new HashMap<>();
+        for (JsonNode node : routing.path("nodes")) nodes.put(node.path("id").asText(), node);
+        GraphResult result = executeGraphPath(deployment, nodes, routing.path("entry").asText(), "end", facts, variables, trace, paths);
+        total = result.count();
+        limitReached = result.limitReached();
+        Map<String, Object> path = paths.size() == 1 ? paths.get(0) : null;
+        return new RoundResult(trace, total, limitReached, path, paths);
+      }
+      for (int position = 0; position <= commonStepCount && !limitReached; position++) {
+        JsonNode gatewayConfig = gatewaysAt.get(position);
+        if (gatewayConfig != null) {
+          JsonNode selectedBranch = selectBranch(gatewayConfig.path("branches"), facts);
+          String gatewayId = chained ? gatewayConfig.path("id").asText() : "gateway";
+          String gatewayName = chained ? gatewayConfig.path("name").asText("排他网关") : "条件网关";
           Map<String, Object> gateway = new LinkedHashMap<>();
-          gateway.put("name", "条件网关");
+          gateway.put("name", gatewayName);
           gateway.put("type", "gateway");
-          gateway.put("nodeId", "gateway");
+          gateway.put("nodeId", gatewayId);
           gateway.put("branchId", selectedBranch == null ? null : selectedBranch.path("id").asText());
           gateway.put("branchName", selectedBranch == null ? null : selectedBranch.path("name").asText());
           gateway.put("default", selectedBranch != null && selectedBranch.path("default").asBoolean(false));
           gateway.put("count", 0);
           gateway.put("facts", new LinkedHashMap<>(facts));
           trace.add(gateway);
+          Map<String, Object> path = new LinkedHashMap<>();
+          path.put("gatewayId", gatewayId);
+          path.put("gatewayName", gatewayName);
+          path.put("branchId", selectedBranch == null ? null : selectedBranch.path("id").asText());
+          path.put("branchName", selectedBranch == null ? null : selectedBranch.path("name").asText());
+          path.put("default", selectedBranch != null && selectedBranch.path("default").asBoolean(false));
+          paths.add(path);
+          if (selectedBranch != null) {
+            int ordinal = 0;
+            for (JsonNode value : selectedBranch.path("stepIndexes")) {
+              int index = value.asInt();
+              currentStep = steps.get(index);
+              currentNodeId = "branch:" + selectedBranch.path("id").asText() + ":" + ordinal++;
+              StepResult result = executeStep(deployment, index, currentNodeId, gatewayId,
+                  selectedBranch.path("id").asText(), selectedBranch.path("name").asText(), facts, variables, trace);
+              total += result.count();
+              limitReached = result.limitReached();
+              if (limitReached) break;
+            }
+          }
         }
-        if (index >= branchStart && (selectedStepIndexes == null || !selectedStepIndexes.contains(index))) continue;
-        JsonNode step = steps.get(index);
-        currentStep = step;
-        currentNodeId = index < branchStart ? "common:" + index : routedNodeIds.get(index);
-        List<Map<String, Object>> inputMappings = applyMappings(step.path("inputMappings"), facts);
-        KieSession session = deployment.sessionPools().get(index).newKieSession();
-        try {
-          FactType type = session.getKieBase().getFactType("workbench", "RuleInput");
-          if (type == null) throw new IllegalStateException("Release 缺少 workbench.RuleInput 类型");
-          Object fact = type.newInstance();
-          for (Map.Entry<String, Class<?>> entry : deployment.factTypes().entrySet()) {
-            if (!entry.getValue().isPrimitive() && !facts.containsKey(entry.getKey())) type.set(fact, entry.getKey(), null);
-          }
-          for (Map.Entry<String, Object> entry : facts.entrySet()) type.set(fact, entry.getKey(), entry.getValue());
-          FactType contextType = session.getKieBase().getFactType("workbench", "RuleContext");
-          Object context = null;
-          if (contextType != null) {
-            context = contextType.newInstance();
-            Set<String> contextFields = new HashSet<>();
-            for (FactField field : contextType.getFields()) contextFields.add(field.getName());
-            for (Map.Entry<String, Object> entry : variables.entrySet()) {
-              if (contextFields.contains(entry.getKey())) {
-                contextType.set(context, entry.getKey(), entry.getValue());
-              }
-            }
-            session.insert(context);
-          }
-          List<String> fired = new ArrayList<>();
-          session.addEventListener(new DefaultAgendaEventListener() {
-            @Override public void afterMatchFired(AfterMatchFiredEvent event) {
-              fired.add(event.getMatch().getRule().getName());
-            }
-          });
-          session.insert(fact);
-          int count = session.fireAllRules(MAX_FIRES_PER_STEP);
-          List<Map<String, Object>> decisionHits = collectDecisionHits(session);
-          total += count;
-          limitReached = count == MAX_FIRES_PER_STEP;
-          for (String key : deployment.factTypes().keySet()) {
-            Object value = type.get(fact, key);
-            if (value != null) facts.put(key, value);
-          }
-          if (context != null) {
-            for (FactField field : contextType.getFields()) {
-              String key = field.getName();
-              Object value = contextType.get(context, key);
-              if (value != null) variables.put(key, value);
-            }
-          }
-          List<Map<String, Object>> outputMappings = applyMappings(step.path("outputMappings"), facts);
-          Map<String, Object> item = new LinkedHashMap<>();
-          item.put("name", step.path("name").asText());
-          item.put("type", step.path("type").asText());
-          item.put("nodeId", currentNodeId);
-          item.put("assetVersion", step.path("assetVersion").asInt());
-          item.put("fired", fired);
-          item.put("decisionHits", decisionHits);
-          item.put("count", count);
-          item.put("facts", new LinkedHashMap<>(facts));
-          item.put("variables", new LinkedHashMap<>(variables));
-          Map<String, Object> mappings = new LinkedHashMap<>();
-          mappings.put("inputs", inputMappings);
-          mappings.put("outputs", outputMappings);
-          item.put("mappings", mappings);
-          trace.add(item);
-          if (limitReached) break;
-        } finally { session.dispose(); }
+        if (position < commonStepCount && !limitReached) {
+          currentStep = steps.get(position);
+          currentNodeId = "common:" + position;
+          StepResult result = executeStep(deployment, position, currentNodeId, null, null, null, facts, variables, trace);
+          total += result.count();
+          limitReached = result.limitReached();
+        }
       }
+    } catch (RoundFailure failure) {
+      throw failure;
     } catch (Exception exception) {
       throw new RoundFailure(exception, currentStep, currentNodeId, trace);
     }
-    Map<String, Object> path = null;
-    if (routing.isObject()) {
-      path = new LinkedHashMap<>();
-      path.put("branchId", selectedBranch == null ? null : selectedBranch.path("id").asText());
-      path.put("branchName", selectedBranch == null ? null : selectedBranch.path("name").asText());
-      path.put("default", selectedBranch != null && selectedBranch.path("default").asBoolean(false));
+    Map<String, Object> path = paths.size() == 1 ? paths.get(0) : null;
+    return new RoundResult(trace, total, limitReached, path, paths);
+  }
+
+  private static GraphResult executeGraphPath(Deployment deployment, Map<String, JsonNode> nodes, String startId,
+      String stopId, Map<String, Object> facts, Map<String, Object> variables, List<Map<String, Object>> trace,
+      List<Map<String, Object>> paths) throws RoundFailure {
+    int total = 0;
+    boolean limitReached = false;
+    String nodeId = startId;
+    while (!stopId.equals(nodeId) && !"end".equals(nodeId) && !limitReached) {
+      JsonNode node = nodes.get(nodeId);
+      if (node == null) throw new RoundFailure(new IllegalStateException("图节点不存在"), null, nodeId, trace);
+      String type = node.path("type").asText();
+      if ("step".equals(type)) {
+        int index = node.path("stepIndex").asInt();
+        try {
+          StepResult result = executeStep(deployment, index, nodeId, null, null, null, facts, variables, trace);
+          total += result.count();
+          limitReached = result.limitReached();
+        } catch (Exception exception) {
+          throw new RoundFailure(exception, deployment.release().path("steps").get(index), nodeId, trace);
+        }
+        nodeId = node.path("next").asText();
+        continue;
+      }
+      if ("gateway".equals(type)) {
+        JsonNode selectedBranch = selectBranch(node.path("branches"), facts);
+        String gatewayName = node.path("name").asText("排他网关");
+        Map<String, Object> gateway = new LinkedHashMap<>();
+        gateway.put("name", gatewayName);
+        gateway.put("type", "gateway");
+        gateway.put("nodeId", nodeId);
+        gateway.put("branchId", selectedBranch == null ? null : selectedBranch.path("id").asText());
+        gateway.put("branchName", selectedBranch == null ? null : selectedBranch.path("name").asText());
+        gateway.put("default", selectedBranch != null && selectedBranch.path("default").asBoolean(false));
+        gateway.put("count", 0);
+        gateway.put("facts", new LinkedHashMap<>(facts));
+        trace.add(gateway);
+        Map<String, Object> path = new LinkedHashMap<>();
+        path.put("gatewayId", nodeId);
+        path.put("gatewayName", gatewayName);
+        path.put("branchId", selectedBranch == null ? null : selectedBranch.path("id").asText());
+        path.put("branchName", selectedBranch == null ? null : selectedBranch.path("name").asText());
+        path.put("default", selectedBranch != null && selectedBranch.path("default").asBoolean(false));
+        paths.add(path);
+        nodeId = selectedBranch == null ? "end" : selectedBranch.path("next").asText();
+        continue;
+      }
+      if ("parallel".equals(type)) {
+        String joinId = node.path("join").asText();
+        JsonNode join = nodes.get(joinId);
+        Map<String, Object> baseFacts = new LinkedHashMap<>(facts);
+        Map<String, Object> baseVariables = new LinkedHashMap<>(variables);
+        List<Map<String, Object>> branchFacts = new ArrayList<>();
+        List<Map<String, Object>> branchVariables = new ArrayList<>();
+        List<String> branchNames = new ArrayList<>();
+        Map<String, Object> fork = new LinkedHashMap<>();
+        fork.put("name", node.path("name").asText("并行网关"));
+        fork.put("type", "parallel");
+        fork.put("nodeId", nodeId);
+        fork.put("count", 0);
+        fork.put("facts", new LinkedHashMap<>(facts));
+        trace.add(fork);
+        for (JsonNode branch : node.path("branches")) {
+          Map<String, Object> isolatedFacts = new LinkedHashMap<>(baseFacts);
+          Map<String, Object> isolatedVariables = new LinkedHashMap<>(baseVariables);
+          List<Map<String, Object>> branchTrace = new ArrayList<>();
+          GraphResult branchResult = executeGraphPath(deployment, nodes, branch.path("next").asText(), joinId,
+              isolatedFacts, isolatedVariables, branchTrace, paths);
+          total += branchResult.count();
+          limitReached = limitReached || branchResult.limitReached();
+          for (Map<String, Object> item : branchTrace) {
+            item.put("parallelId", nodeId);
+            item.put("parallelBranchId", branch.path("id").asText());
+            item.put("parallelBranchName", branch.path("name").asText());
+          }
+          trace.addAll(branchTrace);
+          branchFacts.add(isolatedFacts);
+          branchVariables.add(isolatedVariables);
+          branchNames.add(branch.path("name").asText());
+        }
+        List<String> mergedFacts = mergeParallelValues(baseFacts, facts, branchFacts, branchNames, joinId, join, trace);
+        List<String> mergedVariables = mergeParallelValues(baseVariables, variables, branchVariables, branchNames, joinId, join, trace);
+        Map<String, Object> joinTrace = new LinkedHashMap<>();
+        joinTrace.put("name", join.path("name").asText("聚合节点"));
+        joinTrace.put("type", "join");
+        joinTrace.put("nodeId", joinId);
+        joinTrace.put("count", 0);
+        joinTrace.put("facts", new LinkedHashMap<>(facts));
+        joinTrace.put("mergedFields", mergedFacts);
+        joinTrace.put("mergedVariables", mergedVariables);
+        trace.add(joinTrace);
+        nodeId = join.path("next").asText();
+        continue;
+      }
+      throw new RoundFailure(new IllegalStateException("聚合节点不能脱离并行网关执行"), node, nodeId, trace);
     }
-    return new RoundResult(trace, total, limitReached, path);
+    return new GraphResult(total, limitReached);
+  }
+
+  private static List<String> mergeParallelValues(Map<String, Object> base, Map<String, Object> target,
+      List<Map<String, Object>> branches, List<String> branchNames, String joinId, JsonNode join,
+      List<Map<String, Object>> trace) throws RoundFailure {
+    Set<String> keys = new HashSet<>();
+    for (Map<String, Object> branch : branches) keys.addAll(branch.keySet());
+    List<String> merged = new ArrayList<>();
+    for (String key : keys) {
+      List<Object> changed = new ArrayList<>();
+      List<String> sources = new ArrayList<>();
+      for (int index = 0; index < branches.size(); index++) {
+        Object value = branches.get(index).get(key);
+        if (!java.util.Objects.equals(value, base.get(key))) {
+          changed.add(value);
+          sources.add(branchNames.get(index));
+        }
+      }
+      if (changed.isEmpty()) continue;
+      if (changed.stream().anyMatch(value -> !java.util.Objects.equals(value, changed.get(0)))) {
+        String message = "聚合节点“" + join.path("name").asText(joinId) + "”字段“" + key + "”存在并行输出冲突（" + String.join("、", sources) + "）";
+        throw new RoundFailure(new IllegalStateException(message), join, joinId, trace, 409, message);
+      }
+      target.put(key, changed.get(0));
+      merged.add(key);
+    }
+    return merged;
+  }
+
+  private static StepResult executeStep(Deployment deployment, int index, String nodeId, String gatewayId,
+      String branchId, String branchName, Map<String, Object> facts, Map<String, Object> variables,
+      List<Map<String, Object>> trace) throws Exception {
+    JsonNode step = deployment.release().path("steps").get(index);
+    List<Map<String, Object>> inputMappings = applyMappings(step.path("inputMappings"), facts);
+    KieSession session = deployment.sessionPools().get(index).newKieSession();
+    try {
+      FactType type = session.getKieBase().getFactType("workbench", "RuleInput");
+      if (type == null) throw new IllegalStateException("Release 缺少 workbench.RuleInput 类型");
+      Object fact = type.newInstance();
+      for (Map.Entry<String, Class<?>> entry : deployment.factTypes().entrySet()) {
+        if (!entry.getValue().isPrimitive() && !facts.containsKey(entry.getKey())) type.set(fact, entry.getKey(), null);
+      }
+      for (Map.Entry<String, Object> entry : facts.entrySet()) type.set(fact, entry.getKey(), entry.getValue());
+      FactType contextType = session.getKieBase().getFactType("workbench", "RuleContext");
+      Object context = null;
+      if (contextType != null) {
+        context = contextType.newInstance();
+        Set<String> contextFields = new HashSet<>();
+        for (FactField field : contextType.getFields()) contextFields.add(field.getName());
+        for (Map.Entry<String, Object> entry : variables.entrySet()) {
+          if (contextFields.contains(entry.getKey())) contextType.set(context, entry.getKey(), entry.getValue());
+        }
+        session.insert(context);
+      }
+      List<String> fired = new ArrayList<>();
+      session.addEventListener(new DefaultAgendaEventListener() {
+        @Override public void afterMatchFired(AfterMatchFiredEvent event) { fired.add(event.getMatch().getRule().getName()); }
+      });
+      session.insert(fact);
+      int count = session.fireAllRules(MAX_FIRES_PER_STEP);
+      List<Map<String, Object>> decisionHits = collectDecisionHits(session);
+      for (String key : deployment.factTypes().keySet()) {
+        Object value = type.get(fact, key);
+        if (value != null) facts.put(key, value);
+      }
+      if (context != null) {
+        for (FactField field : contextType.getFields()) {
+          String key = field.getName();
+          Object value = contextType.get(context, key);
+          if (value != null) variables.put(key, value);
+        }
+      }
+      List<Map<String, Object>> outputMappings = applyMappings(step.path("outputMappings"), facts);
+      Map<String, Object> item = new LinkedHashMap<>();
+      item.put("name", step.path("name").asText());
+      item.put("type", step.path("type").asText());
+      item.put("nodeId", nodeId);
+      if (gatewayId != null) item.put("gatewayId", gatewayId);
+      if (branchId != null) item.put("branchId", branchId);
+      if (branchName != null) item.put("branchName", branchName);
+      item.put("assetVersion", step.path("assetVersion").asInt());
+      item.put("fired", fired);
+      item.put("decisionHits", decisionHits);
+      item.put("count", count);
+      item.put("facts", new LinkedHashMap<>(facts));
+      item.put("variables", new LinkedHashMap<>(variables));
+      Map<String, Object> mappings = new LinkedHashMap<>();
+      mappings.put("inputs", inputMappings);
+      mappings.put("outputs", outputMappings);
+      item.put("mappings", mappings);
+      trace.add(item);
+      return new StepResult(count, count == MAX_FIRES_PER_STEP);
+    } finally { session.dispose(); }
   }
 
   private static boolean validFeedbackMappings(JsonNode mappings, JsonNode model) {
@@ -678,39 +841,180 @@ public final class ResServer {
     if (totalDrl > 1_000_000) return "发布包总大小超限";
     if (release.has("routing")) {
       JsonNode routing = release.path("routing");
-      int afterStep = routing.path("afterStep").asInt(-1);
-      JsonNode branches = routing.path("branches");
-      if (!"exclusive".equals(routing.path("type").asText()) || afterStep < 0 || afterStep > steps.size()
-          || !branches.isArray() || branches.isEmpty() || branches.size() > 8 || !release.path("model").isObject()) return "发布包路由定义无效";
-      Set<String> ids = new HashSet<>();
-      Set<Integer> indexes = new HashSet<>();
-      int defaults = 0;
-      int conditions = 0;
-      for (JsonNode branch : branches) {
-        String branchId = branch.path("id").asText("");
-        if (branchId.isBlank() || !ids.add(branchId) || branch.path("name").asText("").isBlank()
-            || !branch.path("stepIndexes").isArray() || branch.path("stepIndexes").isEmpty()) return "发布包路由分支无效";
-        for (JsonNode value : branch.path("stepIndexes")) {
-          if (!value.isIntegralNumber()) return "发布包路由步骤索引无效";
-          int stepIndex = value.asInt(-1);
-          if (stepIndex < afterStep || stepIndex >= steps.size() || !indexes.add(stepIndex)) return "发布包路由步骤索引无效";
+      boolean directedGraph = List.of("exclusive-dag", "decision-dag").contains(routing.path("type").asText());
+      boolean chained = "exclusive-chain".equals(routing.path("type").asText());
+      boolean legacy = "exclusive".equals(routing.path("type").asText());
+      if (directedGraph) {
+        JsonNode nodes = routing.path("nodes");
+        String entry = routing.path("entry").asText("");
+        if (!nodes.isArray() || nodes.isEmpty() || nodes.size() > 36 || entry.isBlank() || !release.path("model").isObject()) return "发布包图路由定义无效";
+        Map<String, JsonNode> byId = new HashMap<>();
+        Set<String> branchIds = new HashSet<>();
+        Set<Integer> stepIndexes = new HashSet<>();
+        for (JsonNode node : nodes) {
+          String nodeId = node.path("id").asText("");
+          if (nodeId.isBlank() || "end".equals(nodeId) || byId.putIfAbsent(nodeId, node) != null) return "发布包图节点无效";
+          if ("step".equals(node.path("type").asText())) {
+            int index = node.path("stepIndex").asInt(-1);
+            if (index < 0 || index >= steps.size() || !stepIndexes.add(index) || node.path("next").asText("").isBlank()) return "发布包图步骤节点无效";
+          } else if ("gateway".equals(node.path("type").asText())) {
+            JsonNode branches = node.path("branches");
+            if (node.path("name").asText("").isBlank() || !branches.isArray() || branches.isEmpty() || branches.size() > 8) return "发布包图网关无效";
+            int defaults = 0;
+            int conditions = 0;
+            for (JsonNode branch : branches) {
+              String branchId = branch.path("id").asText("");
+              if (branchId.isBlank() || !branchIds.add(branchId) || branch.path("name").asText("").isBlank() || branch.path("next").asText("").isBlank()) return "发布包图分支无效";
+              if (branch.path("default").asBoolean(false)) defaults++;
+              else {
+                conditions++;
+                JsonNode condition = branch.path("condition");
+                if (!condition.isObject() || condition.path("field").asText("").isBlank()
+                    || !List.of("==", "!=", ">", ">=", "<", "<=").contains(condition.path("operator").asText())
+                    || condition.path("value").isMissingNode() || condition.path("value").isNull()) return "发布包图分支条件无效";
+              }
+            }
+            if (conditions == 0 || defaults > 1) return "发布包图网关定义不完整";
+          } else if ("parallel".equals(node.path("type").asText()) && "decision-dag".equals(routing.path("type").asText())) {
+            JsonNode branches = node.path("branches");
+            if (node.path("name").asText("").isBlank() || node.path("join").asText("").isBlank()
+                || !branches.isArray() || branches.size() < 2 || branches.size() > 8) return "发布包并行网关无效";
+            for (JsonNode branch : branches) {
+              String branchId = branch.path("id").asText("");
+              if (branchId.isBlank() || !branchIds.add(branchId) || branch.path("name").asText("").isBlank()
+                  || branch.path("next").asText("").isBlank()) return "发布包并行分支无效";
+            }
+          } else if ("join".equals(node.path("type").asText()) && "decision-dag".equals(routing.path("type").asText())) {
+            if (node.path("name").asText("").isBlank() || node.path("next").asText("").isBlank()) return "发布包聚合节点无效";
+          } else return "发布包图节点类型无效";
         }
-        if (branch.path("default").asBoolean(false)) defaults++;
-        else {
-          conditions++;
-          JsonNode condition = branch.path("condition");
-          if (!condition.isObject() || condition.path("field").asText("").isBlank()
-              || !List.of("==", "!=", ">", ">=", "<", "<=").contains(condition.path("operator").asText())
-              || condition.path("value").isMissingNode() || condition.path("value").isNull()) return "发布包路由条件无效";
+        if (!byId.containsKey(entry) || stepIndexes.size() != steps.size()) return "发布包图路由定义不完整";
+        if ("decision-dag".equals(routing.path("type").asText())) {
+          Set<String> joins = new HashSet<>();
+          Set<String> referencedJoins = new HashSet<>();
+          for (JsonNode node : nodes) {
+            if ("join".equals(node.path("type").asText())) joins.add(node.path("id").asText());
+            if ("parallel".equals(node.path("type").asText()) && !referencedJoins.add(node.path("join").asText())) return "发布包聚合节点重复引用";
+          }
+          if (joins.size() > 4 || !joins.equals(referencedJoins)) return "发布包并行与聚合节点必须一一配对";
+          for (JsonNode node : nodes) {
+            if (!"parallel".equals(node.path("type").asText())) continue;
+            String joinId = node.path("join").asText();
+            List<Set<String>> branchNodeSets = new ArrayList<>();
+            for (JsonNode branch : node.path("branches")) {
+              if (!validParallelBranch(branch.path("next").asText(), joinId, byId, new HashSet<>())) return "发布包并行分支未汇入指定聚合节点或包含嵌套并行";
+              Set<String> collected = new HashSet<>();
+              collectParallelBranch(branch.path("next").asText(), joinId, byId, collected);
+              for (Set<String> existing : branchNodeSets) {
+                Set<String> overlap = new HashSet<>(collected);
+                overlap.retainAll(existing);
+                if (!overlap.isEmpty()) return "发布包并行分支在聚合前共享节点";
+              }
+              branchNodeSets.add(collected);
+            }
+          }
         }
+        Set<String> visiting = new HashSet<>();
+        Set<String> visited = new HashSet<>();
+        if (!validGraphPath(entry, byId, visiting, visited) || visited.size() != nodes.size()) return "发布包图路由存在循环或不可达节点";
+      } else {
+      int commonStepCount = chained ? routing.path("commonStepCount").asInt(-1) : routing.path("afterStep").asInt(-1);
+      JsonNode gateways = routing.path("gateways");
+      if (legacy) {
+        ObjectNode gateway = JSON.createObjectNode();
+        gateway.put("id", "gateway");
+        gateway.put("afterStep", commonStepCount);
+        gateway.set("branches", routing.path("branches"));
+        gateways = JSON.createArrayNode().add(gateway);
       }
-      if (conditions == 0 || defaults > 1 || indexes.size() != steps.size() - afterStep) return "发布包路由定义不完整";
+      if ((!chained && !legacy) || commonStepCount < 0 || commonStepCount > steps.size()
+          || !gateways.isArray() || gateways.isEmpty() || gateways.size() > 4 || !release.path("model").isObject()) return "发布包路由定义无效";
+      Set<String> gatewayIds = new HashSet<>();
+      Set<String> branchIds = new HashSet<>();
+      Set<Integer> positions = new HashSet<>();
+      Set<Integer> indexes = new HashSet<>();
+      for (JsonNode gateway : gateways) {
+        String gatewayId = gateway.path("id").asText("");
+        int afterStep = gateway.path("afterStep").asInt(-1);
+        JsonNode branches = gateway.path("branches");
+        if (gatewayId.isBlank() || !gatewayIds.add(gatewayId) || afterStep < 0 || afterStep > commonStepCount || !positions.add(afterStep)
+            || !branches.isArray() || branches.isEmpty() || branches.size() > 8) return "发布包网关定义无效";
+        int defaults = 0;
+        int conditions = 0;
+        for (JsonNode branch : branches) {
+          String branchId = branch.path("id").asText("");
+          if (branchId.isBlank() || !branchIds.add(branchId) || branch.path("name").asText("").isBlank()
+              || !branch.path("stepIndexes").isArray() || branch.path("stepIndexes").isEmpty()) return "发布包路由分支无效";
+          for (JsonNode value : branch.path("stepIndexes")) {
+            if (!value.isIntegralNumber()) return "发布包路由步骤索引无效";
+            int stepIndex = value.asInt(-1);
+            if (stepIndex < commonStepCount || stepIndex >= steps.size() || !indexes.add(stepIndex)) return "发布包路由步骤索引无效";
+          }
+          if (branch.path("default").asBoolean(false)) defaults++;
+          else {
+            conditions++;
+            JsonNode condition = branch.path("condition");
+            if (!condition.isObject() || condition.path("field").asText("").isBlank()
+                || !List.of("==", "!=", ">", ">=", "<", "<=").contains(condition.path("operator").asText())
+                || condition.path("value").isMissingNode() || condition.path("value").isNull()) return "发布包路由条件无效";
+          }
+        }
+        if (conditions == 0 || defaults > 1) return "发布包路由定义不完整";
+      }
+      if (indexes.size() != steps.size() - commonStepCount) return "发布包路由定义不完整";
+      }
     }
     String expected;
     try { expected = checksum(release); }
     catch (Exception exception) { return "无法计算发布包校验和"; }
     if (!expected.equals(release.path("checksum").asText())) return "发布包校验和不匹配";
     return null;
+  }
+
+  private static boolean validGraphPath(String id, Map<String, JsonNode> nodes, Set<String> visiting, Set<String> visited) {
+    if ("end".equals(id)) return true;
+    if (visiting.contains(id) || !nodes.containsKey(id)) return false;
+    if (visited.contains(id)) return true;
+    visiting.add(id);
+    JsonNode node = nodes.get(id);
+    if ("step".equals(node.path("type").asText()) || "join".equals(node.path("type").asText())) {
+      if (!validGraphPath(node.path("next").asText(), nodes, visiting, visited)) return false;
+    } else {
+      for (JsonNode branch : node.path("branches")) {
+        if (!validGraphPath(branch.path("next").asText(), nodes, visiting, visited)) return false;
+      }
+    }
+    visiting.remove(id);
+    visited.add(id);
+    return true;
+  }
+
+  private static boolean validParallelBranch(String id, String joinId, Map<String, JsonNode> nodes, Set<String> visiting) {
+    if (joinId.equals(id)) return true;
+    if ("end".equals(id) || visiting.contains(id) || !nodes.containsKey(id)) return false;
+    JsonNode node = nodes.get(id);
+    if (List.of("parallel", "join").contains(node.path("type").asText())) return false;
+    visiting.add(id);
+    boolean valid;
+    if ("step".equals(node.path("type").asText())) valid = validParallelBranch(node.path("next").asText(), joinId, nodes, new HashSet<>(visiting));
+    else {
+      valid = true;
+      for (JsonNode branch : node.path("branches")) {
+        if (!validParallelBranch(branch.path("next").asText(), joinId, nodes, new HashSet<>(visiting))) { valid = false; break; }
+      }
+    }
+    return valid;
+  }
+
+  private static void collectParallelBranch(String id, String joinId, Map<String, JsonNode> nodes, Set<String> collected) {
+    if (joinId.equals(id) || "end".equals(id) || !collected.add(id)) return;
+    JsonNode node = nodes.get(id);
+    if (node == null) return;
+    if ("step".equals(node.path("type").asText()) || "join".equals(node.path("type").asText())) {
+      collectParallelBranch(node.path("next").asText(), joinId, nodes, collected);
+    } else {
+      for (JsonNode branch : node.path("branches")) collectParallelBranch(branch.path("next").asText(), joinId, nodes, collected);
+    }
   }
 
   private static boolean validStepMappings(JsonNode step, JsonNode model) {

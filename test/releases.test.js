@@ -170,6 +170,85 @@ test('flow release freezes exclusive gateway routes into step indexes', () => {
   assert.match(verifyRelease(release), /步骤索引|不完整/);
 });
 
+test('flow release freezes a chain of exclusive gateways and merge points', () => {
+  const flow = published('flow-multi-routed', { name: '多级分支流', description: '', steps: [] }, 1);
+  const common = index => ({ nodeId: `common-${index}`, type: 'rule', id: `common-${index}`, name: `公共规则 ${index}`, version: 1, drl: 'package workbench\n' });
+  const branch = id => ({ nodeId: `node-${id}`, type: 'rule', id, name: id, version: 1, drl: 'package workbench\n' });
+  flow.published = {
+    name: '多级分支流', description: '', steps: [common(1), common(2)],
+    gateways: [
+      { id: 'g1', name: '网关一', afterStep: 1, branches: [
+        { id: 'g1-yes', name: '是', condition: { field: 'creditScore', operator: '>=', value: 700 }, steps: [branch('g1-yes')] },
+        { id: 'g1-no', name: '否', default: true, condition: null, steps: [branch('g1-no')] },
+      ] },
+      { id: 'g2', name: '网关二', afterStep: 2, branches: [
+        { id: 'g2-yes', name: '是', condition: { field: 'customerAge', operator: '>=', value: 18 }, steps: [branch('g2-yes')] },
+        { id: 'g2-no', name: '否', default: true, condition: null, steps: [branch('g2-no')] },
+      ] },
+    ],
+  };
+  const release = buildRelease({
+    id: 'release-multi-routed',
+    request: { decisionService: 'default/multi-routed', name: '多级分支发布', target: { type: 'flow', id: flow.id } },
+    rules: [], tables: [], flows: [flow], releases: [],
+  });
+  assert.equal(release.routing.type, 'exclusive-chain');
+  assert.equal(release.routing.commonStepCount, 2);
+  assert.deepEqual(release.routing.gateways.map(gateway => gateway.afterStep), [1, 2]);
+  assert.deepEqual(release.routing.gateways.flatMap(gateway => gateway.branches.map(branch => branch.stepIndexes)), [[2], [3], [4], [5]]);
+  assert.equal(verifyRelease(release), null);
+});
+
+test('flow release freezes and verifies an exclusive DAG', () => {
+  const graphStep = nodeId => ({ nodeId, type: 'rule', id: `rule-${nodeId}`, name: `规则 ${nodeId}`, version: 1, drl: 'package workbench\n' });
+  const flow = published('flow-dag', { name: '图流程', description: '', steps: [] }, 1);
+  flow.published = {
+    name: '图流程', description: '', variables: [], steps: [],
+    graph: {
+      entry: 'start-step',
+      nodes: [
+        { id: 'start-step', type: 'step', step: graphStep('start-step'), next: 'gateway-a' },
+        { id: 'gateway-a', type: 'gateway', name: '判断', branches: [
+          { id: 'yes', name: '是', condition: { field: 'customerAge', operator: '>=', value: 18 }, next: 'merge-step' },
+          { id: 'no', name: '否', default: true, condition: null, next: 'merge-step' },
+        ] },
+        { id: 'merge-step', type: 'step', step: graphStep('merge-step'), next: 'end' },
+      ],
+    },
+  };
+  const release = buildRelease({
+    id: 'release-dag',
+    request: { decisionService: 'default/dag', name: '图发布', target: { type: 'flow', id: flow.id } },
+    rules: [], tables: [], flows: [flow], releases: [],
+  });
+  assert.equal(release.routing.type, 'exclusive-dag');
+  assert.equal(release.steps.length, 2);
+  assert.equal(verifyRelease(release), null);
+  release.routing.nodes.find(node => node.id === 'merge-step').next = 'gateway-a';
+  release.checksum = releaseChecksum(release);
+  assert.match(verifyRelease(release), /循环|不可达/);
+});
+
+test('flow release freezes and verifies a parallel decision DAG', () => {
+  const graphStep = nodeId => ({ nodeId, type: 'rule', id: `rule-${nodeId}`, name: `规则 ${nodeId}`, version: 1, drl: 'package workbench\n' });
+  const flow = published('flow-parallel', { name: '并行流程', description: '', steps: [] }, 1);
+  flow.published = { name: '并行流程', description: '', variables: [], steps: [], graph: { entry: 'parallel', nodes: [
+    { id: 'parallel', type: 'parallel', name: '并行检查', join: 'join', branches: [{ id: 'a', name: 'A', next: 'a-step' }, { id: 'b', name: 'B', next: 'b-step' }] },
+    { id: 'a-step', type: 'step', step: graphStep('a-step'), next: 'join' },
+    { id: 'b-step', type: 'step', step: graphStep('b-step'), next: 'join' },
+    { id: 'join', type: 'join', name: '结果聚合', next: 'end' },
+  ] } };
+  const release = buildRelease({
+    id: 'release-parallel', request: { decisionService: 'default/parallel', name: '并行发布', target: { type: 'flow', id: flow.id } },
+    rules: [], tables: [], flows: [flow], releases: [],
+  });
+  assert.equal(release.routing.type, 'decision-dag');
+  assert.equal(verifyRelease(release), null);
+  release.routing.nodes.find(node => node.id === 'b-step').next = 'end';
+  release.checksum = releaseChecksum(release);
+  assert.match(verifyRelease(release), /未汇入/);
+});
+
 test('flow release uses the top-level variable scope', () => {
   const variable = { name: 'approved', label: '已批准', type: 'Boolean', defaultValue: false, enum: null, description: '流程内部变量' };
   const flow = published('flow-variable-scope', { name: '变量流', description: '', steps: [] }, 1);

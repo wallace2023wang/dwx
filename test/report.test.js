@@ -76,3 +76,71 @@ test('REPORT-04: 事件流报告展示语句业务元数据', () => {
   assert.match(html, /氨气超限/);
   assert.match(html, /单点阈值/);
 });
+
+test('REPORT-05: 项目报告统计多级排他网关的所有分支步骤', () => {
+  const report = aggregateReportData(
+    { id: 'flow-demo', name: '编排项目' },
+    {
+      rules: [], tables: [], releases: [], testSuites: [],
+      bom: { version: 1, factTypes: [] },
+      flows: [{
+        id: 'flow-1', versions: [{ number: 1 }],
+        published: {
+          name: '多级风控',
+          steps: [{ id: 'common-1', type: 'rule' }],
+          gateways: [
+            { id: 'g1', name: '准入网关', afterStep: 0, branches: [{ id: 'b1', name: '通过', steps: [{ id: 'branch-1', type: 'rule' }] }] },
+            { id: 'g2', name: '复核网关', afterStep: 1, branches: [{ id: 'b2', name: '人工', steps: [{ id: 'branch-2', type: 'table' }] }] },
+          ],
+        },
+      }],
+    },
+  );
+  assert.equal(report.flows[0].branchCount, 2);
+  assert.equal(report.flows[0].stepCount, 3);
+  assert.deepEqual(report.flows[0].steps.map(step => step.branchName), [null, '准入网关 / 通过', '复核网关 / 人工']);
+});
+
+test('REPORT-06: 项目报告统计 DAG 网关、分支和图步骤', () => {
+  const report = aggregateReportData(
+    { id: 'dag-demo', name: 'DAG 项目' },
+    {
+      rules: [], tables: [], releases: [], testSuites: [],
+      bom: { version: 1, factTypes: [] },
+      flows: [{
+        id: 'flow-dag', versions: [{ number: 1 }],
+        published: {
+          name: '嵌套流程', steps: [],
+          graph: { entry: 'entry', nodes: [
+            { id: 'entry', type: 'step', step: { id: 'rule-a', type: 'rule', version: 1 }, next: 'gateway' },
+            { id: 'gateway', type: 'gateway', name: '判断', branches: [
+              { id: 'yes', name: '是', condition: { field: 'score', operator: '>=', value: 60 }, next: 'merge' },
+              { id: 'no', name: '否', default: true, next: 'merge' },
+            ] },
+            { id: 'merge', type: 'step', step: { id: 'rule-b', type: 'rule', version: 2 }, next: 'end' },
+          ] },
+        },
+      }],
+    },
+  );
+  assert.equal(report.flows[0].branchCount, 2);
+  assert.equal(report.flows[0].stepCount, 2);
+  assert.deepEqual(report.flows[0].steps.map(step => step.branchName), ['图节点', '图节点']);
+});
+
+test('REPORT-07: 项目报告统计并行分支和聚合节点', () => {
+  const report = aggregateReportData(
+    { id: 'parallel-demo', name: '并行项目' },
+    { rules: [], tables: [], releases: [], testSuites: [], bom: { version: 1, factTypes: [] }, flows: [{
+      id: 'parallel-flow', versions: [{ number: 1 }], published: { name: '并行流程', steps: [], graph: { entry: 'parallel', nodes: [
+        { id: 'parallel', type: 'parallel', name: '并行检查', join: 'join', branches: [{ id: 'a', name: 'A', next: 'a-step' }, { id: 'b', name: 'B', next: 'b-step' }] },
+        { id: 'a-step', type: 'step', step: { id: 'a', type: 'rule', version: 1 }, next: 'join' },
+        { id: 'b-step', type: 'step', step: { id: 'b', type: 'rule', version: 1 }, next: 'join' },
+        { id: 'join', type: 'join', name: '聚合', next: 'end' },
+      ] } },
+    }] },
+  );
+  assert.equal(report.flows[0].branchCount, 2);
+  assert.equal(report.flows[0].parallelCount, 1);
+  assert.equal(report.flows[0].joinCount, 1);
+});

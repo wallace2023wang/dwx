@@ -54,6 +54,25 @@ export function createMutationService({
     return pending;
   }
 
+  function mutateProjectAssets(operation, projectId = 'default') {
+    const pending = queue.then(async () => {
+      const [rules, tables, flows, eventStreams] = await Promise.all([
+        readRules(projectId), readAssets('tables', projectId), readAssets('flows', projectId), readAssets('eventStreams', projectId),
+      ]);
+      const collections = { rule: rules, table: tables, flow: flows, 'event-stream': eventStreams };
+      const result = await operation(collections);
+      if (result?.changed) {
+        await writeRules(rules, projectId);
+        await writeAssets('tables', tables, projectId);
+        await writeAssets('flows', flows, projectId);
+        await writeAssets('eventStreams', eventStreams, projectId);
+      }
+      return result;
+    });
+    queue = pending.catch(() => {});
+    return pending;
+  }
+
   function mutateReleases(operation, projectId = 'default') {
     const pending = queue.then(async () => {
       const releases = await readReleases(projectId);
@@ -92,6 +111,7 @@ export function createMutationService({
     mutatePackageRecords,
     mutate,
     mutateAssets,
+    mutateProjectAssets,
     mutateReleases,
     mutateTestSuites,
     mutateChangeSets,

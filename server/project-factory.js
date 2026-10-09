@@ -23,7 +23,7 @@ export function defaultProjectRecord() {
 }
 
 function blankBom() {
-  return { version: 1, updatedAt: new Date().toISOString(), fields: [], eventTypes: [] };
+  return { version: 1, updatedAt: new Date().toISOString(), fields: [], eventTypes: [], domains: [], methods: [] };
 }
 
 function grainBomTemplate() {

@@ -1,7 +1,7 @@
-import { CheckCircle2, CircleStop, History, LoaderCircle, Plus, Power, Rocket, RotateCcw, Server } from 'lucide-react'
+import { BellRing, CheckCircle2, CircleStop, History, LoaderCircle, Plus, Power, Rocket, RotateCcw, Server } from 'lucide-react'
 import { Fragment, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useActivateRelease, useConfigureReleaseWebhook, useCreateRelease, useDeployRelease, useReleases, useRollbackRelease, useUndeployRelease } from '../../api/releases'
+import { useAcknowledgeReleaseAlert, useActivateRelease, useConfigureReleaseWebhook, useCreateRelease, useDeployRelease, useReleaseAlerts, useReleases, useRollbackRelease, useUndeployRelease } from '../../api/releases'
 import { useRulesets } from '../../api/flows'
 import { usePackages, useProject } from '../../api/projects'
 import { useTestSuite } from '../../api/tests'
@@ -59,6 +59,9 @@ export default function ReleasesTab() {
   const [createdVersion, setCreatedVersion] = useState('')
   const [webhookReleaseId, setWebhookReleaseId] = useState('')
   const [webhookDraft, setWebhookDraft] = useState<ReleaseWebhookConfig>(defaultWebhookDraft)
+  const [alertsReleaseId, setAlertsReleaseId] = useState('')
+  const alerts = useReleaseAlerts(projectId, alertsReleaseId || undefined)
+  const acknowledgeAlert = useAcknowledgeReleaseAlert(projectId, alertsReleaseId || undefined)
   const serverProject = Boolean(projectId)
   const activeReleases = releases.filter(release => release.state === 'active')
   const releaseOperationPending = deployRelease.isPending || activateRelease.isPending || rollbackRelease.isPending || undeployRelease.isPending
@@ -95,7 +98,7 @@ export default function ReleasesTab() {
 
   const build = async (draft: ReleaseDraft, assetSummary: string) => {
     const selected = releasePackages.flatMap(packageNode => packageNode.assets).find(asset => asset.id === draft.assetIds[0])
-    const targetType = selected?.type === 'decision-table' ? 'table' : selected?.type
+    const targetType = selected && ['decision-table', 'decision-tree', 'scorecard'].includes(selected.type) ? 'table' : selected?.type
     const previous = releases.find(release => release.target?.id === selected?.id && release.target?.type === targetType)
     const target = selected ? { ...selected, decisionService: previous?.decisionService } : undefined
     const release = await createRelease.mutateAsync({ draft, assetSummary, target })
@@ -170,8 +173,20 @@ export default function ReleasesTab() {
                   {release.state === 'active' && release.rollbackAvailable && <button className="inline-flex h-7 items-center gap-1 rounded-[2px] border border-ink-border px-2 text-[11px] text-ink-2 hover:border-brand-primary hover:text-brand-primary disabled:opacity-50" disabled={releaseOperationPending} onClick={() => rollbackRelease.mutate(release.id)}><RotateCcw size={12} />回退</button>}
                   {release.state === 'deployed' && <button className="inline-flex size-7 items-center justify-center rounded-[2px] border border-ink-border text-ink-3 hover:border-[#c62828] hover:text-[#c62828] disabled:opacity-50" title="卸载该版本" aria-label={`卸载 v${release.version}`} disabled={releaseOperationPending} onClick={() => { if (window.confirm(`确定从 local RES 卸载 v${release.version}？历史 Release 仍会保留。`)) undeployRelease.mutate(release.id) }}><CircleStop size={13} /></button>}
                   {release.engine === 'cep' && release.state !== 'stopped' && <button type="button" className="inline-flex h-7 items-center rounded-[2px] border border-ink-border px-2 text-[11px] text-ink-2 hover:border-brand-primary hover:text-brand-primary" onClick={() => webhookReleaseId === release.id ? setWebhookReleaseId('') : openWebhook(release)}>{release.webhook?.enabled ? '回调已开' : '告警回调'}</button>}
+                  {release.engine === 'cep' && ['active', 'deployed'].includes(release.state) && <button type="button" className="inline-flex h-7 items-center gap-1 rounded-[2px] border border-ink-border px-2 text-[11px] text-ink-2 hover:border-brand-primary hover:text-brand-primary" onClick={() => { setAlertsReleaseId(current => current === release.id ? '' : release.id); acknowledgeAlert.reset() }}><BellRing size={12} />告警</button>}
                 </div> : <span className="text-[10px] text-ink-3">-</span>}</td>
               </tr>
+              {alertsReleaseId === release.id && (
+                <tr className="border-b border-[#e8e8e8] bg-[#f8fafc]">
+                  <td colSpan={7} className="px-[10px] py-3">
+                    <div className="rounded-[3px] border border-ink-border bg-white p-3">
+                      <div className="mb-2 flex items-center justify-between"><div><h3 className="text-xs font-semibold">CEP 告警实例</h3><p className="mt-0.5 text-[10px] text-ink-3">命中后进入活动，人工确认后保持监控，超过消退窗口自动清除。</p></div><button className="h-7 border border-ink-border px-2 text-[10px]" onClick={() => void alerts.refetch()}>刷新</button></div>
+                      {alerts.isPending ? <p className="py-3 text-[11px] text-ink-3">加载告警中...</p> : alerts.error ? <p className="py-2 text-[11px] text-[#c62828]">{alerts.error.message}</p> : alerts.data?.length ? <div className="overflow-x-auto"><table className="w-full min-w-[680px] text-[11px]"><thead className="bg-[#fafafa] text-ink-3"><tr><th className="px-2 py-1.5 text-left">状态</th><th className="px-2 py-1.5 text-left">语句 / 输出</th><th className="px-2 py-1.5 text-left">关联键</th><th className="px-2 py-1.5 text-left">最近命中</th><th className="px-2 py-1.5 text-left">确认</th><th className="px-2 py-1.5 text-right">操作</th></tr></thead><tbody>{alerts.data.map(alert => <tr key={alert.id} className="border-t border-ink-border"><td className="px-2 py-2"><span className={`px-1.5 py-0.5 text-[10px] ${alert.status === 'ACTIVE' ? 'bg-[#fff1f1] text-[#c62828]' : alert.status === 'ACKED' ? 'bg-[#fff3e0] text-[#8a5a00]' : 'bg-[#e8f5e9] text-[#198038]'}`}>{alert.status === 'ACTIVE' ? '活动' : alert.status === 'ACKED' ? '已确认' : '已清除'}</span></td><td className="px-2 py-2"><div className="font-mono">{alert.statement}</div><div className="text-[10px] text-ink-3">{alert.eventType}</div></td><td className="px-2 py-2 font-mono">{alert.correlationKey}</td><td className="px-2 py-2 whitespace-nowrap">{new Date(alert.lastFiredAt).toLocaleString('zh-CN', { hour12: false })}</td><td className="px-2 py-2">{alert.ackedBy ? <><div>{alert.ackedBy}</div><div className="text-[10px] text-ink-3">{alert.ackedAt ? new Date(alert.ackedAt).toLocaleString('zh-CN', { hour12: false }) : ''}</div></> : '-'}</td><td className="px-2 py-2 text-right">{alert.status === 'ACTIVE' && <button type="button" className="h-7 border border-brand-primary px-2 text-[10px] text-brand-primary disabled:opacity-50" disabled={acknowledgeAlert.isPending} onClick={() => acknowledgeAlert.mutate(alert.id)}>确认</button>}</td></tr>)}</tbody></table></div> : <p className="py-3 text-[11px] text-ink-3">该 Release 暂无告警实例。</p>}
+                      {acknowledgeAlert.error && <p className="mt-2 text-[10px] text-[#c62828]">{acknowledgeAlert.error.message}</p>}
+                    </div>
+                  </td>
+                </tr>
+              )}
               {webhookReleaseId === release.id && (
                 <tr className="border-b border-[#e8e8e8] bg-[#fbfcf8]">
                   <td colSpan={7} className="px-[10px] py-3">

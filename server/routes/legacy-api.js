@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import { generateDrl, newRule, validateRule } from '../../shared/rules.js';
-import { flowSnapshot, newFlow, newTable, tableCollectedHits, tableDrl, tableExecutionTrace, tableRules, validateFlow, validateTable } from '../../shared/assets.js';
+import { flowBranches, flowSnapshot, flowSteps, newFlow, newTable, tableCollectedHits, tableDrl, tableExecutionTrace, tableRules, validateFlow, validateTable } from '../../shared/assets.js';
 import { advanceAssetRevision, initializeAssetRevision, normalizePackageReferences } from '../domain-utils.js';
 import { bodyOf, expectedRevision, operationError, reply, revisionConflict } from '../http-utils.js';
 import { domainErrorResult } from '../../shared/errors.js';
@@ -49,7 +49,10 @@ export function createLegacyApiHandler({
       const rules = isTable ? null : await readRules();
       const tables = isTable ? null : await readAssets('tables');
       const packageRecords = isTable ? [] : await readPackageRecords('default', { rules, tables });
-      const error = isTable ? validate(draft) : validate(draft, rules, tables, currentBom, packageRecords, { allowEmptyRuleGroups: true });
+      const flows = isTable ? [] : await readAssets('flows');
+      const error = isTable ? validate(draft) : validate(draft, rules, tables, currentBom, packageRecords, {
+        allowEmptyRuleGroups: true, flows, currentFlowId: id,
+      });
       if (error) return reply(res, 400, { error });
       const result = await mutateAssets(kind, assets => {
         const item = assets.find(asset => asset.id === id && !asset.archived);
@@ -95,7 +98,8 @@ export function createLegacyApiHandler({
       let flow;
       try {
         const packageRecords = await readPackageRecords('default', { rules, tables });
-        flow = payload.published ? item.published : flowSnapshot(payload.draft || item.draft, rules, tables, currentBom, packageRecords);
+        const flows = await readAssets('flows');
+        flow = payload.published ? item.published : flowSnapshot(payload.draft || item.draft, rules, tables, currentBom, packageRecords, null, { flows, currentFlowId: item.id });
       } catch (error) {
         const result = domainErrorResult(error);
         return reply(res, result.status, operationError(result));
@@ -155,9 +159,9 @@ export function createLegacyApiHandler({
         let snapshot;
         try {
           const packageRecords = await readPackageRecords('default', { rules, tables });
-          snapshot = flowSnapshot(item.draft, rules, tables, currentBom, packageRecords);
+          snapshot = flowSnapshot(item.draft, rules, tables, currentBom, packageRecords, null, { flows: assets, currentFlowId: item.id });
         } catch (error) { return domainErrorResult(error); }
-        const steps = [...snapshot.steps, ...snapshot.branches.flatMap(branch => branch.steps)];
+        const steps = flowSteps(snapshot);
         for (const step of steps) {
           const checked = await engine('/compile', { drl: step.drl });
           if (checked.error) return { status: checked.status, error: `${step.name}：${checked.error}` };

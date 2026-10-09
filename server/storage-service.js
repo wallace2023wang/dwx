@@ -2,6 +2,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { defaultBom, validateBom } from '../shared/bom.js';
+import { flowBranches, flowSteps } from '../shared/assets.js';
+import { ruleConditions } from '../shared/rules.js';
 import { canonicalPackageName, packageLabel } from '../shared/packages.js';
 import { initializeAssetRevision, normalizeAssetPackages, normalizePackageRecords } from './domain-utils.js';
 import { defaultProjectRecord, normalizeProjectRecord } from './project-factory.js';
@@ -48,18 +50,29 @@ export function createStorageService({ storage, dataDir, assetFiles, getPostgres
   async function collectUsedKeys(projectId = 'default') {
     const used = new Set();
     const add = key => { if (typeof key === 'string' && key) used.add(key); };
+    const bom = await readBom(projectId);
+    const scanExpression = node => {
+      if (!node || typeof node !== 'object') return;
+      if (node.type === 'field' && node.fieldSource !== 'variable') add(node.field);
+      else if (node.type === 'binary') { scanExpression(node.left); scanExpression(node.right); }
+      else if (node.type === 'function') for (const argument of node.args || []) scanExpression(argument);
+      else if (node.type === 'method') scanExpression((bom.methods || []).find(method => method.name === node.name)?.expression);
+    };
+    const scanRule = rule => {
+      if (!rule) return;
+      for (const condition of ruleConditions(rule)) {
+        if (!condition.pattern && !condition.raw) { add(condition.field); if (condition.valueSource === 'field') add(condition.valueField); }
+      }
+      for (const action of rule.actions || []) { add(action.field); scanExpression(action.valueExpression); }
+    };
     const rules = await readRules(projectId);
     for (const asset of rules) {
       for (const version of asset.versions || []) {
         const rule = version.rule || version.draft;
-        if (!rule) continue;
-        for (const c of rule.conditions || []) { if (!c.pattern && !c.raw) { add(c.field); if (c.valueSource === 'field') add(c.valueField); } }
-        for (const a of rule.actions || []) add(a.field);
+        scanRule(rule);
       }
-      for (const c of (asset.draft?.conditions || [])) { if (!c.pattern && !c.raw) { add(c.field); if (c.valueSource === 'field') add(c.valueField); } }
-      for (const a of (asset.draft?.actions || [])) add(a.field);
-      for (const c of (asset.published?.conditions || [])) { if (!c.pattern && !c.raw) { add(c.field); if (c.valueSource === 'field') add(c.valueField); } }
-      for (const a of (asset.published?.actions || [])) add(a.field);
+      scanRule(asset.draft);
+      scanRule(asset.published);
     }
     const tables = await readAssets('tables', projectId);
     for (const asset of tables) {
@@ -82,10 +95,9 @@ export function createStorageService({ storage, dataDir, assetFiles, getPostgres
           for (const mapping of step.outputMappings || []) { add(mapping.source); add(mapping.target); }
         }
       };
-      scanSteps(flow.steps);
-      for (const branch of flow.branches || []) {
+      scanSteps(flowSteps(flow));
+      for (const branch of flowBranches(flow)) {
         if (!branch.default) add(branch.condition?.field);
-        scanSteps(branch.steps);
       }
     };
     for (const asset of flows) {

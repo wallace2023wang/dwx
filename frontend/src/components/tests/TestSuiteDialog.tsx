@@ -112,7 +112,11 @@ export default function TestSuiteDialog({ projectId, bom, targets, initial, savi
   const [cases, setCases] = useState<FormCase[]>(initial?.cases.map(toFormCase) || [toFormCase()])
   const target = targets.find(option => `${option.type}:${option.id}` === targetKey)
   const { data: flow } = useRuleFlow(projectId, target?.type === 'flow' ? target.id : undefined)
-  const branches = target?.type === 'flow' && flow && 'draft' in flow ? (flow as FlowDetail).draft.branches || [] : []
+  const flowDraft = target?.type === 'flow' && flow && 'draft' in flow ? (flow as FlowDetail).draft : null
+  const flowGateways = flowDraft?.graph
+    ? flowDraft.graph.nodes.filter(node => node.type === 'gateway')
+    : flowDraft?.gateways?.length ? flowDraft.gateways : (flowDraft?.branches?.length ? [{ id: 'gateway', name: '排他网关', afterStep: flowDraft.steps.length, branches: flowDraft.branches }] : flowDraft?.gateways ?? [])
+  const branches = flowGateways.flatMap(gateway => gateway.branches.map(branch => ({ ...branch, gatewayName: gateway.name })))
   const inputFields = useMemo(() => bom.factTypes.flatMap(fact => fact.fields.map(field => ({ ...field, factLabel: fact.label }))).filter(field => field.direction === 'input'), [bom])
   const outputFields = useMemo(() => bom.factTypes.flatMap(fact => fact.fields.map(field => ({ ...field, factLabel: fact.label }))).filter(field => field.direction === 'output'), [bom])
   const invalidCase = cases.some(testCase => !testCase.name.trim()
@@ -165,7 +169,7 @@ export default function TestSuiteDialog({ projectId, bom, targets, initial, savi
                   </div>)}</div>}
                 </section>
               </div>
-              <div className="space-y-3"><FieldAssertions title="期望输出" fields={outputFields} values={testCase.outputs} onChange={outputs => updateCase(index, { outputs })} /><label className="block text-[11px] font-semibold text-ink-2">期望命中规则<input className="control-input mt-1 h-8" value={testCase.fired} onChange={event => updateCase(index, { fired: event.target.value })} placeholder="可选，多个规则用逗号分隔" /></label>{target?.type === 'flow' && <label className="block text-[11px] font-semibold text-ink-2">期望流程路径<select className="control-input mt-1 h-8" value={testCase.path} onChange={event => updateCase(index, { path: event.target.value })}><option value={unsetPath}>不校验路径</option><option value={nullPath}>无匹配分支</option>{branches.map(branch => <option key={branch.id} value={branch.id}>{branch.name}{branch.default ? '（默认）' : ''}</option>)}</select></label>}</div>
+              <div className="space-y-3"><FieldAssertions title="期望输出" fields={outputFields} values={testCase.outputs} onChange={outputs => updateCase(index, { outputs })} /><label className="block text-[11px] font-semibold text-ink-2">期望命中规则<input className="control-input mt-1 h-8" value={testCase.fired} onChange={event => updateCase(index, { fired: event.target.value })} placeholder="可选，多个规则用逗号分隔" /></label>{target?.type === 'flow' && <label className="block text-[11px] font-semibold text-ink-2">期望流程路径<select className="control-input mt-1 h-8" value={testCase.path} onChange={event => updateCase(index, { path: event.target.value })}><option value={unsetPath}>不校验路径</option><option value={nullPath}>无匹配分支</option>{branches.map(branch => <option key={branch.id} value={branch.id}>{flowGateways.length > 1 ? `${branch.gatewayName} / ` : ''}{branch.name}{branch.default ? '（默认）' : ''}</option>)}</select></label>}</div>
             </div>
           </section>)}
           <button type="button" className="inline-flex h-8 items-center gap-1 border border-dashed border-brand-primary bg-white px-3 text-[11px] text-brand-primary hover:bg-brand-primary-l" onClick={() => setCases(current => [...current, toFormCase()])}><Plus size={13} />新增场景</button>

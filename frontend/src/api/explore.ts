@@ -5,7 +5,7 @@ import { loadEventStreams } from './eventStreams'
 import { loadRulesets } from './flows'
 import { loadPackages, loadProjects } from './projects'
 
-export type ExploreKind = 'rule' | 'decision-table' | 'flow' | 'event-stream' | 'bom'
+export type ExploreKind = 'rule' | 'decision-table' | 'decision-tree' | 'scorecard' | 'flow' | 'event-stream' | 'bom'
 
 export interface ExploreItem {
   id: string

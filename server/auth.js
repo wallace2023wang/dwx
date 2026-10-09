@@ -242,6 +242,7 @@ export function requiredPermission(req, url) {
   if (url.pathname.startsWith('/api/auth/')) return null;
   const segments = url.pathname.split('/').filter(Boolean);
   if (segments[1] === 'admin') return 'manage';
+  if (segments[1] === 'projects' && segments[3] === 'collaboration') return 'view';
   if (req.method === 'GET') return url.pathname === '/api/audit-events'
     || (segments[1] === 'projects' && segments[3] === 'audit-events') ? 'review' : 'view';
   if (segments[1] === 'change-sets' && ['approve', 'reject'].includes(segments[3])) return 'review';
