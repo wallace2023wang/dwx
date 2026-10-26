@@ -18,6 +18,12 @@ The "Explore" page provides a cross-project asset catalog searchable by name, ru
 
 The product evolves along three boundaries: the rule design center, the rule governance center, and the standalone Rule Execution Center (RES). Detailed plans are in [产品需求说明](docs/product-requirements.md), [技术设计](docs/technical-design.md) and [交付任务拆分](docs/delivery-plan.md).
 
+## Architecture
+
+![DWX Dual-Engine, Dual-Brain Architecture](docs/images/dwx-architecture.svg)
+
+As shown above, DWX follows a three-layer architecture: **client layer** (web console / business systems) → **brain layer** (decision platform brain and LLM agent brain) → **engine layer** (Drools rule engine and Esper event engine). The decision platform brain centrally governs BOM, rules, tests and release assets, routing rule requests to Drools and CEP event-stream requests to Esper per project; the LLM agent brain (roadmap) analyzes rule-hit behavior and provides tuning suggestions that flow back into the decision platform brain after human confirmation, forming a "decide → analyze → suggest → optimize" loop.
+
 ## Project structure
 
 ```text

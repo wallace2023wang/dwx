@@ -18,6 +18,12 @@ DWX（Decision Workbench）是采用**双引擎、双脑架构**的决策工作�
 
 产品按规则设计中心、规则治理中心和独立规则执行中心（RES）三个边界演进。详细规划见 [产品需求说明](docs/product-requirements.md)、[技术设计](docs/technical-design.md) 和 [交付任务拆分](docs/delivery-plan.md)。
 
+## 整体架构
+
+![DWX 双引擎·双脑架构图](docs/images/dwx-architecture.svg)
+
+如上图所示，DWX 采用三层架构：**客户端层**（前端控制台 / 业务系统）→ **大脑层**（决策平台大脑与 LLM 智能体大脑）→ **引擎层**（Drools 规则引擎与 Esper 事件引擎）。决策平台大脑统一治理 BOM、规则、测试与发布资产，并按项目把规则请求路由到 Drools、把 CEP 事件流请求路由到 Esper；大模型智能体大脑（规划中）基于规则命中情况提供分析与调整建议，经人工确认后回流到决策平台大脑，形成"决策 → 分析 → 建议 → 优化"闭环。
+
 ## 项目结构
 
 ```text
