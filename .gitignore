@@ -12,3 +12,7 @@ data.bak-*/
 e2e/.auth/
 e2e/.data-backup/
 e2e/output/
+
+# 内部方案与业务敏感文件，禁止提交
+越南现金贷*.html
+OPENSOURCE_PLAN.md

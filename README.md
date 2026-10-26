@@ -1,6 +1,6 @@
 # DWX 决策工作台
 
-DWX（DWX）是一个面向规则、决策流和复杂事件处理的双引擎决策工作台原型。项目统一管理 BOM、规则、决策表、RuleFlow、CEP EventStream、测试套件、Change Set、Release、部署和审计，并按项目将规则请求路由到 Drools、将 CEP 事件流请求路由到 Esper。
+DWX（Decision Workbench）是采用**双引擎、双脑架构**的决策工作台：**规则脑**（Drools 10.2.0）负责规则、决策表与决策流的确定性推理，**事件脑**（Esper 8.8.0）负责 CEP 事件流的实时复杂事件处理。两脑之上统一管理 BOM、规则、决策表、RuleFlow、CEP EventStream、测试套件、Change Set、Release、部署和审计，并按项目将规则请求路由到 Drools、将 CEP 事件流请求路由到 Esper。
 
 规则侧使用 Drools 10.2.0，CEP 侧使用 Esper 8.8.0。当前项目用于本地研发、产品验证和客户 Demo，不是面向公网的商用部署方案。
 
@@ -47,6 +47,15 @@ API_PORT=8789 npm run api   # Team Server，与 frontend/ 代理端口保持一�
 npm run dev                 # frontend/ 前端开发服务器，默认 http://127.0.0.1:5173
 ```
 
+容量专项基准可用以下命令运行，默认依次覆盖 1,000、5,000、10,000 条规则资产，并记录 Team Server、浏览器、DRL、Drools Build Service 和 RES 指标：
+
+```bash
+npm run benchmark:capacity       # 完整基准
+npm run benchmark:capacity:quick # 仅 1,000 档快速烟测
+```
+
+结果写入 `benchmarks/capacity/results/latest.md` 和 `latest.json`。基准使用隔离临时数据，不改写 `data/`；详细选项和判定边界见 [容量基准说明](benchmarks/capacity/README.md)。
+
 也可以使用一键启动脚本完成演示数据初始化、Docker 服务启动以及 API 和前端启动：
 
 ```bash
@@ -57,7 +66,9 @@ npm run start
 
 如需重置本地演示数据，可执行 `npm run seed:force`，它会用 `fixtures/demo-data/` 覆盖 `data/*.json`。
 
-浏览器打开 `http://127.0.0.1:5173`。未设置 `DATABASE_URL` 时继续使用 `data/*.json`。设计时 Build Service 健康检查地址是 `http://127.0.0.1:8788/health`，独立 RES 健康检查地址是 `http://127.0.0.1:8790/health`；RES 的 Drools 会话池大小在 `res/config/res.properties` 配置，默认每个 Release 步骤 `2` 个会话。
+浏览器打开 `http://127.0.0.1:5173`。未设置 `DATABASE_URL` 时继续使用 `data/*.json`。设计时 Build Service 健康检查地址是 `http://127.0.0.1:8788/health`。独立 RES 将执行面监听在 `8790`，管理面监听在 `8793`；两边的 `/health` 均可用于匿名探针，其余接口分别使用 `RES_EXECUTION_API_KEY` 和 `RES_MANAGEMENT_API_KEY` 的 Bearer 凭据。Team Server 对应配置为 `RULES_RES_URL`、`RULES_RES_MANAGEMENT_URL`、`RULES_RES_EXECUTION_API_KEY` 和 `RULES_RES_MANAGEMENT_API_KEY`，旧 `RES_URL` 仍兼容单端口部署。密钥为空仅用于本地迁移兼容，生产环境必须配置两套不同密钥。RES 的 Drools 会话池大小在 `res/config/res.properties` 配置，默认每个 Release 步骤 `2` 个会话。
+
+发布环境联调可额外启动两个相互隔离的 RES：`docker compose up --build -d res-test res-production`。测试环境执行面/管理面分别是 `http://127.0.0.1:8800`、`http://127.0.0.1:8803`，生产模拟环境分别是 `http://127.0.0.1:8810`、`http://127.0.0.1:8813`。两个实例使用独立数据卷；在发布中心分别为 `test` 和 `production` 创建 Target 时应填写管理面地址，业务执行验证使用对应的执行面地址。
 
 CEP 容器健康检查地址是 `http://127.0.0.1:8791/health`（Build/Test）和 `http://127.0.0.1:8792/health`（Runtime）。CEP Runtime 支持 `/events/{releaseId}`、`/execute`、`/webhook`、`/openapi.json` 和 `/metrics`。`timer:*` 使用 Esper 处理时间，不按事件中的 `eventTime` 回放；部署后的 timer 输出可以通过 webhook 异步接收。
 
@@ -94,7 +105,12 @@ npm run api
 - `engine/` 是允许编译临时 DRL 的设计时服务；`res/` 是独立执行项目，只接受 Team Server 生成且校验和有效的 Release。两者均仅供本机原型调用，尚未实现鉴权、签名、隔离与执行配额，不应暴露到公网。
 - 早期单文件原型已移动到 `archive/legacy-prototype/`，不再作为默认入口，仅保留 `npm run dev:legacy` 可访问；维护中的前端位于 `frontend/`，根 `dev`/`build`/`lint` 均指向它。
 - `fixtures/demo-data/` 是可提交的演示种子数据，`data/` 是本地运行时 JSON 存储目录并被忽略；测试中的默认演示数据兼容性校验读取 `fixtures/demo-data/`，避免干净克隆后依赖本机状态。
+- 决策表最多 10,000 行；启用行超过 500 行时仍执行逐行校验，但同步跳过二次方重叠、不可达和缺口分析并返回警告。大容量编译可通过 `ENGINE_MAX_BODY_BYTES`、`ENGINE_MAX_DRL_CHARS`、`RES_MAX_BODY_BYTES`、`RES_MAX_DRL_CHARS` 和 `RES_MAX_TOTAL_DRL_CHARS` 调整请求/DRL 上限，默认分别为 16 MiB、12 MiB、16 MiB、12 MiB 和 48 MiB，服务会将配置夹在安全范围内。
 
 ## 项目报告
 
 `GET /api/projects/{projectId}/report` 按项目权限生成自包含 HTML 项目知识资产报告，包含项目概览、BOM 资产总览、规则资产清单、规则集执行拓扑、测试矩阵和发布部署历史六个章节。规则集优先读取已发布快照，未发布时读取草稿；没有资产、测试或发布记录时展示对应空态。项目报告页支持下载 HTML，也可使用浏览器打印保存为 PDF。
+
+## 开源许可
+
+本项目采用 [GNU General Public License v3.0](LICENSE)（GPL-3.0）开源。你可以自由使用、修改和分发，但任何基于本项目的衍生作品必须以相同许可证开源。
