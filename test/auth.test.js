@@ -49,10 +49,38 @@ test('AUTH-01: OIDC JWT 验签并按角色执行 API 权限门禁', async () => 
     const cepSession = await env.request('/api/session', 'GET', undefined, cepHeaders);
     assert.deepEqual(cepSession.body.permissions, ['view', 'author', 'advanced-epl']);
     const cepProject = await env.request('/api/projects', 'POST', {
-      name: 'CEP 权限项目', description: '验证高级 EPL 权限', icon: 'warehouse', engine: 'cep', bomTemplate: 'grain',
+      name: 'CEP 权限项目', description: '验证高级 EPL 权限', icon: 'warehouse', engine: 'cep', bomTemplate: 'blank',
     }, cepHeaders);
     assert.equal(cepProject.status, 201);
-    const advancedDraft = { name: '高级检测', statements: [{ name: 'RawEpl', mode: 'advanced', epl: 'select * from GrainStore' }] };
+    const cepBom = await env.request(`/api/projects/${cepProject.body.id}/bom`, 'PUT', {
+      version: 1,
+      fields: [
+        { key: 'eventId', label: '事件 ID', type: 'String', semanticType: 'String', kind: 'input', factType: 'DeviceReading', factTypeLabel: '设备采样事件', group: '事件信封', control: 'text' },
+        { key: 'sampledAt', label: '采样时间', type: 'String', semanticType: 'Date', kind: 'input', factType: 'DeviceReading', factTypeLabel: '设备采样事件', group: '事件信封', control: 'date' },
+        { key: 'deviceId', label: '设备 ID', type: 'String', semanticType: 'String', kind: 'input', factType: 'DeviceReading', factTypeLabel: '设备采样事件', group: '事件信封', control: 'text' },
+        { key: 'sensorId', label: '传感器 ID', type: 'String', semanticType: 'String', kind: 'input', factType: 'DeviceReading', factTypeLabel: '设备采样事件', group: '事件信封', control: 'text' },
+        { key: 'averageTemperature', label: '平均温度', type: 'Double', semanticType: 'Decimal', kind: 'input', factType: 'DeviceReading', factTypeLabel: '设备采样事件', group: '环境监测', unit: '°C', min: -50, max: 80, control: 'number' },
+        { key: 'humidity', label: '湿度', type: 'Double', semanticType: 'Decimal', kind: 'input', factType: 'DeviceReading', factTypeLabel: '设备采样事件', group: '环境监测', unit: '%', min: 0, max: 100, control: 'number' },
+        { key: 'controlRequired', label: '是否干预', type: 'Boolean', semanticType: 'Boolean', kind: 'output', factType: 'ControlDecision', factTypeLabel: '调控决策', group: '结果输出', control: 'boolean' },
+      ],
+      eventTypes: [{
+        name: 'DeviceReading', label: '设备采样事件', version: 1,
+        keyField: 'deviceId', timeField: 'sampledAt', sourceField: 'sensorId', duplicateKey: ['eventId'],
+        retention: '24h', allowedLateness: '5m',
+        fields: [
+          { field: 'eventId', required: true },
+          { field: 'deviceId', required: true },
+          { field: 'sensorId', required: true },
+          { field: 'sampledAt', required: true },
+          { field: 'averageTemperature', required: true },
+          { field: 'humidity', required: false },
+        ],
+      }],
+      domains: [],
+      methods: [],
+    }, cepHeaders);
+    assert.equal(cepBom.status, 200);
+    const advancedDraft = { name: '高级检测', statements: [{ name: 'RawEpl', mode: 'advanced', epl: 'select * from DeviceReading' }] };
     assert.equal((await env.request(`/api/projects/${cepProject.body.id}/event-streams`, 'POST', advancedDraft, authorHeaders)).status, 403);
     assert.equal((await env.request(`/api/projects/${cepProject.body.id}/event-streams`, 'POST', advancedDraft, cepHeaders)).status, 201);
 

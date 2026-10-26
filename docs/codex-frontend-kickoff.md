@@ -140,7 +140,7 @@ POST   /api/projects/:id/releases/:ver/deploy  {env}
 4. 实现：
    - `Login.tsx`：蓝色渐变背景 + 居中白卡片（对照原型登录页）
    - `TopBar.tsx`：深蓝顶栏（#1a1a2e 左右），左 Logo "DW DWX"，中 4 个 tab，右通知+头像
-   - `Library.tsx`：项目卡片网格（"个人贷款审批"、"粮库温控决策" 两张卡）
+   - `Library.tsx`：项目卡片网格（"个人贷款审批"、"风险评分决策" 两张卡）
    - `ProjectShell.tsx`：项目头 + 5 个 Tab（先只把 Assets 点亮）
    - `AssetsTab.tsx`：三栏布局（Package 树 / 资产列表 / 空编辑器占位），用 mock PKGS 数据
 5. vite proxy：`/api -> http://localhost:8787`

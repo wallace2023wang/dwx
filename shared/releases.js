@@ -21,6 +21,13 @@ function canonicalize(value) {
   return value;
 }
 
+function validRoutingCondition(condition, release) {
+  if (!condition || typeof condition.field !== 'string' || !['==', '!=', '>', '>=', '<', '<='].includes(condition.operator) || condition.value == null) return false;
+  const source = condition.fieldSource || 'bom';
+  if (source === 'variable') return Array.isArray(release.variables) && release.variables.some(variable => variable.name === condition.field);
+  return source === 'bom' && (!release.model || release.model.fields.some(field => field.key === condition.field));
+}
+
 export function releaseContent(release) {
   const content = {
     schemaVersion: release.schemaVersion,
@@ -436,8 +443,7 @@ export function verifyRelease(release) {
             if (branch.default === true) defaults++;
             else {
               conditions++;
-              if (!branch.condition || typeof branch.condition.field !== 'string' || !['==', '!=', '>', '>=', '<', '<='].includes(branch.condition.operator) || branch.condition.value == null) return '发布包图分支条件无效';
-              if (release.model && !release.model.fields.some(field => field.key === branch.condition.field)) return '发布包图分支字段不在冻结模型中';
+              if (!validRoutingCondition(branch.condition, release)) return '发布包图分支条件无效或未在冻结模型/变量中定义';
             }
           }
           if (!conditions || defaults > 1) return '发布包图网关定义不完整';
@@ -528,8 +534,7 @@ export function verifyRelease(release) {
         else {
           conditions++;
           const condition = branch.condition;
-          if (!condition || typeof condition.field !== 'string' || !['==', '!=', '>', '>=', '<', '<='].includes(condition.operator) || condition.value == null) return '发布包路由条件无效';
-          if (release.model && !release.model.fields.some(field => field.key === condition.field)) return '发布包路由字段不在冻结模型中';
+          if (!validRoutingCondition(condition, release)) return '发布包路由条件无效或未在冻结模型/变量中定义';
         }
       }
       if (!conditions || defaults > 1) return '发布包路由定义不完整';

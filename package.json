@@ -13,6 +13,8 @@
     "build": "npm --prefix frontend run build",
     "lint": "npm --prefix frontend run lint",
     "test": "node --test",
+    "benchmark:capacity": "node benchmarks/capacity/run.mjs",
+    "benchmark:capacity:quick": "node benchmarks/capacity/run.mjs --sizes=1000 --quick",
     "seed": "node scripts/seed-demo-data.mjs",
     "seed:force": "node scripts/seed-demo-data.mjs --force"
   },

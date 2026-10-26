@@ -39,7 +39,7 @@
 - **预期**：422；`errors` 数组包含 Drools 编译错误文本；Release 不进入注册表。
 
 ### RES-DEP-07：Release 过大拒绝
-- **前置**：构造总 DRL 超过 1MB 或单步超过 200KB 的 Release。
+- **前置**：按当前环境变量构造总 DRL 超过 `RES_MAX_TOTAL_DRL_CHARS` 或单步超过 `RES_MAX_DRL_CHARS` 的 Release（默认分别为 48 MiB 和 12 MiB）。
 - **预期**：400；错误信息包含"超限"。
 
 ### RES-DEP-08：必需字段缺失拒绝

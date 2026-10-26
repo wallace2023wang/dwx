@@ -1,6 +1,6 @@
 import { Database, LoaderCircle, RefreshCw, ServerCog, Shield, UsersRound } from 'lucide-react'
 import { useState } from 'react'
-import { useAdminOverview, useCreateAdminUser, useDeleteAdminUser, useUpdateAdminUser } from '../api/admin'
+import { useAdminOverview, useCreateAdminTarget, useCreateAdminUser, useDeleteAdminTarget, useDeleteAdminUser, useReconcileAdminTargets, useUpdateAdminTarget, useUpdateAdminUser } from '../api/admin'
 import EnvironmentRegistry from '../components/admin/EnvironmentRegistry'
 import RoleMatrix from '../components/admin/RoleMatrix'
 import UserDirectory from '../components/admin/UserDirectory'
@@ -15,13 +15,18 @@ const tabs: Array<{ id: AdminTab; label: string; icon: typeof UsersRound }> = [
 
 export default function Admin() {
   const [activeTab, setActiveTab] = useState<AdminTab>('users')
-  const { data, isPending, isFetching, refetch } = useAdminOverview()
+  const { data, error, isPending, isFetching, refetch } = useAdminOverview()
   const createUser = useCreateAdminUser()
   const updateUser = useUpdateAdminUser()
   const deleteUser = useDeleteAdminUser()
+  const createTarget = useCreateAdminTarget()
+  const updateTarget = useUpdateAdminTarget()
+  const deleteTarget = useDeleteAdminTarget()
+  const reconcileTargets = useReconcileAdminTargets()
   const userBusy = createUser.isPending || updateUser.isPending || deleteUser.isPending
 
-  if (isPending || !data) return <div className="p-6 text-xs text-ink-3">正在连接管理服务...</div>
+  if (isPending) return <div className="p-6 text-xs text-ink-3">正在连接管理服务...</div>
+  if (error || !data) return <div className="m-6 rounded-[3px] border border-[#ffcdd2] bg-[#fff5f5] p-4 text-xs text-[#c62828]"><p>环境与 RES 注册表加载失败：{error instanceof Error ? error.message : '管理服务暂不可用'}</p><button type="button" className="mt-3 rounded-[2px] border border-[#c62828] bg-white px-3 py-1.5" onClick={() => void refetch()}>重新加载</button></div>
 
   return (
     <div className="h-full overflow-auto bg-ink-bg px-6 py-5 max-sm:px-3">
@@ -49,7 +54,16 @@ export default function Admin() {
 
       {activeTab === 'users' && <UserDirectory users={data.users} roles={data.roles} principal={data.principal} busy={userBusy} onCreate={user => createUser.mutateAsync(user)} onUpdate={(id, user) => updateUser.mutateAsync({ id, user })} onDelete={id => deleteUser.mutateAsync(id)} />}
       {activeTab === 'roles' && <RoleMatrix roles={data.roles} />}
-      {activeTab === 'environments' && <EnvironmentRegistry environments={data.environments} />}
+      {activeTab === 'environments' && <EnvironmentRegistry
+        environments={data.environments}
+        targets={data.targets}
+        busy={createTarget.isPending || updateTarget.isPending || deleteTarget.isPending || reconcileTargets.isPending}
+        error={createTarget.error || updateTarget.error || deleteTarget.error || reconcileTargets.error}
+        onCreate={target => createTarget.mutateAsync(target)}
+        onToggle={(id, enabled) => updateTarget.mutateAsync({ id, enabled })}
+        onDelete={id => deleteTarget.mutateAsync(id).then(() => undefined)}
+        onReconcile={() => reconcileTargets.mutateAsync().then(() => undefined)}
+      />}
     </div>
   )
 }

@@ -12,6 +12,9 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -20,17 +23,22 @@ final class ResServerIntegrationTest {
   private static final ObjectMapper JSON = new ObjectMapper();
   private static final HttpClient HTTP = HttpClient.newHttpClient();
   private static HttpServer server;
+  private static ExecutorService serverExecutor;
   private static String base;
 
   @BeforeAll
   static void start() throws Exception {
-    server = ResServer.startServer(0, false);
+    server = ResServer.createServer(0);
+    serverExecutor = Executors.newFixedThreadPool(4);
+    server.setExecutor(serverExecutor);
+    server.start();
     base = "http://127.0.0.1:" + server.getAddress().getPort();
   }
 
   @AfterAll
   static void stop() {
     server.stop(0);
+    serverExecutor.shutdownNow();
   }
 
   private static JsonNode call(String path, String method, JsonNode body, int expectedStatus) throws Exception {
@@ -40,6 +48,19 @@ final class ResServerIntegrationTest {
     HttpResponse<String> response = HTTP.send(request.build(), HttpResponse.BodyHandlers.ofString());
     assertEquals(expectedStatus, response.statusCode(), response.body());
     return JSON.readTree(response.body());
+  }
+
+  private static int status(String baseUrl, String path, String method, JsonNode body, String bearerToken) throws Exception {
+    HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(baseUrl + path));
+    if (body == null) request.method(method, HttpRequest.BodyPublishers.noBody());
+    else request.method(method, HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(body))).header("content-type", "application/json");
+    if (bearerToken != null) request.header("authorization", "Bearer " + bearerToken);
+    return HTTP.send(request.build(), HttpResponse.BodyHandlers.discarding()).statusCode();
+  }
+
+  private static JsonNode uncheckedCall(String path, String method, JsonNode body, int expectedStatus) {
+    try { return call(path, method, body, expectedStatus); }
+    catch (Exception exception) { throw new RuntimeException(exception); }
   }
 
   private static ObjectNode release(String id, ObjectNode model, String drl) throws Exception {
@@ -108,6 +129,33 @@ final class ResServerIntegrationTest {
     String withoutDisplayVersion = ResServer.checksum(release);
     release.put("displayVersion", "2.1.1");
     assertNotEquals(withoutDisplayVersion, ResServer.checksum(release));
+  }
+
+  @Test
+  void managementAndExecutionPlanesUseIndependentPortsAndCredentials() throws Exception {
+    assertThrows(IllegalArgumentException.class, () -> new ResServer.AuthConfig("same-secret", "same-secret"));
+    ResServer.AuthConfig auth = new ResServer.AuthConfig("management-secret", "execution-secret");
+    HttpServer management = ResServer.createServer(0, ResServer.Plane.MANAGEMENT, auth);
+    HttpServer execution = ResServer.createServer(0, ResServer.Plane.EXECUTION, auth);
+    management.start();
+    execution.start();
+    String managementBase = "http://127.0.0.1:" + management.getAddress().getPort();
+    String executionBase = "http://127.0.0.1:" + execution.getAddress().getPort();
+    try {
+      assertEquals(200, status(managementBase, "/health", "GET", null, null));
+      assertEquals(200, status(executionBase, "/health", "GET", null, null));
+      assertEquals(401, status(managementBase, "/status", "GET", null, null));
+      assertEquals(401, status(managementBase, "/status", "GET", null, "execution-secret"));
+      assertEquals(200, status(managementBase, "/status", "GET", null, "management-secret"));
+      assertEquals(401, status(executionBase, "/execute", "POST", JSON.createObjectNode(), null));
+      assertEquals(401, status(executionBase, "/execute", "POST", JSON.createObjectNode(), "management-secret"));
+      assertEquals(400, status(executionBase, "/execute", "POST", JSON.createObjectNode(), "execution-secret"));
+      assertEquals(404, status(managementBase, "/execute", "POST", JSON.createObjectNode(), "execution-secret"));
+      assertEquals(404, status(executionBase, "/status", "GET", null, "management-secret"));
+    } finally {
+      management.stop(0);
+      execution.stop(0);
+    }
   }
 
   @Test
@@ -193,6 +241,117 @@ final class ResServerIntegrationTest {
     } finally {
       call("/undeploy", "POST", JSON.createObjectNode().put("releaseId", secondId), 200);
       call("/undeploy", "POST", JSON.createObjectNode().put("releaseId", firstId), 200);
+    }
+  }
+
+  @Test
+  void prepareGenerationCasAndDrainKeepOldGenerationServingUntilRequestCompletes() throws Exception {
+    String firstId = "generation-v1";
+    String secondId = "generation-v2";
+    String service = "test.generation-cas";
+    ObjectNode first = releaseVersion(firstId, 1, model("outcome:String:output:false"), """
+        package workbench
+        declare RuleInput
+          outcome : String
+        end
+        rule "slow v1" when $i : RuleInput() then
+          java.util.concurrent.locks.LockSupport.parkNanos(2000000000L);
+          modify($i) { setOutcome("v1") }
+        end
+        """);
+    ObjectNode second = releaseVersion(secondId, 2, model("outcome:String:output:false"), """
+        package workbench
+        declare RuleInput
+          outcome : String
+        end
+        rule "v2" when $i : RuleInput() then modify($i) { setOutcome("v2") } end
+        """);
+    first.put("decisionService", service).put("checksum", ResServer.checksum(first));
+    second.put("decisionService", service).put("checksum", ResServer.checksum(second));
+    try {
+      assertEquals("ready", call("/prepare", "POST", first, 201).path("state").asText());
+      assertEquals("ready", call("/prepare", "POST", second, 201).path("state").asText());
+      assertTrue(call("/services/" + service + "/execute", "POST", JSON.createObjectNode().putObject("facts"), 404)
+          .path("error").asText().contains("没有当前生效"));
+
+      ObjectNode activateFirst = JSON.createObjectNode()
+          .put("releaseId", firstId).put("decisionService", service)
+          .put("expectedGeneration", 0).put("generation", 1);
+      assertEquals(1, call("/activate", "POST", activateFirst, 200).path("generation").asLong());
+
+      ObjectNode facts = JSON.createObjectNode();
+      facts.putObject("facts");
+      CompletableFuture<JsonNode> executing = CompletableFuture.supplyAsync(
+          () -> uncheckedCall("/services/" + service + "/execute", "POST", facts, 200));
+      JsonNode status = null;
+      boolean observedInFlight = false;
+      for (int attempt = 0; attempt < 50; attempt++) {
+        status = call("/status", "GET", null, 200);
+        JsonNode deployed = status.path("deployments").findValuesAsText("releaseId").contains(firstId)
+            ? status.path("deployments") : JSON.createArrayNode();
+        boolean running = false;
+        for (JsonNode item : deployed) if (firstId.equals(item.path("releaseId").asText()) && item.path("inFlight").asInt() == 1) running = true;
+        if (running) { observedInFlight = true; break; }
+        Thread.sleep(10);
+      }
+      assertTrue(observedInFlight, status == null ? "missing status" : status.toPrettyString());
+
+      ObjectNode stale = JSON.createObjectNode()
+          .put("releaseId", secondId).put("decisionService", service)
+          .put("expectedGeneration", 0).put("generation", 1);
+      JsonNode conflict = call("/activate", "POST", stale, 409);
+      assertEquals(1, conflict.path("actualGeneration").asLong());
+
+      ObjectNode activateSecond = JSON.createObjectNode()
+          .put("releaseId", secondId).put("decisionService", service)
+          .put("expectedGeneration", 1).put("generation", 2);
+      JsonNode activated = call("/activate", "POST", activateSecond, 200);
+      assertEquals(2, activated.path("generation").asLong());
+      assertTrue(activated.path("previousGenerationDraining").asBoolean());
+      assertEquals(firstId, call("/status", "GET", null, 200).path("draining").get(0).path("releaseId").asText());
+
+      JsonNode oldResponse = executing.join();
+      assertEquals(firstId, oldResponse.path("releaseId").asText());
+      assertEquals(1, oldResponse.path("generation").asLong());
+      assertEquals("v1", oldResponse.path("facts").path("outcome").asText());
+      assertTrue(call("/status", "GET", null, 200).path("draining").isEmpty());
+
+      JsonNode current = call("/services/" + service + "/execute", "POST", facts, 200);
+      assertEquals(secondId, current.path("releaseId").asText());
+      assertEquals(2, current.path("generation").asLong());
+      assertEquals("v2", current.path("facts").path("outcome").asText());
+      assertEquals(2, call("/activate", "POST", activateSecond, 200).path("generation").asLong());
+    } finally {
+      call("/undeploy", "POST", JSON.createObjectNode().put("releaseId", secondId), 200);
+      call("/undeploy", "POST", JSON.createObjectNode().put("releaseId", firstId), 200);
+    }
+  }
+
+  @Test
+  void emptyNodeCanBootstrapDirectlyToTheControlPlaneGeneration() throws Exception {
+    String id = "generation-bootstrap-v5";
+    String service = "test.generation-bootstrap";
+    ObjectNode release = releaseVersion(id, 5, model("outcome:String:output:false"), """
+        package workbench
+        declare RuleInput
+          outcome : String
+        end
+        rule "bootstrap" when $i : RuleInput() then modify($i) { setOutcome("ready") } end
+        """);
+    release.put("decisionService", service).put("checksum", ResServer.checksum(release));
+    try {
+      call("/prepare", "POST", release, 201);
+      ObjectNode activation = JSON.createObjectNode()
+          .put("releaseId", id).put("decisionService", service)
+          .put("expectedGeneration", 0).put("generation", 5).put("bootstrap", true);
+      JsonNode activated = call("/activate", "POST", activation, 200);
+      assertEquals(5, activated.path("generation").asLong());
+      ObjectNode request = JSON.createObjectNode();
+      request.putObject("facts");
+      JsonNode executed = call("/services/" + service + "/execute", "POST", request, 200);
+      assertEquals(5, executed.path("generation").asLong());
+    } finally {
+      call("/undeploy", "POST", JSON.createObjectNode().put("releaseId", id), 200);
     }
   }
 
@@ -503,6 +662,52 @@ final class ResServerIntegrationTest {
       assertEquals("nested-gateway", executed.path("trace").get(3).path("nodeId").asText());
       assertEquals("nested-step", executed.path("trace").get(4).path("nodeId").asText());
       assertEquals("merge-step", executed.path("trace").get(5).path("nodeId").asText());
+    } finally {
+      call("/undeploy", "POST", JSON.createObjectNode().put("releaseId", id), 200);
+    }
+  }
+
+  @Test
+  void exclusiveGatewayRoutesOnUpdatedRuleProjectVariable() throws Exception {
+    String id = "variable-gateway-it";
+    String declaration = """
+        package workbench
+        declare RuleInput
+          segment : String
+          outcome : String
+        end
+        declare RuleContext
+          approved : java.lang.Boolean
+        end
+        """;
+    ObjectNode release = releaseWithSteps(id, model("segment:String:input:true", "outcome:String:output:false"),
+        declaration + """
+        rule "approve" when $i : RuleInput(segment == "A") $ctx : RuleContext() then modify($ctx) { setApproved(true) } end
+        """,
+        declaration + """
+        rule "approved path" when $i : RuleInput() then modify($i) { setOutcome("approved") } end
+        """);
+    release.putArray("variables").addObject()
+        .put("name", "approved").put("label", "已批准").put("type", "Boolean")
+        .put("defaultValue", false).putNull("enum").put("description", "");
+    ObjectNode routing = release.putObject("routing");
+    routing.put("type", "exclusive-chain").put("commonStepCount", 1);
+    ObjectNode gateway = routing.putArray("gateways").addObject();
+    gateway.put("id", "approval-gateway").put("name", "审批判断").put("afterStep", 1);
+    ObjectNode branch = gateway.putArray("branches").addObject();
+    branch.put("id", "approved").put("name", "已批准").put("default", false);
+    branch.putObject("condition").put("fieldSource", "variable").put("field", "approved").put("operator", "==").put("value", true);
+    branch.putArray("stepIndexes").add(1);
+    release.put("checksum", ResServer.checksum(release));
+    try {
+      call("/deploy", "POST", release, 201);
+      ObjectNode request = JSON.createObjectNode();
+      request.put("releaseId", id).putObject("facts").put("segment", "A");
+      JsonNode executed = call("/execute", "POST", request, 200);
+      assertEquals("approved", executed.path("facts").path("outcome").asText(), executed.toPrettyString());
+      assertTrue(executed.path("variables").path("approved").asBoolean());
+      assertEquals("approved", executed.path("path").path("branchId").asText());
+      assertTrue(executed.path("trace").get(1).path("variables").path("approved").asBoolean());
     } finally {
       call("/undeploy", "POST", JSON.createObjectNode().put("releaseId", id), 200);
     }

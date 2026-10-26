@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
-import type { AssetType, ReleaseDraft, ReleaseRecord, ReleaseWebhookConfig } from '../types'
+import type { ActivationGeneration, ApplicationPackageRecord, AssetType, DeploymentEnvironment, DeploymentRecord, DeploymentTarget, ReleaseDraft, ReleaseRecord, ReleaseWebhookConfig } from '../types'
 import { http } from './client'
 
 interface ServerRelease {
@@ -102,6 +102,108 @@ export function useReleases(projectId: string | undefined) {
   })
 }
 
+export function useDeployments(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['projects', projectId, 'deployments'],
+    queryFn: async () => {
+      try {
+        return (await http.get<DeploymentRecord[]>(`/projects/${encodeURIComponent(projectId ?? '')}/deployments`)).data
+      } catch (error) {
+        if (axios.isAxiosError(error) && error.response?.status === 404) {
+          throw new Error('当前 Team Server 尚未提供部署账本接口，请重启或更新后端服务。')
+        }
+        throw requestError(error)
+      }
+    },
+    enabled: Boolean(projectId),
+  })
+}
+
+export function useDeploymentEnvironments(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['projects', projectId, 'environments'],
+    queryFn: async () => {
+      try {
+        return (await http.get<DeploymentEnvironment[]>(`/projects/${encodeURIComponent(projectId ?? '')}/environments`)).data
+      } catch (error) { throw requestError(error) }
+    },
+    enabled: Boolean(projectId),
+  })
+}
+
+export function useApplicationPackages(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['projects', projectId, 'application-packages'],
+    queryFn: async () => {
+      try {
+        return (await http.get<ApplicationPackageRecord[]>(`/projects/${encodeURIComponent(projectId ?? '')}/application-packages`)).data
+      } catch (error) { throw requestError(error) }
+    },
+    enabled: Boolean(projectId),
+  })
+}
+
+export function useDeploymentTargets(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['projects', projectId, 'targets'],
+    queryFn: async () => (await http.get<DeploymentTarget[]>(`/projects/${encodeURIComponent(projectId ?? '')}/targets`)).data,
+    enabled: Boolean(projectId),
+  })
+}
+
+export function useActivationGenerations(projectId: string | undefined) {
+  return useQuery({
+    queryKey: ['projects', projectId, 'activation-generations'],
+    queryFn: async () => (await http.get<ActivationGeneration[]>(`/projects/${encodeURIComponent(projectId ?? '')}/activation-generations`)).data,
+    enabled: Boolean(projectId),
+  })
+}
+
+function useApplicationPackageMutation<TVariables>(
+  projectId: string | undefined,
+  request: (projectId: string, variables: TVariables) => Promise<ApplicationPackageRecord>,
+) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (variables: TVariables) => {
+      if (!projectId) throw new Error('项目不存在')
+      try { return await request(projectId, variables) }
+      catch (error) { throw requestError(error) }
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'application-packages'] })
+      void queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'releases'] })
+      void queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'deployments'] })
+      void queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'activation-generations'] })
+      void queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'targets'] })
+    },
+  })
+}
+
+export function useCreateApplicationPackage(projectId: string | undefined) {
+  return useApplicationPackageMutation(projectId, async (id, input: { releaseId: string; name?: string }) => (
+    await http.post<ApplicationPackageRecord>(`/projects/${encodeURIComponent(id)}/application-packages`, input)
+  ).data)
+}
+
+export function useAppendApplicationManifest(projectId: string | undefined) {
+  return useApplicationPackageMutation(projectId, async (id, input: { packageId: string; releaseId: string }) => (
+    await http.post<ApplicationPackageRecord>(`/projects/${encodeURIComponent(id)}/application-packages/${encodeURIComponent(input.packageId)}/manifests`, { releaseId: input.releaseId })
+  ).data)
+}
+
+export function useDeployApplicationPackage(projectId: string | undefined) {
+  return useApplicationPackageMutation(projectId, async (id, input: { packageId: string; manifestId?: string; environment: string }) => (
+    await http.post<ApplicationPackageRecord>(`/projects/${encodeURIComponent(id)}/application-packages/${encodeURIComponent(input.packageId)}/deploy`, { environment: input.environment, manifestId: input.manifestId })
+  ).data)
+}
+
+export function useRollbackApplicationPackage(projectId: string | undefined) {
+  return useApplicationPackageMutation(projectId, async (id, input: { packageId: string; environment: string }) => (
+    await http.post<ApplicationPackageRecord>(`/projects/${encodeURIComponent(id)}/application-packages/${encodeURIComponent(input.packageId)}/rollback`, { environment: input.environment })
+  ).data)
+}
+
 export function useCreateRelease(projectId: string | undefined) {
   const queryClient = useQueryClient()
   return useMutation({
@@ -143,10 +245,13 @@ export function useDeployRelease(projectId: string | undefined) {
         throw requestError(error)
       }
     },
-    onSuccess: release => queryClient.setQueryData<ReleaseRecord[]>(
-      ['projects', projectId, 'releases'],
-      (current = []) => current.map(item => item.id === release.id ? release : item),
-    ),
+    onSuccess: release => {
+      queryClient.setQueryData<ReleaseRecord[]>(
+        ['projects', projectId, 'releases'],
+        (current = []) => current.map(item => item.id === release.id ? release : item),
+      )
+      void queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'deployments'] })
+    },
   })
 }
 
@@ -165,7 +270,10 @@ function useReleaseOperation(projectId: string | undefined, action: 'activate' |
         throw requestError(error)
       }
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'releases'] }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'releases'] })
+      void queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'deployments'] })
+    },
   })
 }
 

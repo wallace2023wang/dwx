@@ -12,6 +12,6 @@ WORKDIR /app
 COPY --from=build /app/target/rules-res.jar ./rules-res.jar
 COPY config ./config
 RUN mkdir -p /data/releases
-EXPOSE 8790
+EXPOSE 8790 8793
 ENV RES_DATA_DIR=/data/releases
 CMD ["java", "-jar", "rules-res.jar"]

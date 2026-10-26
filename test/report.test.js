@@ -54,14 +54,14 @@ test('REPORT-04: 事件流报告展示语句业务元数据', () => {
     eventStreams: [{
       id: 'es-1',
       draft: {
-        name: '氨气事件流',
+        name: '气体事件流',
         statements: [{
-          name: 'NH3HighAlarm',
-          label: '氨气超限',
+          name: 'GasHighAlarm',
+          label: '气体超限',
           description: '超过 25ppm 时告警',
           mode: 'guided',
           template: 'single-threshold',
-          epl: 'insert into NH3HighAlarmEvent select * from NH3Reading where ammoniaPpm >= 25',
+          epl: 'insert into GasHighAlarmEvent select * from GasReading where gasPpm >= 25',
         }],
       },
       versions: [{ number: 2 }],
@@ -69,11 +69,11 @@ test('REPORT-04: 事件流报告展示语句业务元数据', () => {
     }],
   };
   const report = aggregateReportData(project, data, [], 'tester');
-  assert.equal(report.eventStreams[0].statements[0].label, '氨气超限');
+  assert.equal(report.eventStreams[0].statements[0].label, '气体超限');
   assert.equal(report.eventStreams[0].statements[0].templateLabel, '单点阈值');
   const html = renderProjectReport(project, data, [], 'tester');
   assert.match(html, /事件流检测明细/);
-  assert.match(html, /氨气超限/);
+  assert.match(html, /气体超限/);
   assert.match(html, /单点阈值/);
 });
 

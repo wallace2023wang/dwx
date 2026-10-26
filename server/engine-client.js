@@ -7,14 +7,20 @@ function resolveEngineTargets(projectOrEngine, config) {
     ? normalizeEngine(projectOrEngine)
     : normalizeEngine(projectOrEngine?.engine);
   return engine === 'cep'
-    ? { engine, buildUrl: config.cepBuildUrl, runtimeUrl: config.cepResUrl, label: 'CEP' }
-    : { engine: 'rules', buildUrl: config.rulesBuildUrl, runtimeUrl: config.rulesResUrl, label: 'Drools' };
+    ? { engine, buildUrl: config.cepBuildUrl, runtimeUrl: config.cepResUrl, managementUrl: config.cepResUrl, label: 'CEP' }
+    : { engine: 'rules', buildUrl: config.rulesBuildUrl, runtimeUrl: config.rulesResUrl, managementUrl: config.rulesResManagementUrl, label: 'Drools' };
 }
 
-function engineHeaders(target, config) {
+const MANAGEMENT_ENDPOINTS = new Set(['/deploy', '/prepare', '/activate', '/undeploy', '/deployments', '/status']);
+
+function engineHeaders(target, config, plane = 'build') {
+  const apiKey = target.engine === 'cep'
+    ? config.cepApiKey
+    : plane === 'management' ? config.rulesResManagementApiKey : plane === 'execution' ? config.rulesResExecutionApiKey : '';
   return {
     'content-type': 'application/json',
-    ...(target.engine === 'cep' && config.cepApiKey ? { 'x-api-key': config.cepApiKey } : {}),
+    ...(target.engine === 'cep' && apiKey ? { 'x-api-key': apiKey } : {}),
+    ...(target.engine === 'rules' && apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
   };
 }
 
@@ -38,11 +44,13 @@ export function createEngineClients(config) {
 
   async function executionServer(endpoint, payload, projectOrEngine = 'rules', method = 'POST') {
     const target = resolveEngineTargets(projectOrEngine, config);
+    const plane = MANAGEMENT_ENDPOINTS.has(endpoint.split('?')[0]) ? 'management' : 'execution';
+    const baseUrl = plane === 'management' ? target.managementUrl : target.runtimeUrl;
     const timeoutMs = Math.min(310000, Math.max(20000, (Number.isInteger(payload?.waitMs) ? payload.waitMs : 0) + 5000));
     let response;
     try {
-      response = await fetch(`${target.runtimeUrl}${endpoint}`, {
-        method, headers: engineHeaders(target, config),
+      response = await fetch(`${baseUrl}${endpoint}`, {
+        method, headers: engineHeaders(target, config, plane),
         ...(method === 'GET' ? {} : { body: JSON.stringify(payload) }), signal: AbortSignal.timeout(timeoutMs),
       });
     } catch { return { status: 503, error: `${target.label} 执行服务不可用` }; }

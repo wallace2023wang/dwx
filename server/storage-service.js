@@ -5,6 +5,7 @@ import { defaultBom, validateBom } from '../shared/bom.js';
 import { flowBranches, flowSteps } from '../shared/assets.js';
 import { ruleConditions } from '../shared/rules.js';
 import { canonicalPackageName, packageLabel } from '../shared/packages.js';
+import { defaultEnvironments, projectDeploymentsOntoReleases } from '../shared/deployments.js';
 import { initializeAssetRevision, normalizeAssetPackages, normalizePackageRecords } from './domain-utils.js';
 import { defaultProjectRecord, normalizeProjectRecord } from './project-factory.js';
 
@@ -97,7 +98,7 @@ export function createStorageService({ storage, dataDir, assetFiles, getPostgres
       };
       scanSteps(flowSteps(flow));
       for (const branch of flowBranches(flow)) {
-        if (!branch.default) add(branch.condition?.field);
+        if (!branch.default && branch.condition?.fieldSource !== 'variable') add(branch.condition?.field);
       }
     };
     for (const asset of flows) {
@@ -182,13 +183,14 @@ export function createStorageService({ storage, dataDir, assetFiles, getPostgres
     const releases = postgresStore
       ? await postgresStore.listReleases(projectId)
       : (await readAssets('releases')).filter(item => assetProject(item) === projectId);
+    const deployments = await readDeployments(projectId);
     const events = postgresStore
       ? await postgresStore.listAuditEvents(5000, projectId)
       : await readAuditEvents(projectId);
     const releaseActors = new Map(events
       .filter(event => event.action === 'release.created')
       .map(event => [event.resourceId, event.actor]));
-    return releases.map(release => ({
+    return projectDeploymentsOntoReleases(releases, deployments).map(release => ({
       ...release,
       createdBy: release.createdBy || releaseActors.get(release.id) || 'Team Server',
     }));
@@ -200,9 +202,126 @@ export function createStorageService({ storage, dataDir, assetFiles, getPostgres
     let existing = [];
     try { existing = JSON.parse(await fs.readFile(assetFiles.releases, 'utf8')); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
+    const immutable = releases.map(release => {
+      const value = { ...release };
+      delete value.deployments;
+      return value;
+    });
     return writeJsonFile(assetFiles.releases, [
       ...existing.filter(item => assetProject(item) !== projectId),
-      ...releases.map(item => projectId === 'default' ? item : { ...item, projectId }),
+      ...immutable.map(item => projectId === 'default' ? item : { ...item, projectId }),
+    ]);
+  }
+
+  async function readApplicationPackages(projectId = 'default') {
+    const postgresStore = getPostgresStore();
+    if (postgresStore) return postgresStore.listApplicationPackages(projectId);
+    try {
+      const all = JSON.parse(await fs.readFile(assetFiles.applicationPackages, 'utf8'));
+      return all.filter(item => (item.projectId || 'default') === projectId);
+    } catch (error) { if (error.code === 'ENOENT') return []; throw error; }
+  }
+
+  async function writeApplicationPackages(applicationPackages, projectId = 'default') {
+    const postgresStore = getPostgresStore();
+    if (postgresStore) return postgresStore.saveApplicationPackages(applicationPackages, projectId);
+    let all = [];
+    try { all = JSON.parse(await fs.readFile(assetFiles.applicationPackages, 'utf8')); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    return writeJsonFile(assetFiles.applicationPackages, [
+      ...all.filter(item => (item.projectId || 'default') !== projectId),
+      ...applicationPackages.map(item => projectId === 'default' ? item : { ...item, projectId }),
+    ]);
+  }
+
+  async function readTargets(projectId = 'default') {
+    const postgresStore = getPostgresStore();
+    if (postgresStore) return postgresStore.listTargets(projectId);
+    try {
+      const all = JSON.parse(await fs.readFile(assetFiles.targets, 'utf8'));
+      return all.filter(item => (item.projectId || 'default') === projectId)
+        .map(({ projectId: _projectId, ...item }) => item);
+    } catch (error) { if (error.code === 'ENOENT') return []; throw error; }
+  }
+
+  async function writeTargets(targets, projectId = 'default') {
+    const postgresStore = getPostgresStore();
+    if (postgresStore) return postgresStore.saveTargets(targets, projectId);
+    let all = [];
+    try { all = JSON.parse(await fs.readFile(assetFiles.targets, 'utf8')); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    return writeJsonFile(assetFiles.targets, [
+      ...all.filter(item => (item.projectId || 'default') !== projectId),
+      ...targets.map(item => projectId === 'default' ? item : { ...item, projectId }),
+    ]);
+  }
+
+  async function readActivationGenerations(projectId = 'default') {
+    const postgresStore = getPostgresStore();
+    if (postgresStore) return postgresStore.listActivationGenerations(projectId);
+    try {
+      const all = JSON.parse(await fs.readFile(assetFiles.activationGenerations, 'utf8'));
+      return all.filter(item => (item.projectId || 'default') === projectId)
+        .map(({ projectId: _projectId, ...item }) => item);
+    } catch (error) { if (error.code === 'ENOENT') return []; throw error; }
+  }
+
+  async function writeActivationGenerations(generations, projectId = 'default') {
+    const postgresStore = getPostgresStore();
+    if (postgresStore) return postgresStore.saveActivationGenerations(generations, projectId);
+    let all = [];
+    try { all = JSON.parse(await fs.readFile(assetFiles.activationGenerations, 'utf8')); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    return writeJsonFile(assetFiles.activationGenerations, [
+      ...all.filter(item => (item.projectId || 'default') !== projectId),
+      ...generations.map(item => projectId === 'default' ? item : { ...item, projectId }),
+    ]);
+  }
+
+  async function readDeployments(projectId = 'default') {
+    const postgresStore = getPostgresStore();
+    if (postgresStore) return postgresStore.listDeployments(projectId);
+    try {
+      const all = JSON.parse(await fs.readFile(assetFiles.deployments, 'utf8'));
+      return all.filter(item => (item.projectId || 'default') === projectId)
+        .map(({ projectId: _projectId, ...item }) => item);
+    } catch (error) { if (error.code === 'ENOENT') return []; throw error; }
+  }
+
+  async function writeDeployments(deployments, projectId = 'default') {
+    const postgresStore = getPostgresStore();
+    if (postgresStore) return postgresStore.saveDeployments(deployments, projectId);
+    let all = [];
+    try { all = JSON.parse(await fs.readFile(assetFiles.deployments, 'utf8')); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    return writeJsonFile(assetFiles.deployments, [
+      ...all.filter(item => (item.projectId || 'default') !== projectId),
+      ...deployments.map(item => projectId === 'default' ? item : { ...item, projectId }),
+    ]);
+  }
+
+  async function readEnvironments(projectId = 'default') {
+    const postgresStore = getPostgresStore();
+    if (postgresStore) return postgresStore.listEnvironments(projectId);
+    const defaults = defaultEnvironments(projectId);
+    try {
+      const all = JSON.parse(await fs.readFile(assetFiles.environments, 'utf8'));
+      const environments = all.filter(item => (item.projectId || 'default') === projectId)
+        .map(({ projectId: _projectId, ...item }) => item);
+      const storedIds = new Set(environments.map(item => item.id));
+      return [...environments, ...defaults.filter(item => !storedIds.has(item.id)).map(({ projectId: _projectId, ...item }) => item)];
+    } catch (error) { if (error.code === 'ENOENT') return defaults.map(({ projectId: _projectId, ...item }) => item); throw error; }
+  }
+
+  async function writeEnvironments(environments, projectId = 'default') {
+    const postgresStore = getPostgresStore();
+    if (postgresStore) return postgresStore.saveEnvironments(environments, projectId);
+    let all = [];
+    try { all = JSON.parse(await fs.readFile(assetFiles.environments, 'utf8')); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    return writeJsonFile(assetFiles.environments, [
+      ...all.filter(item => (item.projectId || 'default') !== projectId),
+      ...environments.map(item => projectId === 'default' ? item : { ...item, projectId }),
     ]);
   }
 
@@ -265,6 +384,11 @@ export function createStorageService({ storage, dataDir, assetFiles, getPostgres
     await writeAssets('eventStreams', [], projectId);
     await writeAssets('testSuites', [], projectId);
     await writeReleases([], projectId);
+    await writeApplicationPackages([], projectId);
+    await writeTargets([], projectId);
+    await writeActivationGenerations([], projectId);
+    await writeDeployments([], projectId);
+    await writeEnvironments([], projectId);
     await writeChangeSets([], projectId);
     await deleteAuditEvents(projectId);
     await fs.rm(bomFile(projectId), { force: true });
@@ -351,6 +475,16 @@ export function createStorageService({ storage, dataDir, assetFiles, getPostgres
     writeAssets,
     readReleases,
     writeReleases,
+    readApplicationPackages,
+    writeApplicationPackages,
+    readTargets,
+    writeTargets,
+    readActivationGenerations,
+    writeActivationGenerations,
+    readDeployments,
+    writeDeployments,
+    readEnvironments,
+    writeEnvironments,
     readProjectRecords,
     writeProjectRecords,
     readProjectRecord,

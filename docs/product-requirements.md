@@ -204,7 +204,7 @@ MVP 可以先保留“草稿/已发布”，但数据结构和 API 不得假设�
 
 ### 安全
 
-- 管理接口和执行接口分离鉴权。
+- 管理接口和执行接口已使用独立端口、路由集合与 Bearer 工作负载凭据分离鉴权。
 - 任意 DRL 上传仅允许在受信任构建区，RES 只接受治理中心生成的发布包。
 - 发布包校验和必须在 Team Server 和 RES 两侧验证。
 - 审计日志追加写，业务操作不得覆盖历史记录。
@@ -312,7 +312,7 @@ CEP 页面以 EPL 为唯一作者语言：向导模板现场生成 EPL 文本，
 
 ### 7.4 替换专项 POC 风险清单
 
-- 连续计数的“不满足即重置、不重叠计数”语义与 Esper `match_recognize ... after match skip past last row` 的一致性（粮库/氮气场景实际依赖）。
+- 连续计数的“不满足即重置、不重叠计数”语义与 Esper `match_recognize ... after match skip past last row` 的一致性（周期巡检场景实际依赖）。
 - `within` 超时取消本次匹配的语义对齐。
 - `timer:*` 使用处理时间而非事件时间回放的语义保持。
 - per-key 分区（`partition with`）在窗口聚合与 pattern 下与现有 `groupField` 行为的一致性。

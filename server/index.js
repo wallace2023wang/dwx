@@ -11,6 +11,9 @@ import { createAdminHandler } from './routes/admin.js';
 import { createEngineClients } from './engine-client.js';
 import { createBomHandlers } from './routes/bom.js';
 import { createReleaseHandler } from './routes/releases.js';
+import { createDeploymentHandler } from './routes/deployments.js';
+import { createApplicationPackageHandler } from './routes/application-packages.js';
+import { createActivationGenerationHandler, createTargetHandler } from './routes/targets.js';
 import { createTestSuiteHandler } from './routes/test-suites.js';
 import { createChangeSetHandler } from './routes/change-sets.js';
 import { createProjectPackageHandler } from './routes/project-packages.js';
@@ -35,12 +38,18 @@ import { createServerConfig } from './config.js';
 import { createFactParser } from './fact-parser.js';
 import { createCollaborationService } from './collaboration-service.js';
 import { canManageAssetDraft } from './asset-ownership.js';
+import { migrateJsonDeploymentDomain } from './json-deployment-migration.js';
+import { createDeploymentOperations } from './deployment-operations.js';
+import { createActivationGenerationService } from './activation-generation-service.js';
 
 const {
   storage,
   port,
   rulesBuildUrl,
   rulesResUrl,
+  rulesResManagementUrl,
+  rulesResManagementApiKey,
+  rulesResExecutionApiKey,
   cepBuildUrl,
   cepResUrl,
   cepApiKey,
@@ -51,6 +60,9 @@ const {
 const { engine, executionServer } = createEngineClients({
   rulesBuildUrl,
   rulesResUrl,
+  rulesResManagementUrl,
+  rulesResManagementApiKey,
+  rulesResExecutionApiKey,
   cepBuildUrl,
   cepResUrl,
   cepApiKey,
@@ -62,6 +74,7 @@ let postgresStore = null;
 
 const parseFacts = createFactParser({ getCurrentBom: () => currentBom });
 const collaboration = createCollaborationService();
+const PLATFORM_SCOPE = 'default';
 
 function actorOf(req) {
   if (req?.principal?.id) return req.principal.id;
@@ -80,6 +93,16 @@ const {
   writeAssets,
   readReleases,
   writeReleases,
+  readApplicationPackages,
+  writeApplicationPackages,
+  readTargets,
+  writeTargets,
+  readActivationGenerations,
+  writeActivationGenerations,
+  readDeployments,
+  writeDeployments,
+  readEnvironments,
+  writeEnvironments,
   readProjectRecords,
   writeProjectRecords,
   readProjectRecord,
@@ -107,6 +130,10 @@ const {
   mutateProjectAssets,
   mutateRuleProjectImport,
   mutateReleases,
+  mutateDeployments,
+  mutateApplicationPackages,
+  mutateTargets,
+  mutateActivationGenerations,
   mutateTestSuites,
   mutateChangeSets,
 } = createMutationService({
@@ -116,6 +143,14 @@ const {
   writeAssets,
   readReleases,
   writeReleases,
+  readApplicationPackages,
+  writeApplicationPackages,
+  readTargets,
+  writeTargets,
+  readActivationGenerations,
+  writeActivationGenerations,
+  readDeployments,
+  writeDeployments,
   readPackageRecords,
   writePackageRecords,
   readChangeSets,
@@ -218,6 +253,8 @@ const handleReleases = createReleaseHandler({
   readProjectRecord,
   readReleases,
   mutateReleases,
+  readDeployments,
+  mutateDeployments,
   readRules,
   readAssets,
   writeAssets,
@@ -230,6 +267,61 @@ const handleReleases = createReleaseHandler({
   runTestSuite,
   recordSuiteRun,
   parseFacts,
+});
+
+const readPlatformTargets = () => readTargets(PLATFORM_SCOPE);
+const mutatePlatformTargets = operation => mutateTargets(operation, PLATFORM_SCOPE);
+const readPlatformEnvironments = () => readEnvironments(PLATFORM_SCOPE);
+const readAllActivationGenerations = async () => (await Promise.all(
+  (await readProjectRecords(true)).map(project => readActivationGenerations(project.id)),
+)).flat();
+
+const handleDeployments = createDeploymentHandler({ readDeployments, readEnvironments: readPlatformEnvironments });
+
+const deploymentOperations = createDeploymentOperations({
+  readDeployments,
+  mutateDeployments,
+  actorOf,
+  executionServer,
+});
+
+const activationGenerationService = createActivationGenerationService({
+  readTargets: readPlatformTargets,
+  readActivationGenerations,
+  mutateActivationGenerations,
+  deploymentOperations,
+  actorOf,
+  rulesResManagementUrl,
+  rulesResManagementApiKey,
+  cepResUrl,
+  cepApiKey,
+});
+
+const handleTargets = createTargetHandler({
+  readTargets: readPlatformTargets,
+  mutateTargets: mutatePlatformTargets,
+  readActivationGenerations: readAllActivationGenerations,
+  readEnvironments: readPlatformEnvironments,
+  actorOf,
+  appendAuditEvent,
+  rulesResManagementUrl,
+  rulesResManagementApiKey,
+  cepResUrl,
+  cepApiKey,
+});
+
+const handleActivationGenerations = createActivationGenerationHandler({ readActivationGenerations });
+
+const handleApplicationPackages = createApplicationPackageHandler({
+  readApplicationPackages,
+  mutateApplicationPackages,
+  readReleases,
+  readDeployments,
+  readEnvironments: readPlatformEnvironments,
+  deploymentOperations,
+  activationGenerationService,
+  actorOf,
+  appendAuditEvent,
 });
 
 const handleTestSuites = createTestSuiteHandler({
@@ -394,6 +486,10 @@ const handleProjects = createProjectRouter({
   handleProjectFlows,
   handleTestSuites,
   handleReleases,
+  handleDeployments,
+  handleApplicationPackages,
+  handleTargets,
+  handleActivationGenerations,
   handleProjectRules,
   handleProjectAssets,
   handleProjectImports,
@@ -506,6 +602,13 @@ export async function handler(req, res) {
       return reply(res, 200, await recentActivity(req.principal, limit));
     }
     if (postgresStore) currentBom = await readBom();
+    if (segments[1] === 'admin' && segments[2] === 'environments' && segments.length === 3) {
+      if (req.method !== 'GET') return reply(res, 405, { error: 'Method not allowed' });
+      return reply(res, 200, await readPlatformEnvironments());
+    }
+    if (segments[1] === 'admin' && segments[2] === 'targets') {
+      return handleTargets(req, res, ['api', 'projects', PLATFORM_SCOPE, 'targets', ...segments.slice(3)], PLATFORM_SCOPE, { engine: 'rules' });
+    }
     if (segments[1] === 'admin') return handleAdmin(req, res, segments);
     if (segments[1] === 'projects') return await handleProjects(req, res, segments, url);
     if (segments[1] === 'change-sets') return handleChangeSets(req, res, segments);
@@ -551,6 +654,13 @@ export async function initializeStorage() {
   if (process.env.DATABASE_URL) {
     postgresStore = new PostgresStore(process.env.DATABASE_URL);
     await postgresStore.initialize();
+  } else {
+    await migrateJsonDeploymentDomain({
+      releasesFile: assetFiles.releases,
+      deploymentsFile: assetFiles.deployments,
+      environmentsFile: assetFiles.environments,
+      targetsFile: assetFiles.targets,
+    });
   }
   currentBom = await readBom();
   return { mode: postgresStore ? 'postgresql' : 'json', bom: currentBom };

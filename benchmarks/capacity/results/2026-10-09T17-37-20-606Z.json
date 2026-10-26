@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-09T17:37:20.606Z",
+  "sizes": [
+    1000
+  ],
+  "quick": true,
+  "environment": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "node": "v26.8.1",
+    "cpus": 10,
+    "memoryBytes": 25769803776
+  },
+  "status": "completed-with-failures",
+  "tiers": [
+    {
+      "size": 1000,
+      "status": "failed",
+      "validation": {
+        "error": null,
+        "warnings": [
+          "启用行超过 500，已跳过同步重叠、不可达和缺口分析；请运行离线完整分析"
+        ],
+        "durationMs": 1.4577500000000327
+      },
+      "generation": {
+        "tableGenerationMs": 4.995957999999973,
+        "tableDrlBytes": 251088,
+        "ruleGroupGenerationMs": 2.8277919999999312,
+        "ruleGroupDrlBytes": 181192
+      },
+      "controlPlane": {
+        "projectApi": {
+          "samples": 3,
+          "minMs": 6.248874999999998,
+          "p50Ms": 6.387875000000122,
+          "p95Ms": 10.477624999999989,
+          "p99Ms": 10.477624999999989,
+          "maxMs": 10.477624999999989,
+          "responseBytes": 540
+        },
+        "packagesApi": {
+          "samples": 3,
+          "minMs": 8.195458000000144,
+          "p50Ms": 8.233416000000034,
+          "p95Ms": 10.199707999999873,
+          "p99Ms": 10.199707999999873,
+          "maxMs": 10.199707999999873,
+          "responseBytes": 412977
+        },
+        "browser": {
+          "status": "failed",
+          "error": "browserType.launch: Executable doesn't exist at /Users/wallace/Library/Caches/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-mac-arm64/chrome-headless-shell\n╔════════════════════════════════════════════════════════════╗\n║ Looks like Playwright was just installed or updated.       ║\n║ Please run the following command to download new browsers: ║\n║                                                            ║\n║     npx playwright install                                 ║\n║                                                            ║\n║ <3 Playwright Team                                         ║\n╚════════════════════════════════════════════════════════════╝"
+        }
+      },
+      "runtime": {
+        "status": "failed",
+        "engineStartupMs": 576.1879999999999,
+        "resStartupMs": 400.65683399999944,
+        "enginePeakMemoryBytes": 380842803.2,
+        "resPeakMemoryBytes": 84473282.56,
+        "tableCompile": {
+          "status": 200,
+          "durationMs": 1098.357625,
+          "error": null
+        },
+        "ruleGroupCompile": {
+          "status": 200,
+          "durationMs": 324.60416699999996,
+          "error": null
+        },
+        "deploy": {
+          "status": 400,
+          "durationMs": 33.327790999999706,
+          "error": {
+            "error": "发布包 DRL 无效或过大"
+          }
+        },
+        "activateStatus": null,
+        "artifactBytes": 271903,
+        "hotExecution": {
+          "samples": 0,
+          "minMs": null,
+          "p50Ms": null,
+          "p95Ms": null,
+          "p99Ms": null,
+          "maxMs": null,
+          "error": null
+        }
+      }
+    }
+  ],
+  "acceptance": [
+    {
+      "label": "1,000 资产 API P95 < 500ms",
+      "passed": true,
+      "detail": "10.5ms"
+    },
+    {
+      "label": "1,000 普通搜索交互 < 300ms",
+      "passed": false,
+      "detail": "browserType.launch: Executable doesn't exist at /Users/wallace/Library/Caches/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-mac-arm64/chrome-headless-shell\n╔════════════════════════════════════════════════════════════╗\n║ Looks like Playwright was just installed or updated.       ║\n║ Please run the following command to download new browsers: ║\n║                                                            ║\n║     npx playwright install                                 ║\n║                                                            ║\n║ <3 Playwright Team                                         ║\n╚════════════════════════════════════════════════════════════╝"
+    },
+    {
+      "label": "1,000 热执行 P95 < 50ms",
+      "passed": false,
+      "detail": "failed"
+    }
+  ],
+  "conclusion": "基准已完整执行，但 2 项目标未达到；结果用于驱动后续规模化改造，不能宣称容量目标已通过。"
+}

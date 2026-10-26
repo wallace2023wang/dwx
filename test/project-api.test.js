@@ -24,6 +24,42 @@ async function publishProjectRuleset(env, projectId, ruleId, name = '项目业�
   return published.body;
 }
 
+async function createCepProject(env, name, description = '') {
+  const project = await env.request('/api/projects', 'POST', {
+    name, description, icon: 'warehouse', engine: 'cep', bomTemplate: 'blank',
+  });
+  assert.equal(project.status, 201);
+  const bomUpdate = await env.request(`/api/projects/${project.body.id}/bom`, 'PUT', {
+    version: 1,
+    fields: [
+      { key: 'eventId', label: '事件 ID', type: 'String', semanticType: 'String', kind: 'input', factType: 'DeviceReading', factTypeLabel: '设备采样事件', group: '事件信封', control: 'text' },
+      { key: 'sampledAt', label: '采样时间', type: 'String', semanticType: 'Date', kind: 'input', factType: 'DeviceReading', factTypeLabel: '设备采样事件', group: '事件信封', control: 'date' },
+      { key: 'deviceId', label: '设备 ID', type: 'String', semanticType: 'String', kind: 'input', factType: 'DeviceReading', factTypeLabel: '设备采样事件', group: '事件信封', control: 'text' },
+      { key: 'sensorId', label: '传感器 ID', type: 'String', semanticType: 'String', kind: 'input', factType: 'DeviceReading', factTypeLabel: '设备采样事件', group: '事件信封', control: 'text' },
+      { key: 'averageTemperature', label: '平均温度', type: 'Double', semanticType: 'Decimal', kind: 'input', factType: 'DeviceReading', factTypeLabel: '设备采样事件', group: '环境监测', unit: '°C', min: -50, max: 80, control: 'number' },
+      { key: 'humidity', label: '湿度', type: 'Double', semanticType: 'Decimal', kind: 'input', factType: 'DeviceReading', factTypeLabel: '设备采样事件', group: '环境监测', unit: '%', min: 0, max: 100, control: 'number' },
+      { key: 'controlRequired', label: '是否干预', type: 'Boolean', semanticType: 'Boolean', kind: 'output', factType: 'ControlDecision', factTypeLabel: '调控决策', group: '结果输出', control: 'boolean' },
+    ],
+    eventTypes: [{
+      name: 'DeviceReading', label: '设备采样事件', version: 1,
+      keyField: 'deviceId', timeField: 'sampledAt', sourceField: 'sensorId', duplicateKey: ['eventId'],
+      retention: '24h', allowedLateness: '5m',
+      fields: [
+        { field: 'eventId', required: true },
+        { field: 'deviceId', required: true },
+        { field: 'sensorId', required: true },
+        { field: 'sampledAt', required: true },
+        { field: 'averageTemperature', required: true },
+        { field: 'humidity', required: false },
+      ],
+    }],
+    domains: [],
+    methods: [],
+  });
+  assert.equal(bomUpdate.status, 200);
+  return project;
+}
+
 
 test('home activity returns real events with project context', async () => {
   const env = await startTestEnv();
@@ -651,10 +687,7 @@ test('project engine defaults to rules and locks after creation', async () => {
     assert.equal(rulesProject.status, 201);
     assert.equal(rulesProject.body.engine, 'rules');
 
-    const cepProject = await env.request('/api/projects', 'POST', {
-      name: '传感器 CEP 项目', description: '事件流监控', icon: 'warehouse', engine: 'cep', bomTemplate: 'grain',
-    });
-    assert.equal(cepProject.status, 201);
+    const cepProject = await createCepProject(env, '传感器 CEP 项目', '事件流监控');
     assert.equal(cepProject.body.engine, 'cep');
 
     const listed = await env.request('/api/projects');
@@ -668,8 +701,8 @@ test('project engine defaults to rules and locks after creation', async () => {
 
     const cepBom = await env.request(`/api/projects/${cepProject.body.id}/bom`);
     assert.equal(cepBom.status, 200);
-    assert.equal(cepBom.body.eventTypes[0].name, 'GrainStore');
-    assert.equal(cepBom.body.eventTypes[0].keyField, 'warehouseId');
+    assert.equal(cepBom.body.eventTypes[0].name, 'DeviceReading');
+    assert.equal(cepBom.body.eventTypes[0].keyField, 'deviceId');
 
     const sameEngineUpdate = await env.request(`/api/projects/${cepProject.body.id}`, 'PUT', {
       name: cepProject.body.name, description: '只允许改元信息', icon: 'warehouse', engine: 'cep',
@@ -691,7 +724,7 @@ test('project engine defaults to rules and locks after creation', async () => {
     assert.equal((await env.request(`/api/projects/${cepProject.body.id}/flows`)).status, 404);
     assert.equal((await env.request(`/api/projects/${rulesProject.body.id}/event-streams`)).status, 404);
     assert.equal((await env.request(`/api/projects/${rulesProject.body.id}/event-streams`, 'POST', {
-      name: '非法事件流', statements: [{ name: 'DetectEvent', epl: 'select * from GrainStore' }],
+      name: '非法事件流', statements: [{ name: 'DetectEvent', epl: 'select * from DeviceReading' }],
     })).status, 403);
   } finally {
     await env.stop();
@@ -1334,7 +1367,7 @@ test('project Release builds, deploys, executes, and stays isolated from other p
       target: { type: 'flow', id: ruleset.id },
     });
     assert.equal(invalidNamespace.status, 400);
-    assert.match(invalidNamespace.body.error, new RegExp(`${project.id}/grain-alarm`));
+    assert.match(invalidNamespace.body.error, new RegExp(`${project.id}/demo-alarm`));
 
     const release = await env.request(`/api/projects/${project.id}/releases`, 'POST', {
       decisionService: `${project.id}/project-age`, name: '项目规则 Release', description: '冻结项目资产和 BOM',
@@ -1584,15 +1617,12 @@ test('project test suites support isolated CRUD, execution, and Release gates', 
 test('CEP project supports event-stream publish, suite gate, release and local execute', async () => {
   const env = await startTestEnv({ cepApiKey: 'cep-test-key' });
   try {
-    const project = await env.request('/api/projects', 'POST', {
-      name: 'CEP 传感器监控', description: '事件流回归', icon: 'warehouse', engine: 'cep', bomTemplate: 'grain',
-    });
-    assert.equal(project.status, 201);
+    const project = await createCepProject(env, 'CEP 传感器监控', '事件流回归');
     const projectId = project.body.id;
 
     const created = await env.request(`/api/projects/${projectId}/event-streams`, 'POST', {
       name: '高温事件流',
-      statements: [{ name: 'STATEMENT_1', epl: "@Name('HighTemperature') insert into HighTemperatureEvent select * from GrainStore where averageTemperature > 25" }],
+      statements: [{ name: 'STATEMENT_1', epl: "@Name('HighTemperature') insert into HighTemperatureEvent select * from DeviceReading where averageTemperature > 25" }],
     });
     assert.equal(created.status, 201);
     assert.equal(created.body.type, 'event-stream');
@@ -1604,9 +1634,9 @@ test('CEP project supports event-stream publish, suite gate, release and local e
     assert.equal(compiled.status, 200);
     assert.equal(compiled.body.ok, true);
     assert.equal(env.cepCalls.at(-1).headers['x-api-key'], 'cep-test-key');
-    const grainSchema = compiled.body.schemas.find(schema => schema.name === 'GrainStore');
-    assert.ok(grainSchema.fields.some(field => field.key === 'eventKey' && field.envelope === true));
-    assert.ok(grainSchema.fields.some(field => field.key === 'warehouseId' && field.required === true));
+    const deviceSchema = compiled.body.schemas.find(schema => schema.name === 'DeviceReading');
+    assert.ok(deviceSchema.fields.some(field => field.key === 'eventKey' && field.envelope === true));
+    assert.ok(deviceSchema.fields.some(field => field.key === 'deviceId' && field.required === true));
 
     const published = await env.request(`/api/projects/${projectId}/event-streams/${created.body.id}/publish`, 'POST', { revision: created.body.revision });
     assert.equal(published.status, 200);
@@ -1627,8 +1657,8 @@ test('CEP project supports event-stream publish, suite gate, release and local e
       cases: [{
         id: 'case-1', name: '均温超限', enabled: true,
         events: [{
-          id: 'evt-1', type: 'GrainStore', eventTime: '2026-09-30T14:00:00Z', source: 'sensor-gw-1', key: 'warehouse-1', schemaVersion: 1, traceId: 'trace-1',
-          data: { eventId: 'evt-1', warehouseId: 'warehouse-1', sensorId: 'sensor-1', sampledAt: '2026-09-30', averageTemperature: 32, humidity: 70 },
+          id: 'evt-1', type: 'DeviceReading', eventTime: '2026-09-30T14:00:00Z', source: 'sensor-gw-1', key: 'device-1', schemaVersion: 1, traceId: 'trace-1',
+          data: { eventId: 'evt-1', deviceId: 'device-1', sensorId: 'sensor-1', sampledAt: '2026-09-30', averageTemperature: 32, humidity: 70 },
         }],
         expectedEvents: [{ statement: 'HighTemperature', eventType: 'HighTemperatureEvent', count: 1 }],
       }],
@@ -1644,7 +1674,7 @@ test('CEP project supports event-stream publish, suite gate, release and local e
     });
 
     const release = await env.request(`/api/projects/${projectId}/releases`, 'POST', {
-      decisionService: 'grain-cep', name: 'CEP v1', target: { type: 'event-stream', id: created.body.id },
+      decisionService: 'device-cep', name: 'CEP v1', target: { type: 'event-stream', id: created.body.id },
     });
     assert.equal(release.status, 201);
     assert.equal(release.body.schemaVersion, 2);
@@ -1656,8 +1686,8 @@ test('CEP project supports event-stream publish, suite gate, release and local e
 
     const executed = await env.request(`/api/projects/${projectId}/releases/${release.body.id}/execute`, 'POST', {
       events: [{
-        id: 'evt-1', type: 'GrainStore', eventTime: '2026-09-30T14:00:00Z', source: 'sensor-gw-1', key: 'warehouse-1', schemaVersion: 1, traceId: 'trace-1',
-        data: { eventId: 'evt-1', warehouseId: 'warehouse-1', sensorId: 'sensor-1', sampledAt: '2026-09-30', averageTemperature: 32, humidity: 70 },
+        id: 'evt-1', type: 'DeviceReading', eventTime: '2026-09-30T14:00:00Z', source: 'sensor-gw-1', key: 'device-1', schemaVersion: 1, traceId: 'trace-1',
+        data: { eventId: 'evt-1', deviceId: 'device-1', sensorId: 'sensor-1', sampledAt: '2026-09-30', averageTemperature: 32, humidity: 70 },
       }],
     });
     assert.equal(executed.status, 200);
@@ -1673,8 +1703,8 @@ test('CEP project supports event-stream publish, suite gate, release and local e
 
     const posted = await env.request(`/api/projects/${projectId}/releases/${release.body.id}/events`, 'POST', {
       events: [{
-        id: 'evt-2', type: 'GrainStore', eventTime: '2026-09-30T14:01:00Z', source: 'sensor-gw-1', key: 'warehouse-1', schemaVersion: 1, traceId: 'trace-2',
-        data: { eventId: 'evt-2', warehouseId: 'warehouse-1', sensorId: 'sensor-1', sampledAt: '2026-09-30', averageTemperature: 33, humidity: 70 },
+        id: 'evt-2', type: 'DeviceReading', eventTime: '2026-09-30T14:01:00Z', source: 'sensor-gw-1', key: 'device-1', schemaVersion: 1, traceId: 'trace-2',
+        data: { eventId: 'evt-2', deviceId: 'device-1', sensorId: 'sensor-1', sampledAt: '2026-09-30', averageTemperature: 33, humidity: 70 },
       }],
     });
     assert.equal(posted.status, 202);
@@ -1694,15 +1724,12 @@ test('CEP project supports event-stream publish, suite gate, release and local e
 test('CEP draft event-stream can prepare a test skeleton before publish', async () => {
   const env = await startTestEnv({ cepApiKey: 'cep-test-key' });
   try {
-    const project = await env.request('/api/projects', 'POST', {
-      name: 'CEP 草稿测试', description: '先准备测试再发布', icon: 'warehouse', engine: 'cep', bomTemplate: 'grain',
-    });
-    assert.equal(project.status, 201);
+    const project = await createCepProject(env, 'CEP 草稿测试', '先准备测试再发布');
     const projectId = project.body.id;
 
     const created = await env.request(`/api/projects/${projectId}/event-streams`, 'POST', {
       name: '高温草稿事件流',
-      statements: [{ name: 'HighTemperature', epl: 'insert into HighTemperatureEvent select * from GrainStore where averageTemperature > 25' }],
+      statements: [{ name: 'HighTemperature', epl: 'insert into HighTemperatureEvent select * from DeviceReading where averageTemperature > 25' }],
     });
     assert.equal(created.status, 201);
 
@@ -1711,8 +1738,8 @@ test('CEP draft event-stream can prepare a test skeleton before publish', async 
       cases: [{
         id: 'case-1', name: '均温超限', enabled: true,
         events: [{
-          id: 'evt-1', type: 'GrainStore', eventTime: '2026-10-01T00:00:00Z', source: 'sensor-1', key: 'warehouse-1', schemaVersion: 1,
-          data: { eventId: 'evt-1', warehouseId: 'warehouse-1', sensorId: 'sensor-1', sampledAt: '2026-10-01', averageTemperature: 32, humidity: 60 },
+          id: 'evt-1', type: 'DeviceReading', eventTime: '2026-10-01T00:00:00Z', source: 'sensor-1', key: 'device-1', schemaVersion: 1,
+          data: { eventId: 'evt-1', deviceId: 'device-1', sensorId: 'sensor-1', sampledAt: '2026-10-01', averageTemperature: 32, humidity: 60 },
         }],
         expectedEvents: [{ statement: 'HighTemperature', eventType: 'HighTemperatureEvent', count: 1 }],
       }],
@@ -1740,14 +1767,12 @@ test('CEP draft event-stream can prepare a test skeleton before publish', async 
 test('CEP event-stream exposes dependencies and blocks removing the only producer', async () => {
   const env = await startTestEnv();
   try {
-    const project = await env.request('/api/projects', 'POST', {
-      name: 'CEP 依赖分析', description: '派生事件引用', icon: 'warehouse', engine: 'cep', bomTemplate: 'grain',
-    });
+    const project = await createCepProject(env, 'CEP 依赖分析', '派生事件引用');
     const projectId = project.body.id;
     const created = await env.request(`/api/projects/${projectId}/event-streams`, 'POST', {
       name: '多阶段事件流',
       statements: [
-        { name: 'ProduceAlarm', epl: 'insert into AlarmEvent select * from GrainStore where averageTemperature > 25' },
+        { name: 'ProduceAlarm', epl: 'insert into AlarmEvent select * from DeviceReading where averageTemperature > 25' },
         { name: 'ConsumeAlarm', epl: 'insert into EscalatedEvent select * from AlarmEvent' },
       ],
     });
@@ -1771,15 +1796,12 @@ test('CEP event-stream exposes dependencies and blocks removing the only produce
 test('CEP event-stream deletion is revision-safe and preserves immutable releases', async () => {
   const env = await startTestEnv({ cepApiKey: 'cep-test-key' });
   try {
-    const project = await env.request('/api/projects', 'POST', {
-      name: 'CEP 删除回归', description: '事件流软删除', icon: 'warehouse', engine: 'cep', bomTemplate: 'grain',
-    });
-    assert.equal(project.status, 201);
+    const project = await createCepProject(env, 'CEP 删除回归', '事件流软删除');
     const projectId = project.body.id;
 
     const created = await env.request(`/api/projects/${projectId}/event-streams`, 'POST', {
       name: '待归档事件流',
-      statements: [{ name: 'HighTemperature', epl: 'insert into HighTemperatureEvent select * from GrainStore where averageTemperature > 25' }],
+      statements: [{ name: 'HighTemperature', epl: 'insert into HighTemperatureEvent select * from DeviceReading where averageTemperature > 25' }],
     });
     assert.equal(created.status, 201);
 
@@ -1835,11 +1857,9 @@ test('CEP event-stream deletion is revision-safe and preserves immutable release
 test('CEP release exposes alert instances and audits acknowledgement', async () => {
   const env = await startTestEnv({ cepApiKey: 'cep-test-key' });
   try {
-    const project = await env.request('/api/projects', 'POST', {
-      name: 'CEP 告警状态', description: '告警确认回归', icon: 'warehouse', engine: 'cep', bomTemplate: 'grain',
-    });
+    const project = await createCepProject(env, 'CEP 告警状态', '告警确认回归');
     const stream = await env.request(`/api/projects/${project.body.id}/event-streams`, 'POST', {
-      name: '温度告警', statements: [{ name: 'HighTemperature', mode: 'advanced', epl: 'select * from GrainStore where averageTemperature > 25' }],
+      name: '温度告警', statements: [{ name: 'HighTemperature', mode: 'advanced', epl: 'select * from DeviceReading where averageTemperature > 25' }],
     });
     const published = await env.request(`/api/projects/${project.body.id}/event-streams/${stream.body.id}/publish`, 'POST', { revision: stream.body.revision });
     const release = await env.request(`/api/projects/${project.body.id}/releases`, 'POST', {
@@ -1847,10 +1867,10 @@ test('CEP release exposes alert instances and audits acknowledgement', async () 
     });
     assert.equal(release.status, 201);
     assert.equal((await env.request(`/api/projects/${project.body.id}/releases/${release.body.id}/deploy`, 'POST', { environment: 'local' })).status, 200);
-    const alertId = `${release.body.id}:HighTemperature:HighTemperatureEvent:warehouse-1`;
+    const alertId = `${release.body.id}:HighTemperature:HighTemperatureEvent:device-1`;
     env.cepAlerts.set(alertId, {
       id: alertId, releaseId: release.body.id, statement: 'HighTemperature', eventType: 'HighTemperatureEvent',
-      key: alertId, correlationKey: 'warehouse-1', status: 'ACTIVE', lastFiredAt: '2026-10-09T07:59:00.000Z',
+      key: alertId, correlationKey: 'device-1', status: 'ACTIVE', lastFiredAt: '2026-10-09T07:59:00.000Z',
     });
 
     const listed = await env.request(`/api/projects/${project.body.id}/releases/${release.body.id}/alerts`);

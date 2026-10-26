@@ -26,39 +26,6 @@ function blankBom() {
   return { version: 1, updatedAt: new Date().toISOString(), fields: [], eventTypes: [], domains: [], methods: [] };
 }
 
-function grainBomTemplate() {
-  const bom = defaultBom();
-  bom.fields = [
-    { key: 'eventId', label: '事件 ID', type: 'String', semanticType: 'String', kind: 'input', factType: 'GrainStore', factTypeLabel: '粮仓温控事件', group: '事件信封', unit: null, min: null, max: null, enum: null, control: 'text', description: '' },
-    { key: 'sampledAt', label: '采样时间', type: 'String', semanticType: 'Date', kind: 'input', factType: 'GrainStore', factTypeLabel: '粮仓温控事件', group: '事件信封', unit: null, min: null, max: null, enum: null, control: 'date', description: '' },
-    { key: 'warehouseId', label: '粮仓 ID', type: 'String', semanticType: 'String', kind: 'input', factType: 'GrainStore', factTypeLabel: '粮仓温控事件', group: '事件信封', unit: null, min: null, max: null, enum: null, control: 'text', description: '' },
-    { key: 'sensorId', label: '传感器 ID', type: 'String', semanticType: 'String', kind: 'input', factType: 'GrainStore', factTypeLabel: '粮仓温控事件', group: '事件信封', unit: null, min: null, max: null, enum: null, control: 'text', description: '' },
-    { key: 'averageTemperature', label: '整仓均温', type: 'Double', semanticType: 'Decimal', kind: 'input', factType: 'GrainStore', factTypeLabel: '粮仓', group: '温控监测', unit: '°C', min: -50, max: 80, enum: null, control: 'number', description: '' },
-    { key: 'humidity', label: '仓内湿度', type: 'Double', semanticType: 'Decimal', kind: 'input', factType: 'GrainStore', factTypeLabel: '粮仓', group: '温控监测', unit: '%', min: 0, max: 100, enum: null, control: 'number', description: '' },
-    { key: 'ventilationRequired', label: '是否通风', type: 'Boolean', semanticType: 'Boolean', kind: 'output', factType: 'ControlDecision', factTypeLabel: '调控决策', group: '结果输出', unit: null, min: null, max: null, enum: null, control: 'boolean', description: '' },
-  ];
-  bom.eventTypes = [{
-    name: 'GrainStore',
-    label: '粮仓温控采样事件',
-    version: 1,
-    keyField: 'warehouseId',
-    timeField: 'sampledAt',
-    sourceField: 'sensorId',
-    retention: '24h',
-    allowedLateness: '5m',
-    duplicateKey: ['eventId'],
-    fields: [
-      { field: 'eventId', required: true },
-      { field: 'warehouseId', required: true },
-      { field: 'sensorId', required: true },
-      { field: 'sampledAt', required: true },
-      { field: 'averageTemperature', required: true },
-      { field: 'humidity', required: false },
-    ],
-  }];
-  return bom;
-}
-
 export function createProjectRecordFactory({
   readProjectRecords,
   readBom,
@@ -88,7 +55,6 @@ export function createProjectRecordFactory({
     let bom = blankBom();
     let packages = [];
     if (payload?.bomTemplate === 'loan' || payload?.bomTemplate === 'risk') bom = defaultBom();
-    else if (payload?.bomTemplate === 'grain') bom = grainBomTemplate();
     else if (typeof payload?.copyProjectId === 'string') {
       const source = existing.find(item => item.id === payload.copyProjectId);
       if (!source) return { status: 400, error: '复制来源项目不存在' };

@@ -14,6 +14,10 @@ export function createProjectRouter({
   handleProjectFlows,
   handleTestSuites,
   handleReleases,
+  handleDeployments,
+  handleApplicationPackages,
+  handleTargets,
+  handleActivationGenerations,
   handleProjectRules,
   handleProjectAssets,
   handleProjectImports,
@@ -86,6 +90,19 @@ export function createProjectRouter({
     }
     if (segments.length === 4 && segments[3] === 'releases') {
       return handleReleases(req, res, ['api', 'releases'], projectId, true);
+    }
+    if (segments.length === 4 && ['deployments', 'environments'].includes(segments[3])) {
+      return handleDeployments(req, res, segments[3], projectId);
+    }
+    if (segments[3] === 'application-packages') {
+      return handleApplicationPackages(req, res, segments, projectId, project);
+    }
+    if (segments[3] === 'targets') {
+      if (req.method !== 'GET') return reply(res, 403, { error: '环境与 RES Target 由系统管理统一维护' });
+      return handleTargets(req, res, segments, projectId, project);
+    }
+    if (segments.length === 4 && segments[3] === 'activation-generations') {
+      return handleActivationGenerations(req, res, projectId);
     }
     if (segments.length === 6 && segments[3] === 'releases' && ['deploy', 'activate', 'rollback', 'undeploy', 'execute', 'events', 'webhook', 'alerts'].includes(segments[5])) {
       return handleReleases(req, res, ['api', 'releases', segments[4], segments[5]], projectId, true);

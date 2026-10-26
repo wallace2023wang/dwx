@@ -1,4 +1,4 @@
-import { generateDrl, ruleConditions } from '../shared/rules.js';
+import { generateDrl, migrateLegacyRuleOperators, ruleConditions, validateRuleBomCompatibility } from '../shared/rules.js';
 import { conditionCellExportValue, flowBranches, flowGateways, flowSteps, resolveRuleGroupMembers, ruleGroupFingerprint, tableDrl, validateTable } from '../shared/assets.js';
 import { decisionTreeDrl, decisionTreeLeaves, isDecisionTree, validateDecisionTree } from '../shared/decision-trees.js';
 import { isScorecard, scorecardDrl, validateScorecard } from '../shared/scorecards.js';
@@ -27,6 +27,7 @@ function effectiveDateLabel(item) {
 }
 
 function assetBomIssue(draft, type, bom) {
+  if (type === 'rule') return validateRuleBomCompatibility(draft, bom);
   if (isRuleTemplate(draft)) return validateRuleTemplate(draft, bom);
   if (isScorecard(draft)) {
     const scoreField = findField(bom, draft.scoreOutputField);
@@ -158,7 +159,8 @@ export function projectPackages(rules, tables, packageRecords = [], bom, changeS
 
 export function projectAssetDetail(item, type, bom, changeSets = [], projectVariables = null) {
   const summary = projectAssetSummaryWithReview(item, type, bom, changeSets);
-  const draft = item.draft;
+  const legacyMigration = type === 'rule' ? migrateLegacyRuleOperators(item.draft, bom) : { rule: item.draft, migrations: [] };
+  const draft = legacyMigration.rule;
   const reviewedAt = item.published ? item.versions.at(-1)?.createdAt || item.updatedAt : '尚未审核';
   const tableHitPolicy = draft.hitPolicy === 'FIRST' ? 'FIRST' : draft.hitPolicy === 'PRIORITY' ? 'PRIORITY' : 'COLLECT';
   const detail = {
@@ -185,6 +187,7 @@ export function projectAssetDetail(item, type, bom, changeSets = [], projectVari
     deprecationReason: item.deprecationReason || null,
     replacedByAssetId: item.replacedByAssetId || null,
     draft: structuredClone(draft),
+    migrationWarnings: legacyMigration.migrations,
     attributes: {
       priority: draft.priority || 0,
       hitPolicy: type === 'table' ? tableHitPolicy : 'FIRST',
@@ -310,7 +313,7 @@ export function projectBomModel({ rules, tables, flows }, bom) {
   const scanFlow = flow => {
     scanFlowSteps(flow?.steps);
     for (const branch of flowBranches(flow)) {
-      if (!branch.default) count(branch.condition?.field);
+      if (!branch.default && branch.condition?.fieldSource !== 'variable') count(branch.condition?.field);
       scanFlowSteps(branch.steps);
     }
   };
@@ -535,6 +538,7 @@ export function projectFlowDetail(item, data) {
     description: item.draft.description || '',
     category: item.draft.category || '未分类',
     draft: structuredClone(item.draft),
+    projectVariables: structuredClone(data.project?.variables || []),
     availableAssets: projectFlowAssets(data),
     availablePackages: projectFlowPackages(data),
     availableFlows: (data.flows || [])

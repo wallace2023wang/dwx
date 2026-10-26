@@ -94,7 +94,7 @@ export function createBomHandlers({
       const branches = flowBranches(item.draft);
       const steps = flowSteps(item.draft);
       const mappings = steps.flatMap(step => [...(step.inputMappings || []), ...(step.outputMappings || [])]);
-      const branchUses = branches.some(branch => !branch.default && branch.condition?.field === fieldKey);
+      const branchUses = branches.some(branch => !branch.default && branch.condition?.fieldSource !== 'variable' && branch.condition?.field === fieldKey);
       add(item, 'flow', branchUses || mappings.some(mapping => mapping.source === fieldKey || mapping.target === fieldKey));
     }
     return references;

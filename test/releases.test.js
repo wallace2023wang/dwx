@@ -112,13 +112,13 @@ test('new releases reject a flow snapshot with outdated direct dependencies', ()
 
 test('new releases reject a flow snapshot with changed rule-group members', () => {
   const rule = newRule();
-  rule.category = 'grain.rule.singlepoint';
+  rule.category = 'demo.rule.singlepoint';
   const asset = published('rule-group-member', rule, 2);
   const flow = published('flow-outdated-group', { name: '规则包规则集', description: '', steps: [] }, 1);
   flow.published = {
     name: '规则包规则集', description: '',
     steps: [{
-      type: 'rule-group', name: '规则组：grain.rule.singlepoint', packageName: 'grain.rule.singlepoint', includeChildren: false,
+      type: 'rule-group', name: '规则组：demo.rule.singlepoint', packageName: 'demo.rule.singlepoint', includeChildren: false,
       members: [{ type: 'rule', id: asset.id, name: rule.name, version: 1 }], memberFingerprint: 'outdated', drl: 'package workbench\n',
     }],
   };
@@ -127,7 +127,7 @@ test('new releases reject a flow snapshot with changed rule-group members', () =
     request: { decisionService: 'default/outdated-group', name: '过期规则包构建', target: { type: 'flow', id: flow.id } },
     rules: [asset], tables: [], flows: [flow], releases: [],
     enforceCurrentFlowDependencies: true,
-  }), error => error.code === 'FLOW_DEPENDENCIES_OUTDATED' && /grain\.rule\.singlepoint/.test(error.message));
+  }), error => error.code === 'FLOW_DEPENDENCIES_OUTDATED' && /demo\.rule\.singlepoint/.test(error.message));
 });
 
 test('table release isolates FIRST hit policy with the asset id', () => {
@@ -197,6 +197,25 @@ test('flow release freezes a chain of exclusive gateways and merge points', () =
   assert.deepEqual(release.routing.gateways.map(gateway => gateway.afterStep), [1, 2]);
   assert.deepEqual(release.routing.gateways.flatMap(gateway => gateway.branches.map(branch => branch.stepIndexes)), [[2], [3], [4], [5]]);
   assert.equal(verifyRelease(release), null);
+});
+
+test('flow release freezes and verifies Rule Project variable gateway routes', () => {
+  const variable = { name: 'approved', label: '已批准', type: 'Boolean', defaultValue: false, enum: null, description: '' };
+  const flow = published('flow-variable-route', { name: '变量路由', description: '', steps: [] }, 1);
+  flow.published = {
+    name: '变量路由', description: '', variables: [variable], steps: [],
+    branches: [{ id: 'approved', name: '已批准', condition: { fieldSource: 'variable', field: 'approved', operator: '==', value: true }, steps: [{ type: 'rule', id: 'yes', name: '通过规则', version: 1, drl: 'package workbench\n' }] }],
+  };
+  const release = buildRelease({
+    id: 'release-variable-route',
+    request: { decisionService: 'default/variable-route', name: '变量路由发布', target: { type: 'flow', id: flow.id } },
+    rules: [], tables: [], flows: [flow], releases: [],
+  });
+  assert.deepEqual(release.routing.branches[0].condition, { fieldSource: 'variable', field: 'approved', operator: '==', value: true });
+  assert.equal(verifyRelease(release), null);
+  release.routing.branches[0].condition.field = 'missing';
+  release.checksum = releaseChecksum(release);
+  assert.match(verifyRelease(release), /冻结模型\/变量/);
 });
 
 test('flow release freezes and verifies an exclusive DAG', () => {

@@ -7,6 +7,7 @@ import { isRuleTemplate, ruleTemplateDrl, ruleTemplateExecutionTrace } from '../
 import { inputFields, outputFields } from '../shared/bom.js';
 import { evaluateCepTestCase, evaluateTestCase, expandTestCases, validateTestSuite } from '../shared/test-suites.js';
 import { validateEventPayloads } from '../shared/event-streams.js';
+import { canonicalRuleSetVariables } from '../shared/ruleset-variables.js';
 
 export function createTestExecutionService({
   engine,
@@ -33,6 +34,7 @@ export function createTestExecutionService({
       const bom = version.bom || await readBom(projectId);
       return {
         type: target.type, item, version: version.number, bom, project,
+        variables: (version.rule || item.published).variables || project.variables || [],
         drl: version.drl || generateDrl([version.rule || item.published], bom, (version.rule || item.published).variables),
       };
     }
@@ -41,6 +43,7 @@ export function createTestExecutionService({
       const table = version.draft || item.published;
       return {
         type: target.type, item, version: version.number, bom, table, project,
+        variables: project.variables || [],
         drl: version.drl || (isRuleTemplate(table)
           ? ruleTemplateDrl(table, bom)
           : isScorecard(table)
@@ -61,11 +64,12 @@ export function createTestExecutionService({
       };
     }
     const flow = version.snapshot || item.published;
-    return { type: target.type, item, version: version.number, project, bom: flow.bom || version.bom || await readBom(projectId), flow };
+    return { type: target.type, item, version: version.number, project, bom: flow.bom || version.bom || await readBom(projectId), flow, variables: flow.variables || [] };
   }
 
   async function executeFlow(flow, initialFacts, options = {}) {
     const facts = { ...initialFacts };
+    const variables = Object.fromEntries(canonicalRuleSetVariables(flow.variables || []).map(variable => [variable.name, variable.defaultValue]));
     const gateways = flowGateways(flow).sort((left, right) => left.afterStep - right.afterStep);
     const nodeIds = new Set();
     const nodeAddress = (step, legacyNodeId) => ({ nodeId: step.nodeId || legacyNodeId, legacyNodeId });
@@ -102,7 +106,8 @@ export function createTestExecutionService({
         const legacyNodeId = scope.nodeId || (scope.kind === 'common' ? `common:${scope.offset + index}` : `branch:${scope.branch.id}:${index}`);
         const nodeId = scope.nodeId || step.nodeId || legacyNodeId;
         const inputMappings = applyFlowMappings(step.inputMappings, targetFacts);
-        const checked = await engine('/test', { drl: step.drl, facts: targetFacts });
+        const targetVariables = scope.variables || variables;
+        const checked = await engine('/test', { drl: step.drl, facts: targetFacts, variables: targetVariables });
         if (checked.error) {
           return {
             error: `${step.name}：${checked.error}`,
@@ -117,13 +122,14 @@ export function createTestExecutionService({
           const value = checked.result.facts[field.key];
           if (value !== undefined && value !== null) targetFacts[field.key] = value;
         }
+        for (const [name, value] of Object.entries(checked.result.variables || {})) targetVariables[name] = value;
         const outputMappings = applyFlowMappings(step.outputMappings, targetFacts);
         targetTrace.push({
           nodeId, legacyNodeId, name: step.name, type: step.type, version: step.version, fired: checked.result.fired,
           gatewayId: scope.gateway?.id || null, branchId: scope.branch?.id || null, branchName: scope.branch?.name || null,
           decisionHits: checked.result.decisionHits || [],
           parallelId: scope.parallel?.id || null, parallelBranchId: scope.parallelBranch?.id || null,
-          count: checked.result.count, facts: { ...targetFacts }, mappings: { inputs: inputMappings, outputs: outputMappings },
+          count: checked.result.count, facts: { ...targetFacts }, variables: { ...targetVariables }, mappings: { inputs: inputMappings, outputs: outputMappings },
         });
         if (checked.result.limitReached) { limitReached = true; break; }
         if (stopAfter === nodeId || stopAfter === legacyNodeId) { stoppedAt = nodeId; break; }
@@ -131,7 +137,7 @@ export function createTestExecutionService({
       return null;
     };
     const failure = async failed => ({ status: failed.status, result: {
-      error: failed.error, failedStep: failed.failedStep, facts, trace,
+      error: failed.error, failedStep: failed.failedStep, facts, variables, trace,
       path: selectedPaths.length === 1 ? selectedPaths[0] : null, paths: selectedPaths,
       debug: { requestedStop: stopAfter, stoppedAt },
     } });
@@ -139,26 +145,26 @@ export function createTestExecutionService({
     if (isFlowGraph(flow)) {
       const nodes = new Map(flow.graph.nodes.map(node => [node.id, node]));
       const sameValue = (left, right) => JSON.stringify(left) === JSON.stringify(right);
-      const walkGraph = async (startId, targetFacts = facts, targetTrace = trace, stopId = 'end', parallel = null, parallelBranch = null) => {
+      const walkGraph = async (startId, targetFacts = facts, targetTrace = trace, stopId = 'end', parallel = null, parallelBranch = null, targetVariables = variables) => {
         let currentId = startId;
         while (currentId !== stopId && currentId !== 'end' && !limitReached && !stoppedAt) {
           const node = nodes.get(currentId);
           if (!node) return { error: `图节点 ${currentId} 不存在`, status: 500, failedStep: { nodeId: currentId, name: currentId, type: 'flow-node' } };
         if (node.type === 'step') {
-            const stepError = await runSteps([node.step], { kind: 'common', offset: 0, nodeId: node.id, parallel, parallelBranch }, targetFacts, targetTrace);
+            const stepError = await runSteps([node.step], { kind: 'common', offset: 0, nodeId: node.id, parallel, parallelBranch, variables: targetVariables }, targetFacts, targetTrace);
             if (stepError) return stepError;
           currentId = node.next;
           continue;
         }
           if (node.type === 'gateway') {
-            const selectedBranch = selectFlowBranch(node.branches, targetFacts);
+            const selectedBranch = selectFlowBranch(node.branches, targetFacts, targetVariables);
             const path = {
               gatewayId: node.id, gatewayName: node.name || '排他网关',
               branchId: selectedBranch?.id || null, branchName: selectedBranch?.name || null, default: selectedBranch?.default === true,
             };
             selectedPaths.push(path);
             targetTrace.push({
-              nodeId: node.id, name: node.name || '排他网关', type: 'gateway', count: 0, facts: { ...targetFacts },
+              nodeId: node.id, name: node.name || '排他网关', type: 'gateway', count: 0, facts: { ...targetFacts }, variables: { ...targetVariables },
               branchId: path.branchId, branchName: path.branchName, default: path.default,
               parallelId: parallel?.id || null, parallelBranchId: parallelBranch?.id || null,
             });
@@ -169,15 +175,17 @@ export function createTestExecutionService({
           if (node.type === 'parallel') {
             const join = nodes.get(node.join);
             const baseFacts = structuredClone(targetFacts);
+            const baseVariables = structuredClone(targetVariables);
             const branchResults = [];
-            targetTrace.push({ nodeId: node.id, name: node.name || '并行网关', type: 'parallel', count: 0, facts: { ...targetFacts }, branches: node.branches.map(branch => ({ id: branch.id, name: branch.name })) });
+            targetTrace.push({ nodeId: node.id, name: node.name || '并行网关', type: 'parallel', count: 0, facts: { ...targetFacts }, variables: { ...targetVariables }, branches: node.branches.map(branch => ({ id: branch.id, name: branch.name })) });
             for (const branch of node.branches) {
               const branchFacts = structuredClone(baseFacts);
+              const branchVariables = structuredClone(baseVariables);
               const branchTrace = [];
-              const branchError = await walkGraph(branch.next, branchFacts, branchTrace, node.join, node, branch);
+              const branchError = await walkGraph(branch.next, branchFacts, branchTrace, node.join, node, branch, branchVariables);
               targetTrace.push(...branchTrace);
               if (branchError) return branchError;
-              branchResults.push({ branch, facts: branchFacts });
+              branchResults.push({ branch, facts: branchFacts, variables: branchVariables });
             }
             const changes = new Map();
             for (const { branch, facts: branchFacts } of branchResults) {
@@ -193,7 +201,21 @@ export function createTestExecutionService({
               failedStep: { nodeId: node.join, name: join?.name || '聚合节点', type: 'join', conflicts },
             };
             for (const [key, values] of changes) targetFacts[key] = values[0].value;
-            targetTrace.push({ nodeId: node.join, name: join?.name || '聚合节点', type: 'join', count: 0, facts: { ...targetFacts }, mergedFields: [...changes.keys()] });
+            const variableChanges = new Map();
+            for (const { branch, variables: branchVariables } of branchResults) {
+              for (const [key, value] of Object.entries(branchVariables)) {
+                if (sameValue(value, baseVariables[key])) continue;
+                variableChanges.set(key, [...(variableChanges.get(key) || []), { branchId: branch.id, branchName: branch.name, value }]);
+              }
+            }
+            const variableConflicts = [...variableChanges].flatMap(([field, values]) => values.some(item => !sameValue(item.value, values[0].value)) ? [{ field, values }] : []);
+            if (variableConflicts.length) return {
+              error: `聚合节点“${join?.name || node.join}”存在并行变量冲突：${variableConflicts.map(item => item.field).join('、')}`,
+              status: 409,
+              failedStep: { nodeId: node.join, name: join?.name || '聚合节点', type: 'join', conflicts: variableConflicts },
+            };
+            for (const [key, values] of variableChanges) targetVariables[key] = values[0].value;
+            targetTrace.push({ nodeId: node.join, name: join?.name || '聚合节点', type: 'join', count: 0, facts: { ...targetFacts }, variables: { ...targetVariables }, mergedFields: [...changes.keys()], mergedVariables: [...variableChanges.keys()] });
             if (stopAfter === node.id || stopAfter === node.join) stoppedAt = stopAfter;
             currentId = join?.next || 'end';
             continue;
@@ -217,7 +239,7 @@ export function createTestExecutionService({
         });
       }
       return { status: 200, result: {
-        ok: true, facts, trace, limitReached,
+        ok: true, facts, variables, trace, limitReached,
         path: selectedPaths.length === 1 ? selectedPaths[0] : null, paths: selectedPaths,
         debug: { requestedStop: stopAfter, stoppedAt }, assertions,
         passed: assertions.every(assertion => assertion.passed),
@@ -229,14 +251,14 @@ export function createTestExecutionService({
     for (let position = 0; position <= flow.steps.length && !limitReached && !stoppedAt; position++) {
       const gateway = gatewaysByPosition.get(position);
       if (gateway) {
-        const selectedBranch = selectFlowBranch(gateway.branches, facts);
+        const selectedBranch = selectFlowBranch(gateway.branches, facts, variables);
         const path = {
           gatewayId: gateway.id, gatewayName: gateway.name || '排他网关',
           branchId: selectedBranch?.id || null, branchName: selectedBranch?.name || null, default: selectedBranch?.default === true,
         };
         selectedPaths.push(path);
         trace.push({
-          nodeId: gateway.id, name: gateway.name || '排他网关', type: 'gateway', count: 0, facts: { ...facts },
+          nodeId: gateway.id, name: gateway.name || '排他网关', type: 'gateway', count: 0, facts: { ...facts }, variables: { ...variables },
           branchId: path.branchId, branchName: path.branchName, default: path.default,
         });
         if (stopAfter === gateway.id || (gateways.length === 1 && stopAfter === 'gateway')) stoppedAt = gateway.id;
@@ -263,7 +285,7 @@ export function createTestExecutionService({
       });
     }
     return { status: 200, result: {
-      ok: true, facts, trace, limitReached,
+      ok: true, facts, variables, trace, limitReached,
       path: selectedPaths.length === 1 ? selectedPaths[0] : null, paths: selectedPaths,
       debug: { requestedStop: stopAfter, stoppedAt }, assertions,
       passed: assertions.every(assertion => assertion.passed),
@@ -289,7 +311,8 @@ export function createTestExecutionService({
       const executed = await executeFlow(resolved.flow, facts);
       return { ...executed, targetVersion: resolved.version, bom: resolved.bom, normalizedFacts };
     }
-    const checked = await engine('/test', { drl: resolved.drl, facts });
+    const variables = Object.fromEntries(canonicalRuleSetVariables(resolved.variables || []).map(variable => [variable.name, variable.defaultValue]));
+    const checked = await engine('/test', { drl: resolved.drl, facts, variables });
     if (checked.error) return { ...checked, targetVersion: resolved.version, bom: resolved.bom };
     const result = resolved.type === 'table' && isRuleTemplate(resolved.table) ? {
       ...checked.result,

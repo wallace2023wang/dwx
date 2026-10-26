@@ -8,7 +8,7 @@
 规则编写过程中经常需要保存一次执行内的中间判定结果，例如：
 
 ```text
-氮气浓度达到上限
+浓度达到上限
     -> pctAtLeastMax = true
 
 pctAtLeastMax == true
@@ -81,9 +81,9 @@ Ruleset Variable 对应 传统规则平台 等规则平台中的规则集上下�
 | V10 | 执行响应和 trace 提供变量快照 | P1 | 已完成 |
 | V11 | 单条 BAL 规则独立发布的变量兼容声明 | P1 | 已完成 |
 | V12 | 决策表条件列和动作列可以读取/修改变量 | P1 | 已完成 |
-| V13 | 变量作为规则集网关条件 | P2 | 暂不支持，后置实现 |
+| V13 | 变量作为规则集网关条件 | P2 | 已完成 |
 
-V13 当前仍不支持通过网关直接判断变量。现有实现只允许网关条件读取冻结 BOM 字段；V12 已支持决策表条件列和动作列选择 Rule Project 变量。V13 后置实现时需要同时更新编辑器字段选择、`flowSnapshot` 冻结模型和 Release 路由校验。
+V13 已支持排他网关直接读取 Rule Project 变量。编辑器字段选择、类型化值校验、`flowSnapshot` 与 Release 路由冻结、checksum、Team Server 试运行和 RES 执行保持一致；旧网关条件未声明 `fieldSource` 时继续按 BOM 字段兼容读取。
 
 ## 5. 数据模型
 
@@ -137,7 +137,7 @@ Rule Project 记录的 `variables` 数组是正式定义入口：
 {
   "releaseId": "release-1",
   "facts": {
-    "nitrogenPct": 94,
+    "gasPct": 94,
     "maxPct": 95
   }
 }
@@ -188,7 +188,7 @@ end
 
 rule "标记浓度达标"
 when
-    $input : RuleInput( nitrogenPct >= maxPct )
+    $input : RuleInput( gasPct >= maxPct )
     $ctx : RuleContext()
 then
     modify($ctx) {

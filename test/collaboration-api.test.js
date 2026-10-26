@@ -24,10 +24,37 @@ test('collaboration API streams EPL text and cursor updates with sequence confli
   const abort = new AbortController()
   try {
     const project = await env.request('/api/projects', 'POST', {
-      name: '实时协作回归', description: 'SSE 协作', icon: 'warehouse', engine: 'cep', bomTemplate: 'grain',
+      name: '实时协作回归', description: 'SSE 协作', icon: 'warehouse', engine: 'cep', bomTemplate: 'blank',
+    })
+    await env.request(`/api/projects/${project.body.id}/bom`, 'PUT', {
+      version: 1,
+      fields: [
+        { key: 'eventId', label: '事件 ID', type: 'String', semanticType: 'String', kind: 'input', factType: 'DeviceReading', factTypeLabel: '设备采样事件', group: '事件信封', control: 'text' },
+        { key: 'sampledAt', label: '采样时间', type: 'String', semanticType: 'Date', kind: 'input', factType: 'DeviceReading', factTypeLabel: '设备采样事件', group: '事件信封', control: 'date' },
+        { key: 'deviceId', label: '设备 ID', type: 'String', semanticType: 'String', kind: 'input', factType: 'DeviceReading', factTypeLabel: '设备采样事件', group: '事件信封', control: 'text' },
+        { key: 'sensorId', label: '传感器 ID', type: 'String', semanticType: 'String', kind: 'input', factType: 'DeviceReading', factTypeLabel: '设备采样事件', group: '事件信封', control: 'text' },
+        { key: 'averageTemperature', label: '平均温度', type: 'Double', semanticType: 'Decimal', kind: 'input', factType: 'DeviceReading', factTypeLabel: '设备采样事件', group: '环境监测', unit: '°C', min: -50, max: 80, control: 'number' },
+        { key: 'humidity', label: '湿度', type: 'Double', semanticType: 'Decimal', kind: 'input', factType: 'DeviceReading', factTypeLabel: '设备采样事件', group: '环境监测', unit: '%', min: 0, max: 100, control: 'number' },
+        { key: 'controlRequired', label: '是否干预', type: 'Boolean', semanticType: 'Boolean', kind: 'output', factType: 'ControlDecision', factTypeLabel: '调控决策', group: '结果输出', control: 'boolean' },
+      ],
+      eventTypes: [{
+        name: 'DeviceReading', label: '设备采样事件', version: 1,
+        keyField: 'deviceId', timeField: 'sampledAt', sourceField: 'sensorId', duplicateKey: ['eventId'],
+        retention: '24h', allowedLateness: '5m',
+        fields: [
+          { field: 'eventId', required: true },
+          { field: 'deviceId', required: true },
+          { field: 'sensorId', required: true },
+          { field: 'sampledAt', required: true },
+          { field: 'averageTemperature', required: true },
+          { field: 'humidity', required: false },
+        ],
+      }],
+      domains: [],
+      methods: [],
     })
     const stream = await env.request(`/api/projects/${project.body.id}/event-streams`, 'POST', {
-      name: '协作事件流', statements: [{ name: 'RawEpl', mode: 'advanced', epl: 'select * from GrainStore' }],
+      name: '协作事件流', statements: [{ name: 'RawEpl', mode: 'advanced', epl: 'select * from DeviceReading' }],
     })
     const path = `/api/projects/${project.body.id}/collaboration`
     const common = { assetType: 'event-stream', assetId: stream.body.id, revision: stream.body.revision, mode: 'editing' }
@@ -42,13 +69,13 @@ test('collaboration API streams EPL text and cursor updates with sequence confli
     assert.equal((await nextSseEvent(reader, pending)).event, 'snapshot')
 
     const text = await env.request(path, 'POST', {
-      ...common, clientId: 'client-a', action: 'text', documentId: 'statement:0:epl', baseSequence: 0, value: 'select temperature from GrainStore',
+      ...common, clientId: 'client-a', action: 'text', documentId: 'statement:0:epl', baseSequence: 0, value: 'select temperature from DeviceReading',
     })
     assert.equal(text.status, 200)
     assert.equal(text.body.sequence, 1)
     const textEvent = await nextSseEvent(reader, pending)
     assert.equal(textEvent.event, 'text')
-    assert.equal(textEvent.data.value, 'select temperature from GrainStore')
+    assert.equal(textEvent.data.value, 'select temperature from DeviceReading')
 
     const cursor = await env.request(path, 'POST', {
       ...common, clientId: 'client-a', action: 'cursor', documentId: 'statement:0:epl',
@@ -64,7 +91,7 @@ test('collaboration API streams EPL text and cursor updates with sequence confli
     })
     assert.equal(stale.status, 409)
     assert.equal(stale.body.current.sequence, 1)
-    assert.equal(stale.body.current.value, 'select temperature from GrainStore')
+    assert.equal(stale.body.current.value, 'select temperature from DeviceReading')
 
     const saved = await env.request(`/api/projects/${project.body.id}/event-streams/${stream.body.id}`, 'PUT', {
       revision: stream.body.revision, draft: stream.body.draft,

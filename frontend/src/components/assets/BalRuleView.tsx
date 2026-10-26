@@ -627,6 +627,7 @@ function ConditionRow({ condition, index, count, facts, variables, editable, onC
   const field = selectedField(facts, condition.field)
   const invalid = !field
   const operator = operatorsFor(field).find(option => option.value === condition.operator)
+  const operatorInvalid = Boolean(field && !operator)
   const quantifier = quantifiers.find(option => option.value === (condition.quantifier || 'one'))?.label || '一个'
   const fieldValues = compatibleValueFields(facts, field)
   const rightField = usesFieldValue(condition) ? selectedField(facts, condition.valueField || '') : undefined
@@ -697,7 +698,7 @@ function ConditionRow({ condition, index, count, facts, variables, editable, onC
           <option value="and">并且</option><option value="or">或者</option>
         </select>
       )}
-      <div className={`flex min-h-12 flex-wrap items-center gap-2 rounded-[3px] border px-3 py-2 ${invalid || conditionError ? 'border-[#c62828] bg-[#fffafa]' : 'border-ink-border bg-[#fafafa]'}`}>
+      <div className={`flex min-h-12 flex-wrap items-center gap-2 rounded-[3px] border px-3 py-2 ${invalid || operatorInvalid || conditionError ? 'border-[#c62828] bg-[#fffafa]' : 'border-ink-border bg-[#fafafa]'}`}>
         {variables.length > 0 && <select className="h-8 rounded-[2px] border border-ink-border bg-white px-1.5 text-[11px] text-ink-2 outline-none focus:border-brand-primary" value="bom" onChange={event => {
           if (event.target.value === 'variable') {
             const variable = variables[0]
@@ -710,7 +711,8 @@ function ConditionRow({ condition, index, count, facts, variables, editable, onC
         <TermSelect value={fact?.name || condition.factType || ''} label="事实类型" options={facts.map(option => ({ value: option.name, label: option.label }))} invalid={!fact} onChange={selectFact} />
         <span className="text-ink-3">的</span>
         <TermSelect value={condition.field} label="业务字段" options={(fact?.fields || []).map(option => ({ value: option.key, label: option.label }))} invalid={invalid} onChange={selectField} />
-        <select className="h-8 rounded-[2px] border border-ink-border bg-white px-2 text-[11px] font-semibold text-ink-1 outline-none focus:border-brand-primary" value={condition.operator} onChange={event => selectOperator(event.target.value)} aria-label="比较符">
+        <select className={`h-8 rounded-[2px] border bg-white px-2 text-[11px] font-semibold outline-none focus:border-brand-primary ${operatorInvalid ? 'border-[#c62828] text-[#c62828]' : 'border-ink-border text-ink-1'}`} value={condition.operator} onChange={event => selectOperator(event.target.value)} aria-label="比较符" aria-invalid={operatorInvalid} title={operatorInvalid ? `${condition.operator} 不适用于${field?.label || '当前字段'}` : undefined}>
+          {operatorInvalid && <option value={condition.operator}>{condition.operator}（已失效）</option>}
           {operatorsFor(field).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select>
         <ValueSourceControl value={usesFieldValue(condition) ? 'field' : 'literal'} fieldModeAvailable={fieldValues.length > 0 && supportsFieldValueForType(field?.type, condition.operator)} disabledReason={fieldValues.length ? '该操作只支持固定值' : undefined} onChange={selectValueSource} />

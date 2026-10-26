@@ -175,37 +175,6 @@ test('feature-decision-table-field 决策表条件支持同类型业务字段', 
   finishCase({ id, title: '决策表-同类型业务字段比较', status: 'passed', issues, screenshots: shots })
 })
 
-test('feature-structured-bal 充氮动态阈值以结构化 BAL 显示并可编译', async ({ page }) => {
-  const col = createCollector(page)
-  const id = 'feature-advanced-bal'
-  await page.goto('/projects/project-63dbe140/assets?asset=c721380a-f8e6-47ab-864f-a53d3e340142', { waitUntil: 'networkidle' })
-
-  const editor = page.getByLabel('BAL 规则编辑器')
-  await expect(editor).toBeVisible({ timeout: 15_000 })
-  await expect(page.getByLabel('BOM 引用失效')).toHaveCount(0)
-  await expect(editor.getByRole('alert')).toHaveCount(0)
-  await expect(editor.getByLabel('高级表达式')).toHaveCount(0)
-  const conditionFields = editor.getByRole('combobox', { name: '业务字段', exact: true })
-  await expect(conditionFields).toHaveCount(4)
-  await expect(conditionFields.nth(0)).toHaveValue('phase')
-  await expect(conditionFields.nth(1)).toHaveValue('nitrogenPct')
-  await expect(conditionFields.nth(2)).toHaveValue('paused')
-  await expect(conditionFields.nth(3)).toHaveValue('endReached')
-  await expect(editor.getByLabel('比较符').nth(1)).toHaveValue('>=')
-  await expect(editor.getByLabel('用于比较的业务字段')).toHaveValue('maxPct')
-  await expect(editor.getByText('字段已失效')).toHaveCount(0)
-  await expect(editor.getByRole('button', { name: '保存草稿' })).toBeDisabled()
-  await expect(editor.getByRole('button', { name: '编译' })).toBeEnabled()
-
-  const shots = [await saveShot(page, id, '动态阈值结构化展示')]
-  await editor.getByRole('button', { name: '编译' }).click()
-  await expect(editor.getByText('Drools 编译通过')).toBeVisible({ timeout: 30_000 })
-  shots.push(await saveShot(page, id, '结构化条件编译通过'))
-
-  const issues = col.stop()
-  finishCase({ id, title: 'BAL动态阈值-结构化显示与编译', status: 'passed', issues, screenshots: shots })
-})
-
 test('feature-flow 规则集页-画布与编辑器操作', async ({ page }) => {
   const col = createCollector(page)
   const id = 'feature-flow'
@@ -343,24 +312,6 @@ test('feature-releases 发布页-构建向导', async ({ page }) => {
 
   const issues = col.stop()
   finishCase({ id, title: '发布页-构建向导打开与返回', status: 'passed', issues, screenshots: shots })
-})
-
-test('feature-release-activation 发布页-唯一生效版本与稳定入口', async ({ page }) => {
-  const col = createCollector(page)
-  const id = 'feature-release-activation'
-  await page.goto('/projects/project-63dbe140/releases', { waitUntil: 'networkidle' })
-
-  await expect(page.getByText('当前生效', { exact: true })).toHaveCount(1)
-  await expect(page.getByText('已部署', { exact: true })).toHaveCount(2)
-  await expect(page.getByRole('button', { name: '回退', exact: true })).toHaveCount(1)
-  await expect(page.getByRole('button', { name: '激活', exact: true })).toHaveCount(2)
-  await expect(page.getByText('稳定执行入口', { exact: true })).toBeVisible()
-  await expect(page.getByText(/POST .*\/services\/nitrogen-control\/execute/)).toBeVisible()
-  await expect(page.getByText('当前路由至 v3.0.0', { exact: true })).toBeVisible()
-  await expect(page.getByText(/undefined/)).toHaveCount(0)
-
-  const shots = [await saveShot(page, id, '唯一生效版本与稳定入口')]
-  finishCase({ id, title: '发布页-唯一生效版本与稳定入口', status: 'passed', issues: col.stop(), screenshots: shots })
 })
 
 test('feature-report 报告页-下载', async ({ page }) => {

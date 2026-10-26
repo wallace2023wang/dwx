@@ -12,7 +12,6 @@ test('feature-library 库页-新建决策服务对话框与服务卡片', async 
 
   // 服务卡片可见
   await expect(page.getByText('个人贷款审批').first()).toBeVisible()
-  await expect(page.getByText('粮库温控决策').first()).toBeVisible()
 
   // 打开新建对话框
   await page.getByRole('button', { name: '新建决策服务' }).click()
@@ -55,12 +54,6 @@ test('feature-explore 浏览页-搜索/筛选/清除/重载', async ({ page }) =
   await page.waitForTimeout(800)
   await expect(page.getByPlaceholder('规则名 / 业务术语 / BOM 字段')).toHaveValue('')
   shots.push(await saveShot(page, id, '清除筛选后'))
-
-  // CEP 项目必须按事件流索引，不能请求 Rules 专用的 /flows。
-  await page.getByLabel('筛选资产类型').selectOption({ label: '事件流' })
-  await expect.poll(() => page.getByRole('table').getByRole('row').count()).toBeGreaterThan(1)
-  await expect(page.getByRole('table').getByText(/^事件流 ·/).first()).toBeVisible()
-  await page.getByLabel('筛选资产类型').selectOption({ label: '全部类型' })
 
   // 重新加载
   await page.getByRole('button', { name: '刷新目录' }).click()

@@ -20,10 +20,36 @@ services:
       - "127.0.0.1:8788:8788"
   res:
     build: ./res
+    environment:
+      RES_MANAGEMENT_API_KEY: ${RES_MANAGEMENT_API_KEY:-}
+      RES_EXECUTION_API_KEY: ${RES_EXECUTION_API_KEY:-}
     ports:
       - "127.0.0.1:8790:8790"
+      - "127.0.0.1:8793:8793"
     volumes:
       - res-data:/data/releases
+  res-test:
+    build: ./res
+    environment:
+      RES_NODE_ID: test-res
+      RES_MANAGEMENT_API_KEY: ${RES_MANAGEMENT_API_KEY:-}
+      RES_EXECUTION_API_KEY: ${RES_EXECUTION_API_KEY:-}
+    ports:
+      - "127.0.0.1:8800:8790"
+      - "127.0.0.1:8803:8793"
+    volumes:
+      - res-test-data:/data/releases
+  res-production:
+    build: ./res
+    environment:
+      RES_NODE_ID: production-res
+      RES_MANAGEMENT_API_KEY: ${RES_MANAGEMENT_API_KEY:-}
+      RES_EXECUTION_API_KEY: ${RES_EXECUTION_API_KEY:-}
+    ports:
+      - "127.0.0.1:8810:8790"
+      - "127.0.0.1:8813:8793"
+    volumes:
+      - res-production-data:/data/releases
   cep-build:
     build: ./cep
     environment:
@@ -43,4 +69,6 @@ services:
 volumes:
   postgres-data:
   res-data:
+  res-test-data:
+  res-production-data:
   cep-data:

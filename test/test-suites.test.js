@@ -5,13 +5,13 @@ import { expandTestCases, normalizeTestSuite, validateTestSuite } from '../share
 const bom = {
   version: 1,
   fields: [
-    { key: 'warehouseId', label: '粮仓 ID', type: 'String', kind: 'input', factType: 'NH3Reading', factTypeLabel: '氨气采样' },
-    { key: 'ammoniaPpm', label: '氨气浓度', type: 'Double', kind: 'input', factType: 'NH3Reading', factTypeLabel: '氨气采样' },
+    { key: 'deviceId', label: '设备 ID', type: 'String', kind: 'input', factType: 'GasReading', factTypeLabel: '气体采样' },
+    { key: 'gasPpm', label: '气体浓度', type: 'Double', kind: 'input', factType: 'GasReading', factTypeLabel: '气体采样' },
   ],
-  eventTypes: [{ name: 'NH3Reading', fields: [{ field: 'warehouseId', required: true }, { field: 'ammoniaPpm', required: true }] }],
+  eventTypes: [{ name: 'GasReading', fields: [{ field: 'deviceId', required: true }, { field: 'gasPpm', required: true }] }],
 };
 
-const event = { type: 'NH3Reading', data: { warehouseId: 'WH-01', ammoniaPpm: 25 } };
+const event = { type: 'GasReading', data: { deviceId: 'DEV-01', gasPpm: 25 } };
 
 test('CEP test suites preserve waitMs for tumbling-window tests', () => {
   const suite = {

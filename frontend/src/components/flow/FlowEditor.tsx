@@ -1,7 +1,7 @@
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, FileText, GitBranch, GitFork, LayoutGrid, Layers3, Network, Plus, Redo2, Rocket, Save, Search, Table2, Trash2, Undo2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from 'react'
 import { flowDefinitionFromDetail } from '../../api/flows'
-import type { BomField, FlowAssetOption, FlowBranchDraft, FlowDetail, FlowDraft, FlowMapping, FlowPackageOption, FlowStepDraft, FlowSubflowOption } from '../../types'
+import type { BomField, FlowAssetOption, FlowBranchDraft, FlowDetail, FlowDraft, FlowMapping, FlowPackageOption, FlowStepDraft, FlowSubflowOption, RuleSetVariable } from '../../types'
 import FlowCanvas from './FlowCanvas'
 
 type FlowPalettePayload = { type: 'rule-group' | 'rule' | 'table' | 'subflow' | 'gateway'; id?: string; packageName?: string }
@@ -18,6 +18,34 @@ interface FlowEditorProps {
 const operators = [
   ['==', '等于'], ['!=', '不等于'], ['>', '大于'], ['>=', '大于等于'], ['<', '小于'], ['<=', '小于等于'],
 ] as const
+
+type GatewayCondition = NonNullable<FlowBranchDraft['condition']>
+type GatewayConditionField = { field: string; fieldSource: 'bom' | 'variable'; label: string }
+
+function gatewayConditionFields(fields: BomField[], variables: RuleSetVariable[]): GatewayConditionField[] {
+  return [
+    ...fields.filter(field => field.direction === 'input').map(field => ({ field: field.key, fieldSource: 'bom' as const, label: `业务字段 · ${field.label}` })),
+    ...variables.map(variable => ({ field: variable.name, fieldSource: 'variable' as const, label: `Rule Project · ${variable.label || variable.name}` })),
+  ]
+}
+
+function newGatewayCondition(option?: GatewayConditionField, operator = '=='): GatewayCondition {
+  return { field: option?.field || '', ...(option?.fieldSource === 'variable' ? { fieldSource: 'variable' as const } : {}), operator, value: '' }
+}
+
+function GatewayConditionFieldSelect({ condition, options, onChange, ariaLabel, className }: {
+  condition?: GatewayCondition
+  options: GatewayConditionField[]
+  onChange: (condition: GatewayCondition) => void
+  ariaLabel?: string
+  className: string
+}) {
+  const value = `${condition?.fieldSource === 'variable' ? 'variable' : 'bom'}:${condition?.field || ''}`
+  return <select aria-label={ariaLabel} className={className} value={value} onChange={event => {
+    const [fieldSource, ...fieldParts] = event.target.value.split(':')
+    onChange({ field: fieldParts.join(':'), ...(fieldSource === 'variable' ? { fieldSource: 'variable' as const } : {}), operator: condition?.operator || '==', value: '' })
+  }}>{options.map(option => <option key={`${option.fieldSource}:${option.field}`} value={`${option.fieldSource}:${option.field}`}>{option.label}</option>)}</select>
+}
 
 function MappingEditor({ label, mappings, sourceFields, targetFields, onChange }: {
   label: string
@@ -118,12 +146,13 @@ function StepEditor({ step, index, count, assets, packages, subflows, fields, on
   )
 }
 
-function GraphEditor({ draft, assets, packages, subflows, fields, canAddStep, onEntryChange, onNodeChange, onNodeDelete, onAddStep, onAddGateway, onAddParallel, onAddParallelBranch }: {
+function GraphEditor({ draft, assets, packages, subflows, fields, projectVariables, canAddStep, onEntryChange, onNodeChange, onNodeDelete, onAddStep, onAddGateway, onAddParallel, onAddParallelBranch }: {
   draft: FlowDraft
   assets: FlowAssetOption[]
   packages: FlowPackageOption[]
   subflows: FlowSubflowOption[]
   fields: BomField[]
+  projectVariables: RuleSetVariable[]
   canAddStep: boolean
   onEntryChange: (entry: string) => void
   onNodeChange: (index: number, updater: (node: NonNullable<FlowDraft['graph']>['nodes'][number]) => NonNullable<FlowDraft['graph']>['nodes'][number]) => void
@@ -135,7 +164,8 @@ function GraphEditor({ draft, assets, packages, subflows, fields, canAddStep, on
 }) {
   const graph = draft.graph
   if (!graph) return null
-  const inputFields = fields.filter(field => field.direction === 'input')
+  const conditionFields = gatewayConditionFields(fields, projectVariables)
+  const firstConditionField = conditionFields[0]
   const nodeLabel = (node: NonNullable<FlowDraft['graph']>['nodes'][number]) => node.type === 'step' ? `步骤·${node.id}` : node.type === 'gateway' ? `排他·${node.name}` : node.type === 'parallel' ? `并行·${node.name}` : `聚合·${node.name}`
   const targets = [{ id: 'end', label: '结束' }, ...graph.nodes.map(node => ({ id: node.id, label: nodeLabel(node) }))]
   const targetOptions = (selfId: string) => targets.filter(target => target.id !== selfId).map(target => <option key={target.id} value={target.id}>{target.label}</option>)
@@ -144,7 +174,7 @@ function GraphEditor({ draft, assets, packages, subflows, fields, canAddStep, on
       <div><h2 className="text-xs font-semibold">高级有向图编排</h2><p className="mt-1 text-[10px] text-ink-3">支持嵌套排他、并行聚合和子流程；不支持循环。</p></div>
       <label className="ml-auto min-w-52 text-[10px] font-semibold text-ink-3">入口节点<select className="control-input mt-1 h-8 text-xs" value={graph.entry} onChange={event => onEntryChange(event.target.value)}>{graph.nodes.map(node => <option key={node.id} value={node.id}>{nodeLabel(node)}</option>)}</select></label>
       <button type="button" className="inline-flex h-8 items-center gap-1 border border-ink-border bg-white px-2 text-[11px] text-brand-primary disabled:opacity-40" disabled={!canAddStep} onClick={onAddStep}><Plus size={12} />步骤</button>
-      <button type="button" className="inline-flex h-8 items-center gap-1 border border-[#e65100] bg-white px-2 text-[11px] text-[#b84600] disabled:opacity-40" disabled={!inputFields.length || graph.nodes.filter(node => node.type === 'gateway').length >= 8} onClick={onAddGateway}><Plus size={12} />网关</button>
+      <button type="button" className="inline-flex h-8 items-center gap-1 border border-[#e65100] bg-white px-2 text-[11px] text-[#b84600] disabled:opacity-40" disabled={!conditionFields.length || graph.nodes.filter(node => node.type === 'gateway').length >= 8} onClick={onAddGateway}><Plus size={12} />网关</button>
       <button type="button" className="inline-flex h-8 items-center gap-1 border border-[#1565c0] bg-white px-2 text-[11px] text-[#0d47a1] disabled:opacity-40" disabled={!canAddStep || graph.nodes.filter(node => node.type === 'parallel').length >= 4} onClick={onAddParallel}><GitFork size={12} />并行</button>
     </div>
     {graph.nodes.map((node, nodeIndex) => node.type === 'step' ? <div key={node.id} className="border-b border-ink-border last:border-b-0">
@@ -158,11 +188,11 @@ function GraphEditor({ draft, assets, packages, subflows, fields, canAddStep, on
       <div className="flex items-end gap-2 bg-[#fff8e1] px-3 py-2"><label className="min-w-52 flex-1 text-[10px] font-semibold text-ink-3">网关名称<input className="control-input mt-1 h-8 text-xs" value={node.name} onChange={event => onNodeChange(nodeIndex, current => current.type === 'gateway' ? { ...current, name: event.target.value } : current)} /></label><span className="pb-2 font-mono text-[10px] text-ink-3">{node.id}</span><button type="button" className="mb-0.5 inline-flex size-7 items-center justify-center text-ink-3 hover:text-[#c62828]" onClick={() => onNodeDelete(node.id)} title="删除网关"><Trash2 size={13} /></button></div>
       {node.branches.map((branch, branchIndex) => <div key={branch.id} className="grid grid-cols-[minmax(130px,0.8fr)_minmax(150px,1fr)_100px_minmax(110px,1fr)_minmax(170px,1fr)_28px] items-end gap-2 border-t border-[#e8e8e8] px-3 py-2 max-xl:grid-cols-2">
         <label className="text-[10px] font-semibold text-ink-3">分支名称<input className="control-input mt-1 h-8 text-xs" value={branch.name} onChange={event => onNodeChange(nodeIndex, current => current.type === 'gateway' ? { ...current, branches: current.branches.map((item, index) => index === branchIndex ? { ...item, name: event.target.value } : item) } : current)} /></label>
-        {branch.default ? <span className="self-center text-[11px] text-ink-3">默认分支</span> : <><label className="text-[10px] font-semibold text-ink-3">条件字段<select className="control-input mt-1 h-8 text-xs" value={branch.condition?.field ?? ''} onChange={event => onNodeChange(nodeIndex, current => current.type === 'gateway' ? { ...current, branches: current.branches.map((item, index) => index === branchIndex ? { ...item, condition: { field: event.target.value, operator: item.condition?.operator || '==', value: '' } } : item) } : current)}>{inputFields.map(field => <option key={field.key} value={field.key}>{field.label}</option>)}</select></label><label className="text-[10px] font-semibold text-ink-3">运算符<select className="control-input mt-1 h-8 text-xs" value={branch.condition?.operator ?? '=='} onChange={event => onNodeChange(nodeIndex, current => current.type === 'gateway' ? { ...current, branches: current.branches.map((item, index) => index === branchIndex ? { ...item, condition: { field: item.condition?.field || inputFields[0]?.key || '', operator: event.target.value, value: item.condition?.value || '' } } : item) } : current)}>{operators.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="text-[10px] font-semibold text-ink-3">比较值<input className="control-input mt-1 h-8 text-xs" value={branch.condition?.value ?? ''} onChange={event => onNodeChange(nodeIndex, current => current.type === 'gateway' ? { ...current, branches: current.branches.map((item, index) => index === branchIndex ? { ...item, condition: { field: item.condition?.field || inputFields[0]?.key || '', operator: item.condition?.operator || '==', value: event.target.value } } : item) } : current)} /></label></>}
+        {branch.default ? <span className="self-center text-[11px] text-ink-3">默认分支</span> : <><label className="text-[10px] font-semibold text-ink-3">条件字段<GatewayConditionFieldSelect className="control-input mt-1 h-8 text-xs" condition={branch.condition} options={conditionFields} onChange={condition => onNodeChange(nodeIndex, current => current.type === 'gateway' ? { ...current, branches: current.branches.map((item, index) => index === branchIndex ? { ...item, condition } : item) } : current)} /></label><label className="text-[10px] font-semibold text-ink-3">运算符<select className="control-input mt-1 h-8 text-xs" value={branch.condition?.operator ?? '=='} onChange={event => onNodeChange(nodeIndex, current => current.type === 'gateway' ? { ...current, branches: current.branches.map((item, index) => index === branchIndex ? { ...item, condition: { ...(item.condition || newGatewayCondition(firstConditionField)), operator: event.target.value } } : item) } : current)}>{operators.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="text-[10px] font-semibold text-ink-3">比较值<input className="control-input mt-1 h-8 text-xs" value={branch.condition?.value ?? ''} onChange={event => onNodeChange(nodeIndex, current => current.type === 'gateway' ? { ...current, branches: current.branches.map((item, index) => index === branchIndex ? { ...item, condition: { ...(item.condition || newGatewayCondition(firstConditionField)), value: event.target.value } } : item) } : current)} /></label></>}
         <label className="text-[10px] font-semibold text-ink-3">目标节点<select className="control-input mt-1 h-8 text-xs" value={branch.next} onChange={event => onNodeChange(nodeIndex, current => current.type === 'gateway' ? { ...current, branches: current.branches.map((item, index) => index === branchIndex ? { ...item, next: event.target.value } : item) } : current)}>{targetOptions(node.id)}</select></label>
         <button type="button" className="mb-0.5 inline-flex size-7 items-center justify-center text-ink-3 hover:text-[#c62828] disabled:opacity-30" disabled={node.branches.length <= 1} onClick={() => onNodeChange(nodeIndex, current => current.type === 'gateway' ? { ...current, branches: current.branches.filter((_, index) => index !== branchIndex) } : current)}><Trash2 size={13} /></button>
       </div>)}
-      <div className="flex gap-2 border-t border-[#e8e8e8] px-3 py-2"><button type="button" className="h-7 px-2 text-[10px] text-brand-primary disabled:opacity-40" disabled={!inputFields.length || node.branches.length >= 8} onClick={() => onNodeChange(nodeIndex, current => current.type === 'gateway' ? { ...current, branches: [...current.branches, { id: crypto.randomUUID(), name: `条件路径 ${current.branches.length + 1}`, condition: { field: inputFields[0].key, operator: '==', value: '' }, next: 'end' }] } : current)}><Plus size={11} className="inline" /> 条件分支</button><button type="button" className="h-7 px-2 text-[10px] text-ink-2 disabled:opacity-40" disabled={node.branches.some(branch => branch.default) || node.branches.length >= 8} onClick={() => onNodeChange(nodeIndex, current => current.type === 'gateway' ? { ...current, branches: [...current.branches, { id: crypto.randomUUID(), name: '默认路径', default: true, next: 'end' }] } : current)}><Plus size={11} className="inline" /> 默认分支</button></div>
+      <div className="flex gap-2 border-t border-[#e8e8e8] px-3 py-2"><button type="button" className="h-7 px-2 text-[10px] text-brand-primary disabled:opacity-40" disabled={!conditionFields.length || node.branches.length >= 8} onClick={() => onNodeChange(nodeIndex, current => current.type === 'gateway' ? { ...current, branches: [...current.branches, { id: crypto.randomUUID(), name: `条件路径 ${current.branches.length + 1}`, condition: newGatewayCondition(firstConditionField), next: 'end' }] } : current)}><Plus size={11} className="inline" /> 条件分支</button><button type="button" className="h-7 px-2 text-[10px] text-ink-2 disabled:opacity-40" disabled={node.branches.some(branch => branch.default) || node.branches.length >= 8} onClick={() => onNodeChange(nodeIndex, current => current.type === 'gateway' ? { ...current, branches: [...current.branches, { id: crypto.randomUUID(), name: '默认路径', default: true, next: 'end' }] } : current)}><Plus size={11} className="inline" /> 默认分支</button></div>
     </div>)}
   </section>
 }
@@ -311,7 +341,8 @@ export default function FlowEditor({ detail, fields, busy, onSave, onCompile, on
   const gateways = draft.gateways ?? []
   const dirty = JSON.stringify(draft) !== JSON.stringify(source)
   const definition = useMemo(() => flowDefinitionFromDetail(detail, draft), [detail, draft])
-  const inputFields = fields.filter(field => field.direction === 'input')
+  const conditionFields = gatewayConditionFields(fields, detail.projectVariables || [])
+  const firstConditionField = conditionFields[0]
   const duplicateOutputs = useMemo(() => {
     const steps = graph
       ? graph.nodes.filter(node => node.type === 'step').map(node => node.step)
@@ -410,8 +441,8 @@ export default function FlowEditor({ detail, fields, busy, onSave, onCompile, on
   const hasBranchStepSource = detail.availableAssets.length > 0 || detail.availablePackages.some(entry => entry.publishedRuleCount + entry.publishedTableCount > 0) || availableFlows.length > 0
   const totalStepCount = graph ? graph.nodes.filter(node => node.type === 'step').length : draft.steps.length + gateways.reduce((total, gateway) => total + gateway.branches.reduce((branchTotal, branch) => branchTotal + branch.steps.length, 0), 0)
   const canAddStep = hasBranchStepSource && totalStepCount < 20
-  const canAddGateway = !graph && canAddStep && inputFields.length > 0 && gateways.length < 4 && gateways.length <= draft.steps.length
-  const canAddConditionalBranch = Boolean(selectedGateway && canAddStep && inputFields.length > 0 && selectedGateway.branches.length < 8)
+  const canAddGateway = !graph && canAddStep && conditionFields.length > 0 && gateways.length < 4 && gateways.length <= draft.steps.length
+  const canAddConditionalBranch = Boolean(selectedGateway && canAddStep && conditionFields.length > 0 && selectedGateway.branches.length < 8)
 
   const run = async (action: () => Promise<unknown>, success: string) => {
     setNotice(null)
@@ -455,15 +486,14 @@ export default function FlowEditor({ detail, fields, busy, onSave, onCompile, on
     const gateway = gateways[gatewayIndex]
     if (!gateway || totalStepCount >= 20 || gateway.branches.length >= 8 || (isDefault && gateway.branches.some(branch => branch.default))) return
     const step = newStep(detail.availableAssets, detail.availablePackages, availableFlows)
-    if (!step || (!isDefault && !inputFields.length)) {
-      setNotice({ error: true, text: !inputFields.length ? '请先在 BOM 中定义输入字段' : '请先发布规则、决策表或包含可执行资产的规则包' })
+    if (!step || (!isDefault && !conditionFields.length)) {
+      setNotice({ error: true, text: !conditionFields.length ? '请先定义 BOM 输入字段或 Rule Project 变量' : '请先发布规则、决策表或包含可执行资产的规则包' })
       return
     }
-    const firstInput = inputFields[0]
     const branch: FlowBranchDraft = {
       id: crypto.randomUUID(), name: isDefault ? '默认路径' : `条件路径 ${gateway.branches.length + 1}`,
       default: isDefault,
-      condition: isDefault ? undefined : { field: firstInput?.key || '', operator: '==', value: '' },
+      condition: isDefault ? undefined : newGatewayCondition(firstConditionField),
       steps: [step],
     }
     updateGateway(gatewayIndex, current => ({ ...current, branches: [...current.branches, branch] }))
@@ -475,13 +505,12 @@ export default function FlowEditor({ detail, fields, busy, onSave, onCompile, on
     const step = newStep(detail.availableAssets, detail.availablePackages, availableFlows)
     if (!step) return
     const id = crypto.randomUUID()
-    const firstInput = inputFields[0]
     const usedBoundaries = new Set(gateways.map(gateway => gateway.afterStep))
     const afterStep = Array.from({ length: draft.steps.length + 1 }, (_, index) => draft.steps.length - index).find(boundary => !usedBoundaries.has(boundary))
     if (afterStep == null) return
     const gateway = {
       id, name: `排他网关 ${gateways.length + 1}`, afterStep,
-      branches: [{ id: crypto.randomUUID(), name: '条件路径 1', condition: { field: firstInput?.key || '', operator: '==', value: '' }, steps: [step] }],
+      branches: [{ id: crypto.randomUUID(), name: '条件路径 1', condition: newGatewayCondition(firstConditionField), steps: [step] }],
     }
     setDraft(current => ({ ...current, gateways: [...(current.gateways ?? []), gateway], editor: position ? { ...current.editor, positions: { ...(current.editor?.positions ?? {}), [id]: position } } : current.editor }))
     setSelectedNodeId(id)
@@ -504,13 +533,13 @@ export default function FlowEditor({ detail, fields, busy, onSave, onCompile, on
     setDraft(current => current.graph ? ({ ...current, graph: { ...current.graph, nodes: [...current.graph.nodes, { id, type: 'step', step: { ...step, nodeId: id }, next: 'end' }] } }) : current)
   }
   const addGraphGateway = () => {
-    if (!graph || !inputFields.length || graph.nodes.filter(node => node.type === 'gateway').length >= 8) return
+    if (!graph || !conditionFields.length || graph.nodes.filter(node => node.type === 'gateway').length >= 8) return
     const id = crypto.randomUUID()
     setDraft(current => current.graph ? ({
       ...current,
       graph: { ...current.graph, nodes: [...current.graph.nodes, {
         id, type: 'gateway', name: `排他网关 ${current.graph.nodes.filter(node => node.type === 'gateway').length + 1}`,
-        branches: [{ id: crypto.randomUUID(), name: '条件路径 1', condition: { field: inputFields[0].key, operator: '==', value: '' }, next: 'end' }],
+        branches: [{ id: crypto.randomUUID(), name: '条件路径 1', condition: newGatewayCondition(firstConditionField), next: 'end' }],
       }] },
     }) : current)
   }
@@ -747,8 +776,8 @@ export default function FlowEditor({ detail, fields, busy, onSave, onCompile, on
                   <button type="button" className="inline-flex size-6 items-center justify-center text-ink-3 hover:bg-[#ffebee] hover:text-[#c62828] disabled:opacity-30" disabled={selectedGateway.branches.length <= 1} onClick={() => deleteBranch(branchIndex)} title={selectedGateway.branches.length <= 1 ? '至少保留一个分支；如不需要请删除网关' : '删除分支'}><Trash2 size={12} /></button>
                 </div>
                 {branch.default ? <p className="text-[10px] text-ink-3">默认分支</p> : <>
-                  <select aria-label={`第 ${branchIndex + 1} 个分支条件字段`} className="control-input h-7 text-[10px]" value={branch.condition?.field ?? ''} onChange={event => updateBranch(branchIndex, current => ({ ...current, condition: { field: event.target.value, operator: current.condition?.operator || '==', value: '' } }))}>{inputFields.map(field => <option key={field.key} value={field.key}>{field.label}</option>)}</select>
-                  <div className="grid grid-cols-[105px_minmax(0,1fr)] gap-2"><select aria-label={`第 ${branchIndex + 1} 个分支运算符`} className="control-input h-7 text-[10px]" value={branch.condition?.operator ?? '=='} onChange={event => updateBranch(branchIndex, current => ({ ...current, condition: { field: current.condition?.field || inputFields[0]?.key || '', operator: event.target.value, value: current.condition?.value || '' } }))}>{operators.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><input aria-label={`第 ${branchIndex + 1} 个分支比较值`} className="control-input h-7 font-mono text-[10px]" value={branch.condition?.value ?? ''} onChange={event => updateBranch(branchIndex, current => ({ ...current, condition: { field: current.condition?.field || inputFields[0]?.key || '', operator: current.condition?.operator || '==', value: event.target.value } }))} placeholder="比较值" /></div>
+                  <GatewayConditionFieldSelect ariaLabel={`第 ${branchIndex + 1} 个分支条件字段`} className="control-input h-7 text-[10px]" condition={branch.condition} options={conditionFields} onChange={condition => updateBranch(branchIndex, current => ({ ...current, condition }))} />
+                  <div className="grid grid-cols-[105px_minmax(0,1fr)] gap-2"><select aria-label={`第 ${branchIndex + 1} 个分支运算符`} className="control-input h-7 text-[10px]" value={branch.condition?.operator ?? '=='} onChange={event => updateBranch(branchIndex, current => ({ ...current, condition: { ...(current.condition || newGatewayCondition(firstConditionField)), operator: event.target.value } }))}>{operators.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><input aria-label={`第 ${branchIndex + 1} 个分支比较值`} className="control-input h-7 font-mono text-[10px]" value={branch.condition?.value ?? ''} onChange={event => updateBranch(branchIndex, current => ({ ...current, condition: { ...(current.condition || newGatewayCondition(firstConditionField)), value: event.target.value } }))} placeholder="比较值" /></div>
                 </>}
               </div>)}
               <div className="flex gap-2 p-3"><button type="button" className="inline-flex h-7 items-center gap-1 bg-brand-primary px-2 text-[10px] text-white disabled:opacity-35" disabled={!canAddConditionalBranch} onClick={() => addBranch(false)}><Plus size={11} />条件分支</button><button type="button" className="inline-flex h-7 items-center gap-1 border border-ink-border bg-white px-2 text-[10px] text-ink-2 disabled:opacity-35" disabled={!canAddStep || selectedGateway.branches.some(branch => branch.default) || selectedGateway.branches.length >= 8} onClick={() => addBranch(true)}><Plus size={11} />默认分支</button></div>
@@ -778,6 +807,7 @@ export default function FlowEditor({ detail, fields, busy, onSave, onCompile, on
         packages={detail.availablePackages}
         subflows={availableFlows}
         fields={fields}
+        projectVariables={detail.projectVariables || []}
         canAddStep={canAddStep}
         onEntryChange={entry => setDraft(current => current.graph ? ({ ...current, graph: { ...current.graph, entry } }) : current)}
         onNodeChange={updateGraphNode}
@@ -817,16 +847,16 @@ export default function FlowEditor({ detail, fields, busy, onSave, onCompile, on
             <div className="grid grid-cols-[minmax(130px,0.8fr)_minmax(150px,1fr)_110px_minmax(120px,1fr)_28px] items-end gap-2 bg-[#fcfcfc] px-3 py-2 max-lg:grid-cols-2">
               <label className="text-[10px] font-semibold text-ink-3">分支名称<input className="control-input mt-1 h-8 text-xs" value={branch.name} onChange={event => updateGatewayBranch(gatewayIndex, branchIndex, current => ({ ...current, name: event.target.value }))} /></label>
               {branch.default ? <span className="self-center text-[11px] text-ink-3">未命中其他条件时执行</span> : <>
-                <label className="text-[10px] font-semibold text-ink-3">条件字段<select className="control-input mt-1 h-8 text-xs" value={branch.condition?.field ?? ''} onChange={event => updateGatewayBranch(gatewayIndex, branchIndex, current => ({ ...current, condition: { field: event.target.value, operator: current.condition?.operator || '==', value: '' } }))}>{inputFields.map(field => <option key={field.key} value={field.key}>{field.label}</option>)}</select></label>
-                <label className="text-[10px] font-semibold text-ink-3">运算符<select className="control-input mt-1 h-8 text-xs" value={branch.condition?.operator ?? '=='} onChange={event => updateGatewayBranch(gatewayIndex, branchIndex, current => ({ ...current, condition: { field: current.condition?.field || inputFields[0]?.key || '', operator: event.target.value, value: current.condition?.value || '' } }))}>{operators.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-                <label className="text-[10px] font-semibold text-ink-3">比较值<input className="control-input mt-1 h-8 font-mono text-xs" value={branch.condition?.value ?? ''} onChange={event => updateGatewayBranch(gatewayIndex, branchIndex, current => ({ ...current, condition: { field: current.condition?.field || inputFields[0]?.key || '', operator: current.condition?.operator || '==', value: event.target.value } }))} /></label>
+                <label className="text-[10px] font-semibold text-ink-3">条件字段<GatewayConditionFieldSelect className="control-input mt-1 h-8 text-xs" condition={branch.condition} options={conditionFields} onChange={condition => updateGatewayBranch(gatewayIndex, branchIndex, current => ({ ...current, condition }))} /></label>
+                <label className="text-[10px] font-semibold text-ink-3">运算符<select className="control-input mt-1 h-8 text-xs" value={branch.condition?.operator ?? '=='} onChange={event => updateGatewayBranch(gatewayIndex, branchIndex, current => ({ ...current, condition: { ...(current.condition || newGatewayCondition(firstConditionField)), operator: event.target.value } }))}>{operators.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+                <label className="text-[10px] font-semibold text-ink-3">比较值<input className="control-input mt-1 h-8 font-mono text-xs" value={branch.condition?.value ?? ''} onChange={event => updateGatewayBranch(gatewayIndex, branchIndex, current => ({ ...current, condition: { ...(current.condition || newGatewayCondition(firstConditionField)), value: event.target.value } }))} /></label>
               </>}
               <button type="button" className="mb-0.5 inline-flex size-7 items-center justify-center rounded-[2px] text-ink-3 hover:bg-[#ffebee] hover:text-[#c62828] disabled:opacity-30" disabled={gateway.branches.length <= 1} onClick={() => updateGateway(gatewayIndex, current => ({ ...current, branches: current.branches.filter((_, position) => position !== branchIndex) }))} title={gateway.branches.length <= 1 ? '至少保留一个分支；如不需要请删除网关' : '删除分支'}><Trash2 size={14} /></button>
             </div>
             <div className="flex items-center border-y border-[#e8e8e8] bg-white px-3 py-1.5"><span className="text-[10px] font-semibold text-ink-3">分支步骤</span><button type="button" className="ml-auto inline-flex h-6 items-center gap-1 rounded-[2px] px-2 text-[10px] text-brand-primary hover:bg-brand-primary-l disabled:opacity-40" disabled={!canAddStep} onClick={() => { const step = newStep(detail.availableAssets, detail.availablePackages, availableFlows); if (step) updateGatewayBranch(gatewayIndex, branchIndex, current => ({ ...current, steps: [...current.steps, step] })) }}><Plus size={12} />添加</button></div>
             {branch.steps.map((step, stepIndex) => <StepEditor key={step.nodeId} step={step} index={stepIndex} count={branch.steps.length} assets={detail.availableAssets} packages={detail.availablePackages} subflows={availableFlows} fields={fields} onChange={next => updateGatewayBranch(gatewayIndex, branchIndex, current => ({ ...current, steps: current.steps.map((item, position) => position === stepIndex ? next : item) }))} onDelete={() => updateGatewayBranch(gatewayIndex, branchIndex, current => ({ ...current, steps: current.steps.filter((_, position) => position !== stepIndex) }))} onMove={direction => updateGatewayBranch(gatewayIndex, branchIndex, current => ({ ...current, steps: moveStep(current.steps, stepIndex, direction) }))} />)}
           </div>)}
-          <div className="flex gap-2 bg-white px-3 py-2"><button type="button" className="inline-flex h-7 items-center gap-1 rounded-[2px] px-2 text-[11px] text-brand-primary hover:bg-brand-primary-l disabled:opacity-40" disabled={!canAddStep || !inputFields.length || gateway.branches.length >= 8} onClick={() => addBranchToGateway(gatewayIndex, false)}><Plus size={13} />条件分支</button><button type="button" className="inline-flex h-7 items-center gap-1 rounded-[2px] border border-ink-border bg-white px-2 text-[11px] text-ink-2 hover:bg-ink-bg disabled:opacity-40" disabled={!canAddStep || gateway.branches.some(branch => branch.default) || gateway.branches.length >= 8} onClick={() => addBranchToGateway(gatewayIndex, true)}><Plus size={13} />默认分支</button></div>
+          <div className="flex gap-2 bg-white px-3 py-2"><button type="button" className="inline-flex h-7 items-center gap-1 rounded-[2px] px-2 text-[11px] text-brand-primary hover:bg-brand-primary-l disabled:opacity-40" disabled={!canAddStep || !conditionFields.length || gateway.branches.length >= 8} onClick={() => addBranchToGateway(gatewayIndex, false)}><Plus size={13} />条件分支</button><button type="button" className="inline-flex h-7 items-center gap-1 rounded-[2px] border border-ink-border bg-white px-2 text-[11px] text-ink-2 hover:bg-ink-bg disabled:opacity-40" disabled={!canAddStep || gateway.branches.some(branch => branch.default) || gateway.branches.length >= 8} onClick={() => addBranchToGateway(gatewayIndex, true)}><Plus size={13} />默认分支</button></div>
         </div>)}
       </section>
       </>}

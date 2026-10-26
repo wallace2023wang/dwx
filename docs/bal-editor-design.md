@@ -69,7 +69,7 @@
 
 * **固定值**：字面量（数字 / 字符串 /true/false/ 日期 / 枚举值）
 
-* **业务字段**：同一规则输入中的另一个业务字段。只能选择 input 方向、与左字段业务类型完全相同且不是左字段自身的字段。例如“氮气浓度 >= 最小氮气浓度”。
+* **业务字段**：同一规则输入中的另一个业务字段。只能选择 input 方向、与左字段业务类型完全相同且不是左字段自身的字段。例如“温度 >= 最低温度”。
 
 值区域使用“固定值 / 业务字段”分段切换。选择业务字段后，下拉项显示“事实类型 · 字段名”，候选项由 BOM 自动过滤；没有兼容字段时禁用业务字段模式。
 
@@ -344,7 +344,7 @@ BOM（已有 `/api/projects/:id/bom`）：
 
 &#x20;     {"factType": "Borrower", "field": "age", "operator": "<", "value": "18"},
 
-&#x20;     {"factType": "NitrogenControlInput", "field": "nitrogenPct", "operator": ">=", "valueSource": "field", "valueField": "minPct", "value": ""}
+&#x20;     {"factType": "ProcessControlInput", "field": "gasPct", "operator": ">=", "valueSource": "field", "valueField": "minPct", "value": ""}
 
 &#x20;   ]
 
@@ -417,13 +417,13 @@ DRL 文本
 同类型字段比较：
 
 ```
-{"field":"nitrogenPct","operator":">=","valueSource":"field","valueField":"minPct","value":""}
+{"field":"gasPct","operator":">=","valueSource":"field","valueField":"minPct","value":""}
 ```
 
 →
 
 ```
-$input : RuleInput( nitrogenPct >= minPct )
+$input : RuleInput( gasPct >= minPct )
 ```
 
 字段操作数直接生成字段标识符，不按字符串字面量加引号。后端在生成 DRL 前再次校验右侧字段存在、为 input、类型一致且不是自身。
@@ -500,7 +500,7 @@ then
 
 * [ ] 业务字段下拉只列出同类型 input 字段，且排除左字段自身
 
-* [ ] `nitrogenPct >= minPct` 以结构化 JSON 保存并生成不带引号的 DRL
+* [ ] `gasPct >= minPct` 以结构化 JSON 保存并生成不带引号的 DRL
 
 * [ ] 数字/日期介于、日期早于/晚于可保存并通过 Drools 编译
 

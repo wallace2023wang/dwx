@@ -14,7 +14,7 @@
 
 DWX 复刻 传统商业规则平台 的产品线中，CEP（复杂事件处理）作为第二引擎（Esper 8.8.0）与 Drools 规则引擎并行。CEP 项目资产链路为：**BOM（eventTypes）→ EventStream（EPL 语句）→ 编译验证 → 测试套件 → Release → 部署（CEP Runtime）→ execute**。
 
-本文档源自 "粮库自动充氮控制" 客户 demo 的路径 B 落地验证：在现有产品内用 **BOM + Esper 规则**组织 "充氮 / 环流 / 保氮 / 补氮" 状态迁移逻辑。验证过程中发现：**现有 EventStream 编译链路不支持时间驱动类语句（**`timer:interval`**&#x20;/&#x20;**`pattern`**）**，导致 "环流满 4 小时 → 保氮" 这类**纯时间条件**无法在引擎内表达。该缺口非自动充氮个性化需求，而是**所有周期巡检、时序检测、定时采样类 CEP 规则的通用前置能力**。
+本文档源自 "周期性工艺控制" 客户 demo 的路径 B 落地验证：在现有产品内用 **BOM + Esper 规则**组织 "进料 / 循环 / 保压 / 补料" 状态迁移逻辑。验证过程中发现：**现有 EventStream 编译链路不支持时间驱动类语句（**`timer:interval`**&#x20;/&#x20;**`pattern`**）**，导致 "循环满 4 小时 → 保压" 这类**纯时间条件**无法在引擎内表达。该缺口非工艺控制个性化需求，而是**所有周期巡检、时序检测、定时采样类 CEP 规则的通用前置能力**。
 
 ## 二、验证结论（已实证）
 
@@ -24,13 +24,13 @@ DWX 复刻 传统商业规则平台 的产品线中，CEP（复杂事件处理�
 
 | 环节          | 资产                                                                                                                                                                                         | 结果                  |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------- |
-| CEP 项目      | `project-7c12c971` 粮库自动充氮控制（engine=cep）                                                                                                                                                    | ✓ 创建成功              |
-| BOM v2      | `NitrogenReading` 事件（eventId/warehouseId/sensorId/readingTime/nitrogenPct/oxygenPct/temperature）+ `NitrogenPhase` 输出类型（phase 枚举 FILLING/CIRCULATION/HOLDING/REPLENISHING/PAUSED/COMPLETED） | ✓ 写入成功              |
-| EventStream | `63461191-b9c2-4c8c-a5af-6477a94f59ff` 自动充氮状态迁移规则（draft→published v1）                                                                                                                      | ✓ 发布成功              |
+| CEP 项目      | `project-7c12c971` 周期性工艺控制（engine=cep）                                                                                                                                                    | ✓ 创建成功              |
+| BOM v2      | `ProcessReading` 事件（eventId/deviceId/sensorId/readingTime/gasPct/oxygenPct/temperature）+ `ProcessPhase` 输出类型（phase 枚举 FILLING/CIRCULATION/HOLDING/REPLENISHING/PAUSED/COMPLETED） | ✓ 写入成功              |
+| EventStream | `63461191-b9c2-4c8c-a5af-6477a94f59ff` 工艺控制状态迁移规则（draft→published v1）                                                                                                                      | ✓ 发布成功              |
 | Release     | `a767dd77-d3cc-4a93-a387-ff0e2fdc8e04` v1.0.0（engine=esper 8.8.0）                                                                                                                          | ✓ 创建并部署 CEP Runtime |
-| 真实执行        | 注入浓度 96 → `NitrogenPhaseEvent {phase: CIRCULATION}`；注入浓度 88 → `NitrogenPhaseEvent {phase: REPLENISHING}`                                                                                   | ✓ 两条迁移语句命中          |
+| 真实执行        | 注入浓度 96 → `ProcessPhaseEvent {phase: CIRCULATION}`；注入浓度 88 → `ProcessPhaseEvent {phase: REPLENISHING}`                                                                                   | ✓ 两条迁移语句命中          |
 
-**结论：路径 B 主体可行**—— 充氮→环流（≥95%）、保氮→补氮（<90%）的阈值迁移逻辑已完全由平台治理并可执行输出。
+**结论：路径 B 主体可行**—— 进料→循环（≥95%）、保压→补料（<90%）的阈值迁移逻辑已完全由平台治理并可执行输出。
 
 ## 三、能力缺口与需求
 
@@ -43,17 +43,17 @@ DWX 复刻 传统商业规则平台 的产品线中，CEP（复杂事件处理�
 
 
 ```
-insert into NitrogenPhaseEvent
+insert into ProcessPhaseEvent
 select 'HOLDING' as phase, a.warehouseId as warehouseId
 
-from pattern\[every (a=NitrogenPhaseEvent(phase='CIRCULATION') -> timer:interval(4 hours))]
+from pattern\[every (a=ProcessPhaseEvent(phase='CIRCULATION') -> timer:interval(4 hours))]
 ```
 
 **影响范围（通用，非个性化）**：
 
 
 
-1. 自动充氮 "环流满 4 小时 → 保氮"（纯时间条件）
+1. 工艺控制 "循环满 4 小时 → 保压"（纯时间条件）
 
 2. CEP 周期巡检 / 定时采样（`every timer:interval(1 minute)` 关联最新事件做周期判定）
 
@@ -114,7 +114,7 @@ Esper 无原生 "暂停实例" 语义。决策计划实例（plan）绑定 Relea
 
 1. 缺口 A 已作为 **CEP 引擎通用能力**落地（与 Visual EPL Builder 模板验证合并：先让 pattern/timer 模板在真实 Esper 过编译，再开放 UI）
 
-2. 自动充氮 demo：先用现有能力闭环（阈值迁移由引擎输出，环流→保氮由 demo 前端定时模拟，文档标注 "待缺口 A 落地后迁移到引擎"）
+2. 工艺控制 demo：先用现有能力闭环（阈值迁移由引擎输出，环流→保压由 demo 前端定时模拟，文档标注 "待缺口 A 落地后迁移到引擎"）
 
 3. 缺口 B 随 EventStream 输出协议演进；缺口 C 归 v2
 
@@ -124,24 +124,24 @@ Esper 无原生 "暂停实例" 语义。决策计划实例（plan）绑定 Relea
 
 * 已实证：BOM/EventStream/Release/ 部署 / 执行全链路，真实输出见上文表格
 
-* 已实证：pattern/timer 语句的 Esper 真实编译与执行语义；`a=NitrogenPhaseEvent -> timer:interval(1 seconds)` 在真实 `/test` 中可输出 `HOLDING`；部署级 listener 可在 `/events` 请求结束后继续捕获 timer 输出并通过 webhook 推送
+* 已实证：pattern/timer 语句的 Esper 真实编译与执行语义；`a=ProcessPhaseEvent -> timer:interval(1 seconds)` 在真实 `/test` 中可输出 `HOLDING`；部署级 listener 可在 `/events` 请求结束后继续捕获 timer 输出并通过 webhook 推送
 
-* 已归档（可启用）：`N2CirculationToHolding` 语句草案（见下）
+* 已归档（可启用）：`CycleTimeoutToHolding` 语句草案（见下）
 
 
 
 ```
-\-- 环流满 4 小时 → 保氮（待缺口 A 支持后启用）
+\-- 循环满 4 小时 → 保压（待缺口 A 支持后启用）
 
-insert into NitrogenPhaseEvent
+insert into ProcessPhaseEvent
 select a.warehouseId as warehouseId, 'HOLDING' as phase
 
 from pattern\[
   every (
-    a=NitrogenPhaseEvent(phase='CIRCULATION')
+    a=ProcessPhaseEvent(phase='CIRCULATION')
     -> (
       timer:interval(4 hours)
-      and not NitrogenPhaseEvent(warehouseId = a.warehouseId, phase != 'CIRCULATION')
+      and not ProcessPhaseEvent(warehouseId = a.warehouseId, phase != 'CIRCULATION')
     )
   )
 ]

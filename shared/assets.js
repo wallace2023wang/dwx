@@ -436,6 +436,8 @@ function atomicCandidates(columnConstraints) {
 }
 
 const ANALYSIS_NODE_LIMIT = 200000;
+export const MAX_DECISION_TABLE_ROWS = 10000;
+const EXACT_TABLE_ANALYSIS_ROW_LIMIT = 500;
 
 function findUncoveredWitness(allConstraints, targetIndex, blockerIndexes) {
   const candidates = allConstraints[0].map((_, column) => atomicCandidates(allConstraints.map(row => row[column])));
@@ -571,7 +573,9 @@ export function validateTable(table, bom = DEFAULT_BOM, declaredVariables = []) 
     if (!field || field.kind !== 'output' || actionKeys.has(`${column?.fieldSource || 'bom'}:${field.key}`)) return { error: '结果列字段重复或无效', warnings: [] };
     actionKeys.add(`${column?.fieldSource || 'bom'}:${field.key}`);
   }
-  if (!Array.isArray(table.rows) || table.rows.length < 1 || table.rows.length > 200) return { error: '决策表需要 1–200 行', warnings: [] };
+  if (!Array.isArray(table.rows) || table.rows.length < 1 || table.rows.length > MAX_DECISION_TABLE_ROWS) {
+    return { error: `决策表需要 1–${MAX_DECISION_TABLE_ROWS} 行`, warnings: [] };
+  }
 
   const warnings = [];
   if (table.defaultRow != null && (!Number.isInteger(table.defaultRow) || table.defaultRow < 0 || table.defaultRow >= table.rows.length)) {
@@ -628,10 +632,14 @@ export function validateTable(table, bom = DEFAULT_BOM, declaredVariables = []) 
   if (defaultCount > 1) return { error: '一个决策表最多一个默认行', warnings: [] };
   if (defaultCount === 1 && activeRows.length === 0) warnings.push('默认行存在但没有任何显式启用行，将作为全量兜底规则触发');
 
-  // 冲突检测
-  const { errors, warnings: conflicts } = analyzeTable(table, activeRows, inputs, outputs, bom, variables);
-  if (errors.length) return { error: errors[0], warnings: conflicts };
-  warnings.push(...conflicts);
+  // 精确冲突分析是二次方复杂度；大型表完成逐行类型校验后交由离线分析任务处理。
+  if (activeRows.length <= EXACT_TABLE_ANALYSIS_ROW_LIMIT) {
+    const { errors, warnings: conflicts } = analyzeTable(table, activeRows, inputs, outputs, bom, variables);
+    if (errors.length) return { error: errors[0], warnings: conflicts };
+    warnings.push(...conflicts);
+  } else {
+    warnings.push(`启用行超过 ${EXACT_TABLE_ANALYSIS_ROW_LIMIT}，已跳过同步重叠、不可达和缺口分析；请运行离线完整分析`);
+  }
 
   if (!activeRows.length && !defaultCount) return { error: '至少启用一行', warnings: [] };
   return { error: null, warnings };
@@ -776,9 +784,18 @@ function flowConditionValue(field, raw) {
   return text;
 }
 
-function flowConditionMatches(condition, facts) {
-  if (!condition || facts[condition.field] == null) return false;
-  const actual = facts[condition.field];
+function flowConditionField(condition, bom, variables) {
+  if (condition?.fieldSource === 'variable') {
+    const variable = findRuleSetVariable(variables, condition.field);
+    return variable ? variableField(variable) : null;
+  }
+  return findField(bom, condition?.field);
+}
+
+function flowConditionMatches(condition, facts, variables) {
+  const values = condition?.fieldSource === 'variable' ? variables : facts;
+  if (!condition || values?.[condition.field] == null) return false;
+  const actual = values[condition.field];
   const expected = condition.value;
   if (condition.operator === '==') return actual === expected;
   if (condition.operator === '!=') return actual !== expected;
@@ -789,9 +806,9 @@ function flowConditionMatches(condition, facts) {
   return false;
 }
 
-export function selectFlowBranch(branches = [], facts = {}) {
+export function selectFlowBranch(branches = [], facts = {}, variables = {}) {
   const fallback = branches.find(branch => branch.default);
-  return branches.find(branch => !branch.default && flowConditionMatches(branch.condition, facts)) || fallback || null;
+  return branches.find(branch => !branch.default && flowConditionMatches(branch.condition, facts, variables)) || fallback || null;
 }
 
 function validateStepMappings(step, bom, label) {
@@ -1041,6 +1058,12 @@ export function validateFlow(flow, rules, tables, bom = DEFAULT_BOM, packages = 
     const collection = step?.type === 'rule' ? rules : step?.type === 'table' ? tables : null;
     return collection?.some(asset => asset.id === step.id && !asset.archived && asset.lifecycleStatus !== 'deprecated' && asset.published) ? null : `${label}引用的资产不存在或未发布（也可能已停用）`;
   };
+  let variables;
+  try {
+    variables = resolveFlowVariables(flow, rules, tables, bom, packages, options.projectVariables);
+  } catch (error) {
+    return error.message;
+  }
   if (isFlowGraph(flow)) {
     const nodes = flowGraphNodes(flow);
     if (!nodes.length || nodes.length > 36) return '规则集图需包含 1–36 个节点';
@@ -1074,7 +1097,7 @@ export function validateFlow(flow, rules, tables, bom = DEFAULT_BOM, packages = 
           if (branch.default === true) defaults++;
           else {
             conditions++;
-            const field = findField(bom, branch.condition?.field);
+            const field = flowConditionField(branch.condition, bom, variables);
             if (!field || !operators.some(operator => operator.key === branch.condition?.operator)) return `分支“${branch.name}”的条件字段或运算符无效`;
             if (field.type === 'Boolean' && !['==', '!='].includes(branch.condition.operator)) return `分支“${branch.name}”的布尔条件只支持等于或不等于`;
             try { flowConditionValue(field, branch.condition.value); }
@@ -1200,7 +1223,7 @@ export function validateFlow(flow, rules, tables, bom = DEFAULT_BOM, packages = 
       else {
         conditionalCount++;
         const condition = branch.condition;
-        const field = findField(bom, condition?.field);
+        const field = flowConditionField(condition, bom, variables);
         if (!field || !operators.some(operator => operator.key === condition?.operator)) return `分支“${branch.name}”的条件字段或运算符无效`;
         if (field.type === 'Boolean' && !['==', '!='].includes(condition.operator)) return `分支“${branch.name}”的布尔条件只支持等于或不等于`;
         try { flowConditionValue(field, condition.value); }
@@ -1231,11 +1254,6 @@ export function validateFlow(flow, rules, tables, bom = DEFAULT_BOM, packages = 
   }
   const subflowError = validateSubflowDependency(flow, options.currentFlowId, options.flows || [], bom, options.projectVariables);
   if (subflowError) return subflowError;
-  try {
-    resolveFlowVariables(flow, rules, tables, bom, packages, options.projectVariables);
-  } catch (error) {
-    return error.message;
-  }
   return null;
 }
 
@@ -1430,13 +1448,14 @@ export function flowSnapshot(flow, rules, tables, bom = DEFAULT_BOM, packages = 
               type: 'gateway',
               name: node.name,
               branches: node.branches.map(branch => {
-                const field = branch.default ? null : findField(bom, branch.condition.field);
+                const field = branch.default ? null : flowConditionField(branch.condition, bom, variables);
                 return {
                   id: branch.id,
                   name: branch.name,
                   default: branch.default === true,
                   condition: branch.default ? null : {
                     field: branch.condition.field,
+                    ...(branch.condition.fieldSource === 'variable' ? { fieldSource: 'variable' } : {}),
                     operator: branch.condition.operator,
                     value: flowConditionValue(field, branch.condition.value),
                   },
@@ -1453,13 +1472,14 @@ export function flowSnapshot(flow, rules, tables, bom = DEFAULT_BOM, packages = 
     name: gateway.name || '排他网关',
     afterStep: gateway.afterStep,
     branches: gateway.branches.map(branch => {
-      const field = branch.default ? null : findField(bom, branch.condition.field);
+      const field = branch.default ? null : flowConditionField(branch.condition, bom, variables);
       return {
         id: branch.id,
         name: branch.name,
         default: branch.default === true,
         condition: branch.default ? null : {
           field: branch.condition.field,
+          ...(branch.condition.fieldSource === 'variable' ? { fieldSource: 'variable' } : {}),
           operator: branch.condition.operator,
           value: flowConditionValue(field, branch.condition.value),
         },

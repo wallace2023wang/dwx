@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { buildRelease, validateReleaseRequest } from '../../shared/releases.js';
 import { validateEventPayloads } from '../../shared/event-streams.js';
 import { domainErrorResult } from '../../shared/errors.js';
+import { activeDeploymentFor, appendDeploymentEvent, deploymentFor as ledgerDeploymentFor } from '../../shared/deployments.js';
 import { bodyOf, operationError, reply } from '../http-utils.js';
 
 function normalizeProjectEngine(value) {
@@ -15,7 +16,7 @@ function deploymentFor(release, environment = DEFAULT_ENVIRONMENT) {
 }
 
 function isLiveDeployment(deployment) {
-  return Boolean(deployment && deployment.status !== 'stopped');
+  return Boolean(deployment && !['stopped', 'failed'].includes(deployment.status));
 }
 
 function compareReleaseVersion(left, right) {
@@ -65,20 +66,6 @@ function presentReleases(releases) {
   }));
 }
 
-function setActiveRelease(releases, release, environment, actor) {
-  const now = new Date().toISOString();
-  for (const candidate of releases) {
-    if (candidate.decisionService !== release.decisionService) continue;
-    const deployment = deploymentFor(candidate, environment);
-    if (!isLiveDeployment(deployment)) continue;
-    deployment.status = candidate.id === release.id ? 'active' : 'deployed';
-    if (candidate.id === release.id) {
-      deployment.activatedAt = now;
-      deployment.activatedBy = actor;
-    }
-  }
-}
-
 async function activateExecutionRelease(executionServer, release, project) {
   if (normalizeProjectEngine(project.engine) !== 'rules') return { result: { ok: true } };
   return executionServer('/activate', { releaseId: release.id, decisionService: release.decisionService }, project);
@@ -108,6 +95,8 @@ export function createReleaseHandler({
   readProjectRecord,
   readReleases,
   mutateReleases,
+  readDeployments,
+  mutateDeployments,
   readRules,
   readAssets,
   writeAssets,
@@ -131,7 +120,7 @@ export function createReleaseHandler({
         if (projectId !== 'default' && typeof request?.decisionService === 'string') {
           if (!request.decisionService.includes('/')) request.decisionService = `${projectId}/${request.decisionService}`;
           else if (!request.decisionService.startsWith(`${projectId}/`)) {
-            return reply(res, 400, { error: `决策服务标识必须属于当前项目，例如 ${projectId}/grain-alarm` });
+            return reply(res, 400, { error: `决策服务标识必须属于当前项目，例如 ${projectId}/demo-alarm` });
           }
         }
         if (projectScoped) {
@@ -187,7 +176,7 @@ export function createReleaseHandler({
             })),
           };
           if (!gate.passed) return { status: 409, error: '发布门禁未通过', gate, reports, failedCases: failedGateCases(reports) };
-          const stored = { ...release, deployments: [], qualityGate: gate };
+          const stored = { ...release, qualityGate: gate };
           releases.unshift(stored);
           return { item: stored, changed: true };
         }, projectId);
@@ -195,7 +184,7 @@ export function createReleaseHandler({
         await appendAuditEvent('release.created', 'release', result.item.id, `创建 Release：${result.item.name}`, {
           decisionService: result.item.decisionService, version: result.item.version, checksum: result.item.checksum,
         }, req);
-        return reply(res, 201, { ...result.item, latestForDecisionService: true, rollbackAvailable: false });
+        return reply(res, 201, { ...result.item, deployments: [], latestForDecisionService: true, rollbackAvailable: false });
       }
     }
     if (segments[1] === 'services' && segments.length === 4 && segments[3] === 'execute' && req.method === 'POST') {
@@ -229,77 +218,107 @@ export function createReleaseHandler({
     if (action === 'deploy') {
       const params = await bodyOf(req);
       if ((params.environment || 'local') !== 'local') return reply(res, 400, { error: '当前版本只支持 local 环境' });
-      const result = await mutateReleases(async releases => {
-        const release = releases.find(item => item.id === id);
-        if (!release) return { status: 404, error: '发布包不存在' };
-        const deployed = await executionServer('/deploy', release, project);
-        if (deployed.error) return deployed;
+      const release = (await readReleases(projectId)).find(item => item.id === id);
+      if (!release) return reply(res, 404, { error: '发布包不存在' });
+      const deployed = await executionServer('/deploy', release, project);
+      if (deployed.error) return reply(res, deployed.status, operationError(deployed));
+      const result = await mutateDeployments(async deployments => {
         const receipt = {
           id: deployed.result.deploymentId,
-          environment: 'local',
-          deployedAt: deployed.result.deployedAt,
+          releaseId: release.id,
+          decisionService: release.decisionService,
+          environmentId: 'local',
+          createdAt: deployed.result.deployedAt,
+          updatedAt: deployed.result.deployedAt,
           checksum: deployed.result.checksum,
           modelVersion: deployed.result.modelVersion ?? release.model?.version ?? null,
           engine: deployed.result.engine || release.engine?.type,
           engineVersion: deployed.result.engineVersion || release.engine?.esper || release.engine?.drools,
+          events: [],
         };
-        const existing = release.deployments.find(item => item.id === receipt.id);
-        const currentActive = activeReleaseFor(releases, release.decisionService, receipt.environment);
-        receipt.status = currentActive && currentActive.id !== release.id ? 'deployed' : 'active';
+        const existing = deployments.find(item => item.id === receipt.id);
+        const currentActive = activeDeploymentFor(deployments, release.decisionService, receipt.environmentId);
+        receipt.status = currentActive && currentActive.releaseId !== release.id ? 'ready' : 'active';
         if (receipt.status === 'active') {
-          receipt.activatedAt = receipt.deployedAt;
+          receipt.activatedAt = receipt.createdAt;
           receipt.activatedBy = actorOf(req);
         }
         if (existing) {
-          Object.assign(existing, receipt);
+          const events = existing.events || [];
+          Object.assign(existing, receipt, { events });
           delete existing.stoppedAt;
           delete existing.stoppedBy;
-        } else release.deployments.push(receipt);
-        if (receipt.status === 'active') setActiveRelease(releases, release, receipt.environment, actorOf(req));
-        return { item: release, changed: true };
+          appendDeploymentEvent(existing, 'ready', actorOf(req), { redeployed: true }, receipt.createdAt);
+        } else {
+          deployments.push(receipt);
+          appendDeploymentEvent(receipt, 'created', actorOf(req), {}, receipt.createdAt);
+          appendDeploymentEvent(receipt, 'ready', actorOf(req), {}, receipt.createdAt);
+        }
+        if (receipt.status === 'active') appendDeploymentEvent(existing || receipt, 'activated', actorOf(req), { automatic: true }, receipt.createdAt);
+        return { item: existing || receipt, changed: true };
       }, projectId);
       if (result.error) return reply(res, result.status, operationError(result));
-      await appendAuditEvent('release.deployed', 'release', id, `部署 Release：${result.item.name}`, {
-        environment: 'local', deploymentId: result.item.deployments.at(-1)?.id,
+      await appendAuditEvent('release.deployed', 'release', id, `部署 Release：${release.name}`, {
+        environment: 'local', deploymentId: result.item.id,
       }, req);
-      return reply(res, 200, presentReleases(await readReleases(projectId)).find(release => release.id === result.item.id));
+      return reply(res, 200, presentReleases(await readReleases(projectId)).find(item => item.id === release.id));
     }
     if (action === 'activate') {
       const params = await bodyOf(req);
       const environment = params.environment || DEFAULT_ENVIRONMENT;
       if (environment !== DEFAULT_ENVIRONMENT) return reply(res, 400, { error: '当前版本只支持 local 环境' });
-      const result = await mutateReleases(async releases => {
-        const release = releases.find(item => item.id === id);
-        if (!release) return { status: 404, error: '发布包不存在' };
-        if (!isLiveDeployment(deploymentFor(release, environment))) return { status: 409, error: '发布包尚未部署或已停用' };
+      const release = (await readReleases(projectId)).find(item => item.id === id);
+      if (!release) return reply(res, 404, { error: '发布包不存在' });
+      const result = await mutateDeployments(async deployments => {
+        const deployment = ledgerDeploymentFor(deployments, release.id, environment);
+        if (!deployment || !isLiveDeployment({ status: deployment.status })) return { status: 409, error: '发布包尚未部署或已停用' };
         const activated = await activateExecutionRelease(executionServer, release, project);
         if (activated.error) return activated;
-        setActiveRelease(releases, release, environment, actorOf(req));
-        return { item: release, changed: true };
+        const now = activated.result?.activatedAt || new Date().toISOString();
+        for (const candidate of deployments) {
+          if (candidate.decisionService !== release.decisionService || candidate.environmentId !== environment || candidate.status !== 'active') continue;
+          candidate.status = 'ready';
+          appendDeploymentEvent(candidate, 'deactivated', actorOf(req), { activatedDeploymentId: deployment.id }, now);
+        }
+        deployment.status = 'active';
+        deployment.activatedAt = now;
+        deployment.activatedBy = actorOf(req);
+        appendDeploymentEvent(deployment, 'activated', actorOf(req), {}, now);
+        return { item: deployment, changed: true };
       }, projectId);
       if (result.error) return reply(res, result.status, { error: result.error });
-      await appendAuditEvent('release.activated', 'release', id, `激活 Release：${result.item.name}`, { environment }, req);
-      return reply(res, 200, presentReleases(await readReleases(projectId)).find(release => release.id === id));
+      await appendAuditEvent('release.activated', 'release', id, `激活 Release：${release.name}`, { environment }, req);
+      return reply(res, 200, presentReleases(await readReleases(projectId)).find(item => item.id === id));
     }
     if (action === 'rollback') {
       const params = await bodyOf(req);
       const environment = params.environment || DEFAULT_ENVIRONMENT;
       if (environment !== DEFAULT_ENVIRONMENT) return reply(res, 400, { error: '当前版本只支持 local 环境' });
-      const result = await mutateReleases(async releases => {
-        const release = releases.find(item => item.id === id);
-        if (!release) return { status: 404, error: '发布包不存在' };
-        const active = activeReleaseFor(releases, release.decisionService, environment);
-        if (!active || active.id !== release.id) return { status: 409, error: '只有当前生效版本可以执行回退' };
-        const target = releases
+      const releases = await readReleases(projectId);
+      const release = releases.find(item => item.id === id);
+      if (!release) return reply(res, 404, { error: '发布包不存在' });
+      const deployments = await readDeployments(projectId);
+      const active = activeDeploymentFor(deployments, release.decisionService, environment);
+      if (!active || active.releaseId !== release.id) return reply(res, 409, { error: '只有当前生效版本可以执行回退' });
+      const target = releases
           .filter(candidate => candidate.decisionService === release.decisionService
             && candidate.id !== release.id
-            && isLiveDeployment(deploymentFor(candidate, environment))
+            && ledgerDeploymentFor(deployments, candidate.id, environment)?.status === 'ready'
             && (Number(candidate.version) || 0) < (Number(release.version) || 0))
           .sort(compareReleaseVersion)[0];
-        if (!target) return { status: 409, error: '没有可回退的已部署历史版本' };
+      if (!target) return reply(res, 409, { error: '没有可回退的已部署历史版本' });
+      const result = await mutateDeployments(async currentDeployments => {
         const activated = await activateExecutionRelease(executionServer, target, project);
         if (activated.error) return activated;
-        setActiveRelease(releases, target, environment, actorOf(req));
+        const now = activated.result?.activatedAt || new Date().toISOString();
+        const previous = ledgerDeploymentFor(currentDeployments, release.id, environment);
+        const next = ledgerDeploymentFor(currentDeployments, target.id, environment);
+        previous.status = 'ready';
+        appendDeploymentEvent(previous, 'deactivated', actorOf(req), { rollbackToDeploymentId: next.id }, now);
+        next.status = 'active';
+        next.activatedAt = now;
+        next.activatedBy = actorOf(req);
+        appendDeploymentEvent(next, 'activated', actorOf(req), { rollbackFromDeploymentId: previous.id }, now);
         return { item: target, previous: release, changed: true };
       }, projectId);
       if (result.error) return reply(res, result.status, { error: result.error });
@@ -312,12 +331,12 @@ export function createReleaseHandler({
       const params = await bodyOf(req);
       const environment = params.environment || DEFAULT_ENVIRONMENT;
       if (environment !== DEFAULT_ENVIRONMENT) return reply(res, 400, { error: '当前版本只支持 local 环境' });
-      const result = await mutateReleases(async releases => {
-        const release = releases.find(item => item.id === id);
-        if (!release) return { status: 404, error: '发布包不存在' };
-        const deployment = deploymentFor(release, environment);
-        if (!isLiveDeployment(deployment)) return { status: 409, error: '发布包尚未部署或已经停用' };
-        if (activeReleaseFor(releases, release.decisionService, environment)?.id === release.id) {
+      const release = (await readReleases(projectId)).find(item => item.id === id);
+      if (!release) return reply(res, 404, { error: '发布包不存在' });
+      const result = await mutateDeployments(async deployments => {
+        const deployment = ledgerDeploymentFor(deployments, release.id, environment);
+        if (!deployment || !isLiveDeployment({ status: deployment.status })) return { status: 409, error: '发布包尚未部署或已经停用' };
+        if (activeDeploymentFor(deployments, release.decisionService, environment)?.releaseId === release.id) {
           return { status: 409, error: '当前生效版本不能直接卸载，请先激活其他版本或执行回退' };
         }
         const stopped = await executionServer('/undeploy', { releaseId: release.id }, project);
@@ -325,10 +344,11 @@ export function createReleaseHandler({
         deployment.status = 'stopped';
         deployment.stoppedAt = stopped.result.stoppedAt || new Date().toISOString();
         deployment.stoppedBy = actorOf(req);
-        return { item: release, changed: true };
+        appendDeploymentEvent(deployment, 'stopped', actorOf(req), {}, deployment.stoppedAt);
+        return { item: deployment, changed: true };
       }, projectId);
       if (result.error) return reply(res, result.status, operationError(result));
-      await appendAuditEvent('release.undeployed', 'release', id, `卸载 Release：${result.item.name}`, { environment }, req);
+      await appendAuditEvent('release.undeployed', 'release', id, `卸载 Release：${release.name}`, { environment }, req);
       return reply(res, 200, presentReleases(await readReleases(projectId)).find(release => release.id === id));
     }
     if (action === 'execute') {

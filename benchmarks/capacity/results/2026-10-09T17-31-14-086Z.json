@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-09T17:31:14.087Z",
+  "sizes": [
+    1000
+  ],
+  "quick": true,
+  "environment": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "node": "v26.8.1",
+    "cpus": 10,
+    "memoryBytes": 25769803776
+  },
+  "status": "completed-with-failures",
+  "tiers": [
+    {
+      "size": 1000,
+      "status": "failed",
+      "validation": {
+        "error": null,
+        "warnings": [
+          "启用行超过 500，已跳过同步重叠、不可达和缺口分析；请运行离线完整分析"
+        ],
+        "durationMs": 1.6270000000004075
+      },
+      "generation": {
+        "tableGenerationMs": 4.916250000002037,
+        "tableDrlBytes": 251088,
+        "ruleGroupGenerationMs": 2.609041999996407,
+        "ruleGroupDrlBytes": 181192
+      },
+      "error": "Error: browserType.launch: Executable doesn't exist at /Users/wallace/Library/Caches/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-mac-arm64/chrome-headless-shell\n╔════════════════════════════════════════════════════════════╗\n║ Looks like Playwright was just installed or updated.       ║\n║ Please run the following command to download new browsers: ║\n║                                                            ║\n║     npx playwright install                                 ║\n║                                                            ║\n║ <3 Playwright Team                                         ║\n╚════════════════════════════════════════════════════════════╝\nTeam Server:\nRules API: http://127.0.0.1:62365 (json, BOM v1, 8 fields)\n\n    at benchmarkControlPlane (file:///Users/wallace/project/rules/benchmarks/capacity/run.mjs:246:11)\n    at async main (file:///Users/wallace/project/rules/benchmarks/capacity/run.mjs:476:29)"
+    }
+  ],
+  "acceptance": [
+    {
+      "label": "1,000 资产 API P95 < 500ms",
+      "passed": false,
+      "detail": "Error: browserType.launch: Executable doesn't exist at /Users/wallace/Library/Caches/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-mac-arm64/chrome-headless-shell\n╔════════════════════════════════════════════════════════════╗\n║ Looks like Playwright was just installed or updated.       ║\n║ Please run the following command to download new browsers: ║\n║                                                            ║\n║     npx playwright install                                 ║\n║                                                            ║\n║ <3 Playwright Team                                         ║\n╚════════════════════════════════════════════════════════════╝\nTeam Server:\nRules API: http://127.0.0.1:62365 (json, BOM v1, 8 fields)\n\n    at benchmarkControlPlane (file:///Users/wallace/project/rules/benchmarks/capacity/run.mjs:246:11)\n    at async main (file:///Users/wallace/project/rules/benchmarks/capacity/run.mjs:476:29)"
+    },
+    {
+      "label": "1,000 普通搜索交互 < 300ms",
+      "passed": false,
+      "detail": "Error: browserType.launch: Executable doesn't exist at /Users/wallace/Library/Caches/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-mac-arm64/chrome-headless-shell\n╔════════════════════════════════════════════════════════════╗\n║ Looks like Playwright was just installed or updated.       ║\n║ Please run the following command to download new browsers: ║\n║                                                            ║\n║     npx playwright install                                 ║\n║                                                            ║\n║ <3 Playwright Team                                         ║\n╚════════════════════════════════════════════════════════════╝\nTeam Server:\nRules API: http://127.0.0.1:62365 (json, BOM v1, 8 fields)\n\n    at benchmarkControlPlane (file:///Users/wallace/project/rules/benchmarks/capacity/run.mjs:246:11)\n    at async main (file:///Users/wallace/project/rules/benchmarks/capacity/run.mjs:476:29)"
+    },
+    {
+      "label": "1,000 热执行 P95 < 50ms",
+      "passed": false,
+      "detail": "Error: browserType.launch: Executable doesn't exist at /Users/wallace/Library/Caches/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-mac-arm64/chrome-headless-shell\n╔════════════════════════════════════════════════════════════╗\n║ Looks like Playwright was just installed or updated.       ║\n║ Please run the following command to download new browsers: ║\n║                                                            ║\n║     npx playwright install                                 ║\n║                                                            ║\n║ <3 Playwright Team                                         ║\n╚════════════════════════════════════════════════════════════╝\nTeam Server:\nRules API: http://127.0.0.1:62365 (json, BOM v1, 8 fields)\n\n    at benchmarkControlPlane (file:///Users/wallace/project/rules/benchmarks/capacity/run.mjs:246:11)\n    at async main (file:///Users/wallace/project/rules/benchmarks/capacity/run.mjs:476:29)"
+    }
+  ],
+  "conclusion": "基准已完整执行，但 3 项目标未达到；结果用于驱动后续规模化改造，不能宣称容量目标已通过。"
+}

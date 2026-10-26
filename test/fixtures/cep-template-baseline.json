@@ -1,12 +1,12 @@
 {
   "generatedAt": "2026-10-01T00:00:00.000+08:00",
-  "bomEventType": "NH3Reading",
+  "bomEventType": "GasReading",
   "cases": [
     {
       "template": "single-threshold",
-      "statementName": "NH3HighAlarm",
-      "outputEventType": "NH3HighAlarmEvent",
-      "epl": "insert into NH3HighAlarmEvent select * from NH3Reading where ammoniaPpm >= 25",
+      "statementName": "GasHighAlarm",
+      "outputEventType": "GasHighAlarmEvent",
+      "epl": "insert into GasHighAlarmEvent select * from GasReading where gasPpm >= 25",
       "esper": {
         "ok": true,
         "engine": "Esper",
@@ -16,15 +16,15 @@
         "ok": true,
         "detectionCount": 1,
         "eventTypes": [
-          "NH3HighAlarmEvent"
+          "GasHighAlarmEvent"
         ]
       }
     },
     {
       "template": "single-threshold",
-      "statementName": "NH3HumidityLow",
-      "outputEventType": "NH3HumidityLowEvent",
-      "epl": "insert into NH3HumidityLowEvent select * from NH3Reading where humidity < 35",
+      "statementName": "GasHumidityLow",
+      "outputEventType": "GasHumidityLowEvent",
+      "epl": "insert into GasHumidityLowEvent select * from GasReading where humidity < 35",
       "esper": {
         "ok": true,
         "engine": "Esper",
@@ -34,15 +34,15 @@
         "ok": true,
         "detectionCount": 1,
         "eventTypes": [
-          "NH3HumidityLowEvent"
+          "GasHumidityLowEvent"
         ]
       }
     },
     {
       "template": "single-threshold",
-      "statementName": "NH3WarehouseMatch",
-      "outputEventType": "NH3WarehouseMatchEvent",
-      "epl": "insert into NH3WarehouseMatchEvent select * from NH3Reading where warehouseId = 'WH-01'",
+      "statementName": "GasDeviceMatch",
+      "outputEventType": "GasDeviceMatchEvent",
+      "epl": "insert into GasDeviceMatchEvent select * from GasReading where deviceId = 'DEV-01'",
       "esper": {
         "ok": true,
         "engine": "Esper",
@@ -52,15 +52,15 @@
         "ok": true,
         "detectionCount": 1,
         "eventTypes": [
-          "NH3WarehouseMatchEvent"
+          "GasDeviceMatchEvent"
         ]
       }
     },
     {
       "template": "window-average",
-      "statementName": "NH3SustainedWarning",
-      "outputEventType": "NH3SustainedWarningEvent",
-      "epl": "insert into NH3SustainedWarningEvent select warehouseId, avg(ammoniaPpm) as avg_ammoniaPpm from NH3Reading#time(3 minutes) group by warehouseId having avg(ammoniaPpm) >= 20",
+      "statementName": "GasSustainedWarning",
+      "outputEventType": "GasSustainedWarningEvent",
+      "epl": "insert into GasSustainedWarningEvent select deviceId, avg(gasPpm) as avg_gasPpm from GasReading#time(3 minutes) group by deviceId having avg(gasPpm) >= 20",
       "esper": {
         "ok": true,
         "engine": "Esper",
@@ -70,15 +70,15 @@
         "ok": true,
         "detectionCount": 2,
         "eventTypes": [
-          "NH3SustainedWarningEvent"
+          "GasSustainedWarningEvent"
         ]
       }
     },
     {
       "template": "window-average",
-      "statementName": "NH3HumidityAverage",
-      "outputEventType": "NH3HumidityAverageEvent",
-      "epl": "insert into NH3HumidityAverageEvent select warehouseId, avg(humidity) as avg_humidity from NH3Reading#time(10 minutes) group by warehouseId having avg(humidity) > 70",
+      "statementName": "GasHumidityAverage",
+      "outputEventType": "GasHumidityAverageEvent",
+      "epl": "insert into GasHumidityAverageEvent select deviceId, avg(humidity) as avg_humidity from GasReading#time(10 minutes) group by deviceId having avg(humidity) > 70",
       "esper": {
         "ok": true,
         "engine": "Esper",
@@ -88,15 +88,15 @@
         "ok": true,
         "detectionCount": 2,
         "eventTypes": [
-          "NH3HumidityAverageEvent"
+          "GasHumidityAverageEvent"
         ]
       }
     },
     {
       "template": "window-average",
-      "statementName": "NH3SensorAverage",
-      "outputEventType": "NH3SensorAverageEvent",
-      "epl": "insert into NH3SensorAverageEvent select sensorId, avg(ammoniaPpm) as avg_ammoniaPpm from NH3Reading#time(30 seconds) group by sensorId having avg(ammoniaPpm) <= 10",
+      "statementName": "GasSensorAverage",
+      "outputEventType": "GasSensorAverageEvent",
+      "epl": "insert into GasSensorAverageEvent select sensorId, avg(gasPpm) as avg_gasPpm from GasReading#time(30 seconds) group by sensorId having avg(gasPpm) <= 10",
       "esper": {
         "ok": true,
         "engine": "Esper",
@@ -106,15 +106,15 @@
         "ok": true,
         "detectionCount": 2,
         "eventTypes": [
-          "NH3SensorAverageEvent"
+          "GasSensorAverageEvent"
         ]
       }
     },
     {
       "template": "window-fluctuation",
-      "statementName": "NH3RapidFluctuation",
-      "outputEventType": "NH3RapidFluctuationEvent",
-      "epl": "insert into NH3RapidFluctuationEvent select warehouseId, max(ammoniaPpm) as max_ammoniaPpm, min(ammoniaPpm) as min_ammoniaPpm from NH3Reading#time(5 minutes) group by warehouseId having max(ammoniaPpm) - min(ammoniaPpm) >= 15",
+      "statementName": "GasRapidFluctuation",
+      "outputEventType": "GasRapidFluctuationEvent",
+      "epl": "insert into GasRapidFluctuationEvent select deviceId, max(gasPpm) as max_gasPpm, min(gasPpm) as min_gasPpm from GasReading#time(5 minutes) group by deviceId having max(gasPpm) - min(gasPpm) >= 15",
       "esper": {
         "ok": true,
         "engine": "Esper",
@@ -124,15 +124,15 @@
         "ok": true,
         "detectionCount": 1,
         "eventTypes": [
-          "NH3RapidFluctuationEvent"
+          "GasRapidFluctuationEvent"
         ]
       }
     },
     {
       "template": "window-fluctuation",
-      "statementName": "NH3HumidityFluctuation",
-      "outputEventType": "NH3HumidityFluctuationEvent",
-      "epl": "insert into NH3HumidityFluctuationEvent select warehouseId, max(humidity) as max_humidity, min(humidity) as min_humidity from NH3Reading#time(1 hours) group by warehouseId having max(humidity) - min(humidity) >= 20",
+      "statementName": "GasHumidityFluctuation",
+      "outputEventType": "GasHumidityFluctuationEvent",
+      "epl": "insert into GasHumidityFluctuationEvent select deviceId, max(humidity) as max_humidity, min(humidity) as min_humidity from GasReading#time(1 hours) group by deviceId having max(humidity) - min(humidity) >= 20",
       "esper": {
         "ok": true,
         "engine": "Esper",
@@ -142,15 +142,15 @@
         "ok": true,
         "detectionCount": 1,
         "eventTypes": [
-          "NH3HumidityFluctuationEvent"
+          "GasHumidityFluctuationEvent"
         ]
       }
     },
     {
       "template": "window-fluctuation",
-      "statementName": "NH3LeakageFluctuation",
-      "outputEventType": "NH3LeakageFluctuationEvent",
-      "epl": "insert into NH3LeakageFluctuationEvent select sensorId, max(leakagePpm) as max_leakagePpm, min(leakagePpm) as min_leakagePpm from NH3Reading#time(45 seconds) group by sensorId having max(leakagePpm) - min(leakagePpm) >= 5",
+      "statementName": "GasLeakageFluctuation",
+      "outputEventType": "GasLeakageFluctuationEvent",
+      "epl": "insert into GasLeakageFluctuationEvent select sensorId, max(leakagePpm) as max_leakagePpm, min(leakagePpm) as min_leakagePpm from GasReading#time(45 seconds) group by sensorId having max(leakagePpm) - min(leakagePpm) >= 5",
       "esper": {
         "ok": true,
         "engine": "Esper",
@@ -160,15 +160,15 @@
         "ok": true,
         "detectionCount": 1,
         "eventTypes": [
-          "NH3LeakageFluctuationEvent"
+          "GasLeakageFluctuationEvent"
         ]
       }
     },
     {
       "template": "event-count",
-      "statementName": "NH3FrequentAlarm",
-      "outputEventType": "NH3FrequentAlarmEvent",
-      "epl": "insert into NH3FrequentAlarmEvent select warehouseId, count(*) as cnt from NH3Reading#time(5 minutes) group by warehouseId having count(*) >= 3",
+      "statementName": "GasFrequentAlarm",
+      "outputEventType": "GasFrequentAlarmEvent",
+      "epl": "insert into GasFrequentAlarmEvent select deviceId, count(*) as cnt from GasReading#time(5 minutes) group by deviceId having count(*) >= 3",
       "esper": {
         "ok": true,
         "engine": "Esper",
@@ -178,15 +178,15 @@
         "ok": true,
         "detectionCount": 1,
         "eventTypes": [
-          "NH3FrequentAlarmEvent"
+          "GasFrequentAlarmEvent"
         ]
       }
     },
     {
       "template": "event-count",
-      "statementName": "NH3SensorBurst",
-      "outputEventType": "NH3SensorBurstEvent",
-      "epl": "insert into NH3SensorBurstEvent select sensorId, count(*) as cnt from NH3Reading#time(1 minutes) group by sensorId having count(*) >= 10",
+      "statementName": "GasSensorBurst",
+      "outputEventType": "GasSensorBurstEvent",
+      "epl": "insert into GasSensorBurstEvent select sensorId, count(*) as cnt from GasReading#time(1 minutes) group by sensorId having count(*) >= 10",
       "esper": {
         "ok": true,
         "engine": "Esper",
@@ -196,15 +196,15 @@
         "ok": true,
         "detectionCount": 1,
         "eventTypes": [
-          "NH3SensorBurstEvent"
+          "GasSensorBurstEvent"
         ]
       }
     },
     {
       "template": "event-count",
-      "statementName": "NH3HourlyCount",
-      "outputEventType": "NH3HourlyCountEvent",
-      "epl": "insert into NH3HourlyCountEvent select warehouseId, count(*) as cnt from NH3Reading#time(1 hours) group by warehouseId having count(*) >= 50",
+      "statementName": "GasHourlyCount",
+      "outputEventType": "GasHourlyCountEvent",
+      "epl": "insert into GasHourlyCountEvent select deviceId, count(*) as cnt from GasReading#time(1 hours) group by deviceId having count(*) >= 50",
       "esper": {
         "ok": true,
         "engine": "Esper",
@@ -214,15 +214,15 @@
         "ok": true,
         "detectionCount": 1,
         "eventTypes": [
-          "NH3HourlyCountEvent"
+          "GasHourlyCountEvent"
         ]
       }
     },
     {
       "template": "window-sum",
-      "statementName": "NH3LeakageTotal",
-      "outputEventType": "NH3LeakageTotalEvent",
-      "epl": "insert into NH3LeakageTotalEvent select warehouseId, sum(leakagePpm) as sum_leakagePpm from NH3Reading#time(10 minutes) group by warehouseId having sum(leakagePpm) >= 100",
+      "statementName": "GasLeakageTotal",
+      "outputEventType": "GasLeakageTotalEvent",
+      "epl": "insert into GasLeakageTotalEvent select deviceId, sum(leakagePpm) as sum_leakagePpm from GasReading#time(10 minutes) group by deviceId having sum(leakagePpm) >= 100",
       "esper": {
         "ok": true,
         "engine": "Esper",
@@ -232,15 +232,15 @@
         "ok": true,
         "detectionCount": 1,
         "eventTypes": [
-          "NH3LeakageTotalEvent"
+          "GasLeakageTotalEvent"
         ]
       }
     },
     {
       "template": "window-sum",
-      "statementName": "NH3AmmoniaTotal",
-      "outputEventType": "NH3AmmoniaTotalEvent",
-      "epl": "insert into NH3AmmoniaTotalEvent select sensorId, sum(ammoniaPpm) as sum_ammoniaPpm from NH3Reading#time(30 seconds) group by sensorId having sum(ammoniaPpm) >= 150",
+      "statementName": "GasAmountTotal",
+      "outputEventType": "GasAmountTotalEvent",
+      "epl": "insert into GasAmountTotalEvent select sensorId, sum(gasPpm) as sum_gasPpm from GasReading#time(30 seconds) group by sensorId having sum(gasPpm) >= 150",
       "esper": {
         "ok": true,
         "engine": "Esper",
@@ -250,15 +250,15 @@
         "ok": true,
         "detectionCount": 1,
         "eventTypes": [
-          "NH3AmmoniaTotalEvent"
+          "GasAmountTotalEvent"
         ]
       }
     },
     {
       "template": "window-sum",
-      "statementName": "NH3HumidityTotal",
-      "outputEventType": "NH3HumidityTotalEvent",
-      "epl": "insert into NH3HumidityTotalEvent select warehouseId, sum(humidity) as sum_humidity from NH3Reading#time(1 hours) group by warehouseId having sum(humidity) >= 500",
+      "statementName": "GasHumidityTotal",
+      "outputEventType": "GasHumidityTotalEvent",
+      "epl": "insert into GasHumidityTotalEvent select deviceId, sum(humidity) as sum_humidity from GasReading#time(1 hours) group by deviceId having sum(humidity) >= 500",
       "esper": {
         "ok": true,
         "engine": "Esper",
@@ -268,7 +268,7 @@
         "ok": true,
         "detectionCount": 1,
         "eventTypes": [
-          "NH3HumidityTotalEvent"
+          "GasHumidityTotalEvent"
         ]
       }
     },
@@ -276,7 +276,7 @@
       "template": "state-transition",
       "statementName": "StateChanged",
       "outputEventType": "StateChangedEvent",
-      "epl": "insert into StateChangedEvent select *, 'running' as nextState from NH3Reading where sensorId = 'idle'",
+      "epl": "insert into StateChangedEvent select *, 'running' as nextState from GasReading where sensorId = 'idle'",
       "esper": {
         "ok": true,
         "engine": "Esper",
@@ -294,7 +294,7 @@
       "template": "multi-stream-join",
       "statementName": "ReadingCorrelation",
       "outputEventType": "ReadingCorrelationEvent",
-      "epl": "insert into ReadingCorrelationEvent select a.warehouseId as correlationKey, current_timestamp() as correlatedAt from NH3Reading#time(5 seconds) as a, NH3Reading#time(5 seconds) as b where a.warehouseId = b.warehouseId",
+      "epl": "insert into ReadingCorrelationEvent select a.deviceId as correlationKey, current_timestamp() as correlatedAt from GasReading#time(5 seconds) as a, GasReading#time(5 seconds) as b where a.deviceId = b.deviceId",
       "esper": {
         "ok": true,
         "engine": "Esper",

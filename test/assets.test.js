@@ -513,6 +513,27 @@ test('rule flow freezes typed exclusive branches and selects default fallback', 
   assert.equal(selectFlowBranch(snapshot.branches, { creditScore: 650 }).id, 'fallback');
 });
 
+test('rule flow gateways validate, freeze, and select Rule Project variables', () => {
+  const variable = { name: 'approved', label: '已批准', type: 'Boolean', defaultValue: false, enum: null, description: '' };
+  const rule = { name: '变量分支规则', description: '', conditions: [{ field: 'customerAge', operator: '>=', value: '18' }], actions: [{ field: 'riskLevel', value: '低' }], category: '通用', priority: 0 };
+  const rules = [{ id: 'rule-variable-branch', archived: false, published: rule, versions: [{ number: 1 }] }];
+  const flow = {
+    ...newFlow(), name: '变量分支流程', variables: [variable],
+    branches: [
+      { id: 'approved', name: '已批准', condition: { fieldSource: 'variable', field: 'approved', operator: '==', value: 'true' }, steps: [{ type: 'rule', id: 'rule-variable-branch' }] },
+      { id: 'fallback', name: '默认', default: true, steps: [{ type: 'rule', id: 'rule-variable-branch' }] },
+    ],
+  };
+  assert.equal(validateFlow(flow, rules, []), null);
+  const snapshot = flowSnapshot(flow, rules, []);
+  assert.deepEqual(snapshot.branches[0].condition, { fieldSource: 'variable', field: 'approved', operator: '==', value: true });
+  assert.equal(selectFlowBranch(snapshot.branches, {}, { approved: true }).id, 'approved');
+  assert.equal(selectFlowBranch(snapshot.branches, {}, { approved: false }).id, 'fallback');
+
+  flow.branches[0].condition.field = 'missing';
+  assert.match(validateFlow(flow, rules, []), /条件字段或运算符无效/);
+});
+
 test('rule flow freezes typed DAG gateway conditions and step mappings', () => {
   const rule = { name: '图节点规则', description: '', conditions: [{ field: 'customerAge', operator: '>=', value: '18' }], actions: [{ field: 'approvedLimit', value: '1000' }], category: '通用', priority: 0 };
   const rules = [{ id: 'rule-dag', archived: false, published: rule, versions: [{ number: 1 }] }];

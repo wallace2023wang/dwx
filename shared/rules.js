@@ -187,6 +187,63 @@ export function ruleConditions(rule) {
   return conditions;
 }
 
+function mapConditionTree(node, mapper) {
+  if (!node || typeof node !== 'object') return node;
+  if (node.type === 'condition') return { ...node, condition: mapper(node.condition) };
+  if (node.type === 'group' && Array.isArray(node.children)) return { ...node, children: node.children.map(child => mapConditionTree(child, mapper)) };
+  return node;
+}
+
+/**
+ * Converts the unambiguous legacy equality operators left behind when a String
+ * BOM field was promoted to List<String>. The input rule is never mutated.
+ */
+export function migrateLegacyRuleOperators(rule, bom = DEFAULT_BOM) {
+  if (!rule || typeof rule !== 'object') return { rule, migrations: [] };
+  const migrations = [];
+  const migrate = condition => {
+    if (!condition || condition.raw || condition.pattern || condition.fieldSource === 'variable' || condition.valueSource === 'field') return condition;
+    const field = findField(bom, condition.field);
+    if (!field || inferSemanticType(field) !== 'List<String>' || !['==', '!='].includes(condition.operator)) return condition;
+    const operator = condition.operator === '==' ? 'contains' : 'not contains';
+    migrations.push(`${field.label || field.key}：${condition.operator} 已转换为 ${operator}`);
+    return { ...condition, operator };
+  };
+  const migrated = {
+    ...rule,
+    conditions: Array.isArray(rule.conditions) ? rule.conditions.map(migrate) : rule.conditions,
+    conditionTree: rule.conditionTree ? mapConditionTree(rule.conditionTree, migrate) : rule.conditionTree,
+  };
+  return { rule: migrations.length ? migrated : rule, migrations: [...new Set(migrations)] };
+}
+
+/**
+ * Checks only BOM references and type/operator compatibility. This is used by
+ * asset summaries so bomInvalid follows the same operator matrix as compile.
+ */
+export function validateRuleBomCompatibility(rule, bom = DEFAULT_BOM) {
+  for (const item of ruleConditions(rule)) {
+    if (item?.raw || item?.pattern || item?.fieldSource === 'variable') continue;
+    const field = findField(bom, item?.field);
+    if (!field || field.kind !== 'input') return `条件字段 ${item?.field || '（空）'} 不存在或不是输入字段`;
+    const semanticType = inferSemanticType(field);
+    if (!BAL_OPERATORS_BY_TYPE[semanticType]?.includes(item.operator)) return `${field.label}不支持 ${item.operator || '（空）'} 操作符`;
+    if (item.valueSource === 'field') {
+      if (!FIELD_VALUE_OPERATORS_BY_TYPE[semanticType]?.includes(item.operator)) return `${field.label}的${item.operator}操作不支持业务字段值`;
+      const valueField = findField(bom, item.valueField);
+      if (!valueField || valueField.kind !== 'input' || valueField.key === field.key || inferSemanticType(valueField) !== semanticType) {
+        return `比较字段 ${item.valueField || '（空）'} 不存在、不是输入字段或类型不匹配`;
+      }
+    }
+  }
+  for (const action of rule?.actions || []) {
+    if (action?.fieldSource === 'variable') continue;
+    const field = findField(bom, action?.field);
+    if (!field || field.kind !== 'output') return `动作字段 ${action?.field || '（空）'} 不存在或不是输出字段`;
+  }
+  return null;
+}
+
 function validateConditionTree(tree) {
   let leaves = 0;
   const visit = (node, depth) => {

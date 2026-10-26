@@ -26,7 +26,8 @@ import org.kie.api.io.ResourceType;
 
 public final class EngineServer {
   private static final ObjectMapper JSON = new ObjectMapper();
-  private static final int MAX_BODY = 256 * 1024;
+  private static final int MAX_BODY = boundedLimit("ENGINE_MAX_BODY_BYTES", 16 * 1024 * 1024, 256 * 1024, 64 * 1024 * 1024);
+  private static final int MAX_DRL_CHARS = boundedLimit("ENGINE_MAX_DRL_CHARS", 12 * 1024 * 1024, 200000, 48 * 1024 * 1024);
 
   public static void main(String[] args) throws IOException {
     int port = Integer.parseInt(System.getenv().getOrDefault("ENGINE_PORT", "8788"));
@@ -47,7 +48,7 @@ public final class EngineServer {
       byte[] body = exchange.getRequestBody().readNBytes(MAX_BODY + 1);
       if (body.length > MAX_BODY) { send(exchange, 413, Map.of("error", "Request too large")); return; }
       JsonNode input = JSON.readTree(body);
-      if (input == null || !input.path("drl").isTextual() || input.path("drl").asText().length() > 200000) {
+      if (input == null || !input.path("drl").isTextual() || input.path("drl").asText().length() > MAX_DRL_CHARS) {
         send(exchange, 400, Map.of("error", "Invalid DRL")); return;
       }
       KieHelper helper = new KieHelper().addContent(input.path("drl").asText(), ResourceType.DRL);
@@ -66,6 +67,16 @@ public final class EngineServer {
         Map<String, Class<?>> fieldTypes = reflectFactTypes(type);
         Map<String, Object> parsedFacts = parseFacts(facts, fieldTypes);
         for (Map.Entry<String, Object> entry : parsedFacts.entrySet()) type.set(fact, entry.getKey(), entry.getValue());
+        FactType contextType = session.getKieBase().getFactType("workbench", "RuleContext");
+        Object context = null;
+        Map<String, Class<?>> variableTypes = Map.of();
+        if (contextType != null) {
+          context = contextType.newInstance();
+          variableTypes = reflectFactTypes(contextType);
+          Map<String, Object> parsedVariables = parseFacts(input.path("variables"), variableTypes);
+          for (Map.Entry<String, Object> entry : parsedVariables.entrySet()) contextType.set(context, entry.getKey(), entry.getValue());
+          session.insert(context);
+        }
         List<String> fired = new ArrayList<>();
         session.addEventListener(new DefaultAgendaEventListener() {
           @Override public void afterMatchFired(AfterMatchFiredEvent event) { fired.add(event.getMatch().getRule().getName()); }
@@ -74,13 +85,32 @@ public final class EngineServer {
         int count = session.fireAllRules(100);
         Map<String, Object> output = new LinkedHashMap<>();
         for (String key : fieldTypes.keySet()) output.put(key, type.get(fact, key));
-        send(exchange, 200, Map.of("ok", true, "fired", fired, "count", count, "limitReached", count == 100, "facts", output, "decisionHits", collectDecisionHits(session)));
+        Map<String, Object> variables = new LinkedHashMap<>();
+        if (contextType != null) for (String key : variableTypes.keySet()) variables.put(key, contextType.get(context, key));
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("ok", true);
+        response.put("fired", fired);
+        response.put("count", count);
+        response.put("limitReached", count == 100);
+        response.put("facts", output);
+        response.put("variables", variables);
+        response.put("decisionHits", collectDecisionHits(session));
+        send(exchange, 200, response);
       } finally { session.dispose(); }
     } catch (IllegalArgumentException exception) {
       send(exchange, 400, Map.of("error", exception.getMessage()));
     } catch (Exception exception) {
       exception.printStackTrace();
       send(exchange, 500, Map.of("error", "Engine failed to process request"));
+    }
+  }
+
+  private static int boundedLimit(String name, int fallback, int minimum, int maximum) {
+    try {
+      int value = Integer.parseInt(System.getenv().getOrDefault(name, String.valueOf(fallback)));
+      return Math.max(minimum, Math.min(maximum, value));
+    } catch (NumberFormatException exception) {
+      return fallback;
     }
   }
 
@@ -105,6 +135,8 @@ public final class EngineServer {
 
   private static Map<String, Object> parseFacts(JsonNode input, Map<String, Class<?>> fieldTypes) {
     Map<String, Object> parsed = new LinkedHashMap<>();
+    if (input == null || input.isMissingNode() || input.isNull()) return parsed;
+    if (!input.isObject()) throw new IllegalArgumentException("Facts must be an object");
     Iterator<String> keys = input.fieldNames();
     while (keys.hasNext()) {
       String key = keys.next();

@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { CheckCircle2, ChevronDown, FileCode2, Languages, Rocket, Save } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronDown, FileCode2, Languages, Rocket, Save } from 'lucide-react'
 import type { AssetDetail, BomField, RuleDraft, RuleSetVariable } from '../../types'
 import BalRuleView, { normalizeBalDraft, validateBalDraft } from './BalRuleView'
 import BomVersionNotice from './BomVersionNotice'
@@ -36,7 +36,8 @@ export default function RuleFormEditor({ detail, fields, projectVariables, busy,
   const [view, setView] = useState<'bal' | 'drl'>('bal')
   const [drl, setDrl] = useState(detail.content ?? '')
   const [notice, setNotice] = useState<{ error: boolean; text: string } | null>(null)
-  const dirty = JSON.stringify(draft) !== JSON.stringify(source)
+  const [migrationPending, setMigrationPending] = useState(Boolean(detail.migrationWarnings?.length))
+  const dirty = migrationPending || JSON.stringify(draft) !== JSON.stringify(source)
   const methods = detail.bomMethods || []
   const issues = validateBalDraft(draft, fields, projectVariables, methods)
   const invalid = issues.length > 0
@@ -46,6 +47,7 @@ export default function RuleFormEditor({ detail, fields, projectVariables, busy,
     setDrl(detail.content ?? '')
     setView('bal')
     setNotice(null)
+    setMigrationPending(Boolean(detail.migrationWarnings?.length))
   }, [detail.id, detail.revision])
 
   const run = async (action: () => Promise<unknown>, success: string) => {
@@ -88,6 +90,7 @@ export default function RuleFormEditor({ detail, fields, projectVariables, busy,
       <div className="min-h-0 flex-1 overflow-auto">
         {view === 'bal'
           ? <>
+              {migrationPending && <div className="flex items-start gap-2 border-b border-[#f3c65f] bg-[#fff8e1] px-4 py-2 text-[11px] text-[#734d00]" role="status"><AlertTriangle size={13} className="mt-px shrink-0" /><span>已兼容转换旧版条件：{detail.migrationWarnings?.join('；')}。请保存草稿以完成迁移。</span></div>}
               {invalid && <div className="border-b border-[#ef9a9a] bg-[#fff1f1] px-4 py-2 text-[11px] text-[#a31515]" role="alert">{issues[0]}{issues.length > 1 ? `，另有 ${issues.length - 1} 项问题` : ''}。修复后才能保存或编译。</div>}
               <BalRuleView draft={draft} fields={fields} projectVariables={projectVariables} methods={methods} editable onChange={setDraft} onOpenBom={onOpenBom} />
               <div className="grid grid-cols-[100px_150px_minmax(150px,1fr)] gap-3 border-t border-ink-border bg-[#fafafa] px-5 py-3">

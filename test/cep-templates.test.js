@@ -8,34 +8,34 @@ const bom = {
   version: 1,
   updatedAt: '2026-10-01T00:00:00.000Z',
   fields: [
-    { key: 'eventId', label: '事件 ID', type: 'String', semanticType: 'String', kind: 'input', factType: 'NH3Reading', factTypeLabel: '氨气采样', group: '事件' },
-    { key: 'warehouseId', label: '粮仓 ID', type: 'String', semanticType: 'String', kind: 'input', factType: 'NH3Reading', factTypeLabel: '氨气采样', group: '事件' },
-    { key: 'sensorId', label: '传感器 ID', type: 'String', semanticType: 'String', kind: 'input', factType: 'NH3Reading', factTypeLabel: '氨气采样', group: '事件' },
-    { key: 'sampledAt', label: '采样时间', type: 'String', semanticType: 'Date', kind: 'input', factType: 'NH3Reading', factTypeLabel: '氨气采样', group: '事件' },
-    { key: 'ammoniaPpm', label: '氨气浓度', type: 'Double', semanticType: 'Decimal', kind: 'input', factType: 'NH3Reading', factTypeLabel: '氨气采样', group: '监测' },
-    { key: 'leakagePpm', label: '泄漏量', type: 'Double', semanticType: 'Decimal', kind: 'input', factType: 'NH3Reading', factTypeLabel: '氨气采样', group: '监测' },
-    { key: 'alertRequired', label: '需要告警', type: 'Boolean', semanticType: 'Boolean', kind: 'output', factType: 'NH3Alert', factTypeLabel: '氨气告警', group: '输出' },
+    { key: 'eventId', label: '事件 ID', type: 'String', semanticType: 'String', kind: 'input', factType: 'GasReading', factTypeLabel: '气体采样', group: '事件' },
+    { key: 'deviceId', label: '设备 ID', type: 'String', semanticType: 'String', kind: 'input', factType: 'GasReading', factTypeLabel: '气体采样', group: '事件' },
+    { key: 'sensorId', label: '传感器 ID', type: 'String', semanticType: 'String', kind: 'input', factType: 'GasReading', factTypeLabel: '气体采样', group: '事件' },
+    { key: 'sampledAt', label: '采样时间', type: 'String', semanticType: 'Date', kind: 'input', factType: 'GasReading', factTypeLabel: '气体采样', group: '事件' },
+    { key: 'gasPpm', label: '气体浓度', type: 'Double', semanticType: 'Decimal', kind: 'input', factType: 'GasReading', factTypeLabel: '气体采样', group: '监测' },
+    { key: 'leakagePpm', label: '泄漏量', type: 'Double', semanticType: 'Decimal', kind: 'input', factType: 'GasReading', factTypeLabel: '气体采样', group: '监测' },
+    { key: 'alertRequired', label: '需要告警', type: 'Boolean', semanticType: 'Boolean', kind: 'output', factType: 'GasAlert', factTypeLabel: '气体告警', group: '输出' },
   ],
   eventTypes: [{
-    name: 'NH3Reading', label: '氨气采样事件', version: 1,
-    keyField: 'warehouseId', timeField: 'sampledAt', sourceField: 'sensorId', duplicateKey: ['eventId'],
+    name: 'GasReading', label: '气体采样事件', version: 1,
+    keyField: 'deviceId', timeField: 'sampledAt', sourceField: 'sensorId', duplicateKey: ['eventId'],
     fields: [
       { field: 'eventId', required: true },
-      { field: 'warehouseId', required: true },
+      { field: 'deviceId', required: true },
       { field: 'sensorId', required: true },
       { field: 'sampledAt', required: true },
-      { field: 'ammoniaPpm', required: true },
+      { field: 'gasPpm', required: true },
       { field: 'leakagePpm', required: false },
     ],
   }],
 };
 
 const cases = [
-  ['single-threshold', { statementName: 'NH3HighAlarm', eventType: 'NH3Reading', field: 'ammoniaPpm', operator: '≥', value: 25 }],
-  ['window-average', { statementName: 'NH3SustainedWarning', eventType: 'NH3Reading', field: 'ammoniaPpm', operator: '>=', value: 20, groupField: 'warehouseId', windowSize: 3, windowUnit: 'minutes' }],
-  ['window-fluctuation', { statementName: 'NH3RapidFluctuation', eventType: 'NH3Reading', field: 'ammoniaPpm', delta: 15, groupField: 'warehouseId', windowSize: 5, windowUnit: 'minutes' }],
-  ['event-count', { statementName: 'NH3FrequentAlarm', eventType: 'NH3Reading', groupField: 'warehouseId', count: 3, windowSize: 5, windowUnit: 'minutes' }],
-  ['window-sum', { statementName: 'NH3LeakageTotal', eventType: 'NH3Reading', field: 'leakagePpm', value: 100, groupField: 'warehouseId', windowSize: 10, windowUnit: 'minutes' }],
+  ['single-threshold', { statementName: 'GasHighAlarm', eventType: 'GasReading', field: 'gasPpm', operator: '≥', value: 25 }],
+  ['window-average', { statementName: 'GasSustainedWarning', eventType: 'GasReading', field: 'gasPpm', operator: '>=', value: 20, groupField: 'deviceId', windowSize: 3, windowUnit: 'minutes' }],
+  ['window-fluctuation', { statementName: 'GasRapidFluctuation', eventType: 'GasReading', field: 'gasPpm', delta: 15, groupField: 'deviceId', windowSize: 5, windowUnit: 'minutes' }],
+  ['event-count', { statementName: 'GasFrequentAlarm', eventType: 'GasReading', groupField: 'deviceId', count: 3, windowSize: 5, windowUnit: 'minutes' }],
+  ['window-sum', { statementName: 'GasLeakageTotal', eventType: 'GasReading', field: 'leakagePpm', value: 100, groupField: 'deviceId', windowSize: 10, windowUnit: 'minutes' }],
 ];
 
 test('CEP P0 templates generate stable insert-into EPL', () => {
@@ -45,7 +45,7 @@ test('CEP P0 templates generate stable insert-into EPL', () => {
     assert.match(epl, new RegExp(`^insert into ${params.statementName}Event select `));
     assert.doesNotMatch(epl, /≥|≤|≠/);
     assert.match(renderCepTemplateDescription(templateId, params), /输出检测/);
-    const compiled = compileEventStreamDraft({ name: '氨气模板', statements: [{ name: params.statementName, epl }] }, bom);
+    const compiled = compileEventStreamDraft({ name: '气体模板', statements: [{ name: params.statementName, epl }] }, bom);
     assert.equal(compiled.status, 200, `${templateId}: ${compiled.error || ''}`);
     assert.equal(compiled.result.module.statements[0].outputEventType, `${params.statementName}Event`);
   }
@@ -53,12 +53,12 @@ test('CEP P0 templates generate stable insert-into EPL', () => {
 
 test('advanced CEP templates generate validated EPL', () => {
   const advanced = [
-    ['absence', { statementName: 'NoAck', eventType: 'NH3Reading', field: 'ammoniaPpm', operator: '>=', value: 25, groupField: 'warehouseId', secondEventType: 'NH3Reading', secondGroupField: 'warehouseId', secondField: 'leakagePpm', secondOperator: '>=', secondValue: 0, windowSize: 5, windowUnit: 'seconds' }],
-    ['event-sequence', { statementName: 'AckAfterAlarm', eventType: 'NH3Reading', field: 'ammoniaPpm', operator: '>=', value: 25, groupField: 'warehouseId', secondEventType: 'NH3Reading', secondGroupField: 'warehouseId', secondField: 'leakagePpm', secondOperator: '>=', secondValue: 0, windowSize: 5, windowUnit: 'seconds' }],
-    ['consecutive-count', { statementName: 'ThreeHigh', eventType: 'NH3Reading', field: 'ammoniaPpm', operator: '>=', value: 25, groupField: 'warehouseId', count: 3 }],
+    ['absence', { statementName: 'NoAck', eventType: 'GasReading', field: 'gasPpm', operator: '>=', value: 25, groupField: 'deviceId', secondEventType: 'GasReading', secondGroupField: 'deviceId', secondField: 'leakagePpm', secondOperator: '>=', secondValue: 0, windowSize: 5, windowUnit: 'seconds' }],
+    ['event-sequence', { statementName: 'AckAfterAlarm', eventType: 'GasReading', field: 'gasPpm', operator: '>=', value: 25, groupField: 'deviceId', secondEventType: 'GasReading', secondGroupField: 'deviceId', secondField: 'leakagePpm', secondOperator: '>=', secondValue: 0, windowSize: 5, windowUnit: 'seconds' }],
+    ['consecutive-count', { statementName: 'ThreeHigh', eventType: 'GasReading', field: 'gasPpm', operator: '>=', value: 25, groupField: 'deviceId', count: 3 }],
     ['periodic', { statementName: 'Heartbeat', windowSize: 5, windowUnit: 'seconds' }],
-    ['state-transition', { statementName: 'StateChanged', eventType: 'NH3Reading', stateField: 'sensorId', currentState: 'idle', nextState: 'running' }],
-    ['multi-stream-join', { statementName: 'ReadingCorrelation', eventType: 'NH3Reading', secondEventType: 'NH3Reading', groupField: 'warehouseId', secondGroupField: 'warehouseId', windowSize: 5, windowUnit: 'seconds' }],
+    ['state-transition', { statementName: 'StateChanged', eventType: 'GasReading', stateField: 'sensorId', currentState: 'idle', nextState: 'running' }],
+    ['multi-stream-join', { statementName: 'ReadingCorrelation', eventType: 'GasReading', secondEventType: 'GasReading', groupField: 'deviceId', secondGroupField: 'deviceId', windowSize: 5, windowUnit: 'seconds' }],
   ];
   for (const [templateId, params] of advanced) {
     const epl = buildCepTemplate(templateId, params);
@@ -69,54 +69,54 @@ test('advanced CEP templates generate validated EPL', () => {
 });
 
 test('state-transition and multi-stream-join match the recorded Esper baseline', () => {
-  const stateTransition = { statementName: 'StateChanged', eventType: 'NH3Reading', stateField: 'sensorId', currentState: 'idle', nextState: 'running' };
+  const stateTransition = { statementName: 'StateChanged', eventType: 'GasReading', stateField: 'sensorId', currentState: 'idle', nextState: 'running' };
   assert.equal(
     buildCepTemplate('state-transition', stateTransition),
-    "insert into StateChangedEvent select *, 'running' as nextState from NH3Reading where sensorId = 'idle'",
+    "insert into StateChangedEvent select *, 'running' as nextState from GasReading where sensorId = 'idle'",
   );
   assert.equal(
     renderCepTemplateDescription('state-transition', stateTransition),
-    "当 NH3Reading.sensorId 等于 'idle' 时，将状态迁移为 'running' 并输出 StateChanged",
+    "当 GasReading.sensorId 等于 'idle' 时，将状态迁移为 'running' 并输出 StateChanged",
   );
 
-  const multiStream = { statementName: 'ReadingCorrelation', eventType: 'NH3Reading', secondEventType: 'NH3Reading', groupField: 'warehouseId', secondGroupField: 'warehouseId', windowSize: 5, windowUnit: 'seconds' };
+  const multiStream = { statementName: 'ReadingCorrelation', eventType: 'GasReading', secondEventType: 'GasReading', groupField: 'deviceId', secondGroupField: 'deviceId', windowSize: 5, windowUnit: 'seconds' };
   assert.equal(
     buildCepTemplate('multi-stream-join', multiStream),
-    'insert into ReadingCorrelationEvent select a.warehouseId as correlationKey, current_timestamp() as correlatedAt from NH3Reading#time(5 seconds) as a, NH3Reading#time(5 seconds) as b where a.warehouseId = b.warehouseId',
+    'insert into ReadingCorrelationEvent select a.deviceId as correlationKey, current_timestamp() as correlatedAt from GasReading#time(5 seconds) as a, GasReading#time(5 seconds) as b where a.deviceId = b.deviceId',
   );
   assert.equal(
     renderCepTemplateDescription('multi-stream-join', multiStream),
-    '在 5 seconds 窗口内按 NH3Reading.warehouseId = NH3Reading.warehouseId 关联两类事件，输出 ReadingCorrelation',
+    '在 5 seconds 窗口内按 GasReading.deviceId = GasReading.deviceId 关联两类事件，输出 ReadingCorrelation',
   );
 });
 
 test('guided EventStream metadata must reproduce the persisted EPL', () => {
-  const params = { statementName: 'NH3HighAlarm', eventType: 'NH3Reading', field: 'ammoniaPpm', operator: '>=', value: '25' };
+  const params = { statementName: 'GasHighAlarm', eventType: 'GasReading', field: 'gasPpm', operator: '>=', value: '25' };
   const epl = buildCepTemplate('single-threshold', params);
   assert.match(epl, />= 25$/);
 
   const valid = compileEventStreamDraft({
-    name: '氨气模板',
+    name: '气体模板',
     statements: [{ name: params.statementName, enabled: true, mode: 'guided', template: 'single-threshold', params, epl }],
   }, bom);
   assert.equal(valid.status, 200);
 
   const conflicting = compileEventStreamDraft({
-    name: '氨气模板',
+    name: '气体模板',
     statements: [{ name: params.statementName, enabled: true, mode: 'guided', template: 'single-threshold', params, epl: epl.replace('>= 25', '< 10') }],
   }, bom);
   assert.equal(conflicting.status, 400);
   assert.match(conflicting.error, /向导参数与 EPL 不一致/);
 
   const incomplete = compileEventStreamDraft({
-    name: '氨气模板',
+    name: '气体模板',
     statements: [{ name: params.statementName, enabled: true, mode: 'guided', epl }],
   }, bom);
   assert.equal(incomplete.status, 400);
   assert.match(incomplete.error, /缺少模板或参数/);
 
   const missingEpl = compileEventStreamDraft({
-    name: '氨气模板',
+    name: '气体模板',
     statements: [{ name: params.statementName, enabled: true, mode: 'guided', template: 'single-threshold', params }],
   }, bom);
   assert.equal(missingEpl.status, 400);
@@ -130,7 +130,7 @@ test('CEP window templates support sliding and tumbling window clauses', () => {
     assert.match(sliding, /#time\(/, `${templateId} should default to sliding #time`);
     assert.match(tumbling, /#time_batch\(/, `${templateId} should support tumbling #time_batch`);
     assert.match(renderCepTemplateDescription(templateId, { ...params, windowType: 'tumbling' }), /跳跃窗口/);
-    const compiled = compileEventStreamDraft({ name: '氨气模板', statements: [{ name: params.statementName, epl: tumbling }] }, bom);
+    const compiled = compileEventStreamDraft({ name: '气体模板', statements: [{ name: params.statementName, epl: tumbling }] }, bom);
     assert.equal(compiled.status, 200, `${templateId}: ${compiled.error || ''}`);
     assert.equal(compiled.result.module.statements[0].outputEventType, `${params.statementName}Event`);
   }
@@ -139,29 +139,29 @@ test('CEP window templates support sliding and tumbling window clauses', () => {
 test('CEP template validation rejects unsafe identifiers and normalizes UI operators', () => {
   assert.equal(normalizeCepOperator('≥'), '>=');
   assert.equal(normalizeCepOperator('≠'), '!=');
-  assert.throws(() => buildCepTemplate('single-threshold', { statementName: '坏 名称', eventType: 'NH3Reading', field: 'ammoniaPpm', value: 1 }), /语句 ID/);
-  assert.throws(() => buildCepTemplate('single-threshold', { statementName: 'Bad', eventType: 'NH3Reading', field: 'ammoniaPpm;delete', value: 1 }), /字段/);
+  assert.throws(() => buildCepTemplate('single-threshold', { statementName: '坏 名称', eventType: 'GasReading', field: 'gasPpm', value: 1 }), /语句 ID/);
+  assert.throws(() => buildCepTemplate('single-threshold', { statementName: 'Bad', eventType: 'GasReading', field: 'gasPpm;delete', value: 1 }), /字段/);
 });
 
 test('single-threshold template supports renamed fields and typed constant outputs', () => {
   const params = {
     statementName: 'PhaseChanged',
-    eventType: 'NH3Reading',
-    field: 'ammoniaPpm',
+    eventType: 'GasReading',
+    field: 'gasPpm',
     operator: '>=',
     value: 25,
     outputFields: [
       { source: 'constant', alias: 'phase', value: 'CIRCULATION' },
-      { source: 'field', alias: 'siteId', field: 'warehouseId' },
+      { source: 'field', alias: 'siteId', field: 'deviceId' },
       { source: 'constant', alias: 'active', value: true },
     ],
   };
   const epl = buildCepTemplate('single-threshold', params);
-  assert.equal(epl, "insert into PhaseChangedEvent select 'CIRCULATION' as phase, warehouseId as siteId, true as active from NH3Reading where ammoniaPpm >= 25");
+  assert.equal(epl, "insert into PhaseChangedEvent select 'CIRCULATION' as phase, deviceId as siteId, true as active from GasReading where gasPpm >= 25");
   assert.equal(buildCepTemplate('single-threshold', {
     ...params,
     outputFields: [{ source: 'constant', alias: 'message', value: "operator's alert" }],
-  }), "insert into PhaseChangedEvent select 'operator''s alert' as message from NH3Reading where ammoniaPpm >= 25");
+  }), "insert into PhaseChangedEvent select 'operator''s alert' as message from GasReading where gasPpm >= 25");
   assert.match(buildCepTemplate('single-threshold', {
     ...params,
     outputFields: [{ source: 'constant', alias: 'code', value: '123' }],
@@ -175,28 +175,28 @@ test('single-threshold template supports renamed fields and typed constant outpu
 });
 
 test('derived output validation rejects unsafe or duplicate aliases and fields', () => {
-  const base = { statementName: 'BadOutput', eventType: 'NH3Reading', field: 'ammoniaPpm', value: 25 };
-  assert.throws(() => buildCepTemplate('single-threshold', { ...base, outputFields: [{ source: 'field', alias: 'bad alias', field: 'warehouseId' }] }), /输出字段别名/);
-  assert.throws(() => buildCepTemplate('single-threshold', { ...base, outputFields: [{ source: 'field', alias: 'site', field: 'warehouseId;drop' }] }), /源字段/);
-  assert.throws(() => buildCepTemplate('single-threshold', { ...base, outputFields: [{ source: 'field', alias: 'site', field: 'warehouseId' }, { source: 'constant', alias: 'site', value: 1 }] }), /输出字段别名重复/);
+  const base = { statementName: 'BadOutput', eventType: 'GasReading', field: 'gasPpm', value: 25 };
+  assert.throws(() => buildCepTemplate('single-threshold', { ...base, outputFields: [{ source: 'field', alias: 'bad alias', field: 'deviceId' }] }), /输出字段别名/);
+  assert.throws(() => buildCepTemplate('single-threshold', { ...base, outputFields: [{ source: 'field', alias: 'site', field: 'deviceId;drop' }] }), /源字段/);
+  assert.throws(() => buildCepTemplate('single-threshold', { ...base, outputFields: [{ source: 'field', alias: 'site', field: 'deviceId' }, { source: 'constant', alias: 'site', value: 1 }] }), /输出字段别名重复/);
 });
 
 test('EventStream authoring metadata persists in draft but stays out of runtime module checksum', () => {
-  const params = { statementName: 'NH3HighAlarm', eventType: 'NH3Reading', field: 'ammoniaPpm', operator: '>=', value: 25 };
+  const params = { statementName: 'GasHighAlarm', eventType: 'GasReading', field: 'gasPpm', operator: '>=', value: 25 };
   const epl = buildCepTemplate('single-threshold', params);
   const first = compileEventStreamDraft({
-    name: '氨气检测',
-    statements: [{ name: 'NH3HighAlarm', epl, label: '氨气超限', description: '业务说明 A', mode: 'guided', template: 'single-threshold', params }],
+    name: '气体检测',
+    statements: [{ name: 'GasHighAlarm', epl, label: '气体超限', description: '业务说明 A', mode: 'guided', template: 'single-threshold', params }],
   }, bom);
   const second = compileEventStreamDraft({
-    name: '氨气检测（更新说明）',
+    name: '气体检测（更新说明）',
     description: '事件流总体说明',
-    statements: [{ name: 'NH3HighAlarm', epl, label: '氨气严重超限', description: '  业务说明 B  ', mode: 'guided', template: 'single-threshold', params }],
+    statements: [{ name: 'GasHighAlarm', epl, label: '气体严重超限', description: '  业务说明 B  ', mode: 'guided', template: 'single-threshold', params }],
   }, bom);
   const normalized = normalizeEventStreamDraft({
-    name: '氨气检测',
+    name: '气体检测',
     description: '  总体说明  ',
-    statements: [{ name: 'NH3HighAlarm', epl, description: '  人工业务说明  ' }],
+    statements: [{ name: 'GasHighAlarm', epl, description: '  人工业务说明  ' }],
   });
   assert.equal(normalized.description, '总体说明');
   assert.equal(normalized.statements[0].description, '人工业务说明');
@@ -205,10 +205,10 @@ test('EventStream authoring metadata persists in draft but stays out of runtime 
 });
 
 test('EPL preserves Chinese comments as runtime text', () => {
-  const plainEpl = 'select * from NH3Reading';
-  const commentedEpl = '// 检测氨气浓度\n/* 中文块注释 */\nselect * from NH3Reading';
-  const plain = compileEventStreamDraft({ name: '无注释', statements: [{ name: 'DetectNH3', epl: plainEpl }] }, bom);
-  const commented = compileEventStreamDraft({ name: '中文注释', statements: [{ name: 'DetectNH3', epl: commentedEpl }] }, bom);
+  const plainEpl = 'select * from GasReading';
+  const commentedEpl = '// 检测气体浓度\n/* 中文块注释 */\nselect * from GasReading';
+  const plain = compileEventStreamDraft({ name: '无注释', statements: [{ name: 'DetectGas', epl: plainEpl }] }, bom);
+  const commented = compileEventStreamDraft({ name: '中文注释', statements: [{ name: 'DetectGas', epl: commentedEpl }] }, bom);
   assert.equal(commented.status, 200, commented.error || '');
   assert.equal(commented.result.module.statements[0].epl, commentedEpl);
   assert.notEqual(plain.result.checksum, commented.result.checksum);
@@ -248,11 +248,11 @@ test('CEP validation accepts time-driven patterns and same-stream derived events
     ...bom,
     fields: [
       ...bom.fields,
-      { key: 'phase', label: '阶段', type: 'String', semanticType: 'Enum', kind: 'output', factType: 'NitrogenPhaseEvent', factTypeLabel: '氮气阶段' },
+      { key: 'phase', label: '阶段', type: 'String', semanticType: 'Enum', kind: 'output', factType: 'ProcessPhaseEvent', factTypeLabel: '工艺阶段' },
     ],
     eventTypes: [
       ...bom.eventTypes,
-      { name: 'NitrogenPhaseEvent', label: '氮气阶段事件', fields: [{ field: 'phase' }, { field: 'warehouseId' }] },
+      { name: 'ProcessPhaseEvent', label: '工艺阶段事件', fields: [{ field: 'phase' }, { field: 'deviceId' }] },
     ],
   };
   const draft = {
@@ -260,24 +260,24 @@ test('CEP validation accepts time-driven patterns and same-stream derived events
     statements: [
       {
         name: 'ToCirculation',
-        epl: "insert into NitrogenPhaseEvent select 'CIRCULATION' as phase, warehouseId from NH3Reading where ammoniaPpm >= 25",
+        epl: "insert into ProcessPhaseEvent select 'CIRCULATION' as phase, deviceId from GasReading where gasPpm >= 25",
       },
       {
         name: 'AfterPhase',
-        epl: "insert into NitrogenPhaseEvent select 'HOLDING' as phase, a.warehouseId as warehouseId from pattern [every (a=NitrogenPhaseEvent(phase='CIRCULATION') -> timer:interval(1 seconds))]",
+        epl: "insert into ProcessPhaseEvent select 'HOLDING' as phase, a.deviceId as deviceId from pattern [every (a=ProcessPhaseEvent(phase='CIRCULATION') -> timer:interval(1 seconds))]",
       },
       {
         name: 'MissingReading',
-        epl: "insert into MissingEvent select a.warehouseId as warehouseId from pattern [every (a=NitrogenPhaseEvent -> (timer:interval(1 seconds) and not NH3Reading(warehouseId = a.warehouseId)))]",
+        epl: "insert into MissingEvent select a.deviceId as deviceId from pattern [every (a=ProcessPhaseEvent -> (timer:interval(1 seconds) and not GasReading(deviceId = a.deviceId)))]",
       },
     ],
   };
   const compiled = compileEventStreamDraft(draft, bomWithPhase);
   assert.equal(compiled.status, 200, compiled.error || '');
   assert.deepEqual(compiled.result.module.statements.map(statement => statement.eventTypes), [
-    ['NH3Reading'],
-    ['NitrogenPhaseEvent'],
-    ['NitrogenPhaseEvent', 'NH3Reading'],
+    ['GasReading'],
+    ['ProcessPhaseEvent'],
+    ['ProcessPhaseEvent', 'GasReading'],
   ]);
 
   const periodic = compileEventStreamDraft({
@@ -295,7 +295,7 @@ test('EventStream dependency graph reports derived consumers and removal impact'
   const draft = {
     name: '依赖检测',
     statements: [
-      { name: 'ProduceAlarm', epl: 'insert into AlarmEvent select * from NH3Reading' },
+      { name: 'ProduceAlarm', epl: 'insert into AlarmEvent select * from GasReading' },
       { name: 'EscalateAlarm', epl: 'insert into EscalatedEvent select * from AlarmEvent' },
       { name: 'MaintainAlarm', epl: 'insert into AlarmEvent select * from AlarmEvent' },
     ],

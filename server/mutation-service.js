@@ -5,6 +5,14 @@ export function createMutationService({
   writeAssets,
   readReleases,
   writeReleases,
+  readApplicationPackages,
+  writeApplicationPackages,
+  readTargets,
+  writeTargets,
+  readActivationGenerations,
+  writeActivationGenerations,
+  readDeployments,
+  writeDeployments,
   readPackageRecords,
   writePackageRecords,
   readChangeSets,
@@ -103,6 +111,50 @@ export function createMutationService({
     return pending;
   }
 
+  function mutateDeployments(operation, projectId = 'default') {
+    const pending = queue.then(async () => {
+      const deployments = await readDeployments(projectId);
+      const result = await operation(deployments);
+      if (result?.changed) await writeDeployments(deployments, projectId);
+      return result;
+    });
+    queue = pending.catch(() => {});
+    return pending;
+  }
+
+  function mutateApplicationPackages(operation, projectId = 'default') {
+    const pending = queue.then(async () => {
+      const applicationPackages = await readApplicationPackages(projectId);
+      const result = await operation(applicationPackages);
+      if (result?.changed) await writeApplicationPackages(applicationPackages, projectId);
+      return result;
+    });
+    queue = pending.catch(() => {});
+    return pending;
+  }
+
+  function mutateTargets(operation, projectId = 'default') {
+    const pending = queue.then(async () => {
+      const targets = await readTargets(projectId);
+      const result = await operation(targets);
+      if (result?.changed) await writeTargets(targets, projectId);
+      return result;
+    });
+    queue = pending.catch(() => {});
+    return pending;
+  }
+
+  function mutateActivationGenerations(operation, projectId = 'default') {
+    const pending = queue.then(async () => {
+      const generations = await readActivationGenerations(projectId);
+      const result = await operation(generations);
+      if (result?.changed) await writeActivationGenerations(generations, projectId);
+      return result;
+    });
+    queue = pending.catch(() => {});
+    return pending;
+  }
+
   function mutateTestSuites(operation, projectId = 'default') {
     const pending = queue.then(async () => {
       const suites = await readAssets('testSuites', projectId);
@@ -133,6 +185,10 @@ export function createMutationService({
     mutateProjectAssets,
     mutateRuleProjectImport,
     mutateReleases,
+    mutateDeployments,
+    mutateApplicationPackages,
+    mutateTargets,
+    mutateActivationGenerations,
     mutateTestSuites,
     mutateChangeSets,
   };

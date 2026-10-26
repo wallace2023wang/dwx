@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -30,6 +31,7 @@ import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.kie.api.builder.Message;
 import org.kie.api.builder.Results;
 import org.kie.api.definition.type.FactField;
@@ -45,15 +47,35 @@ import org.kie.internal.utils.KieHelper;
 public final class ResServer {
   private static final ObjectMapper JSON = new ObjectMapper();
   private static final String DROOLS_VERSION = "10.2.0";
-  private static final int MAX_BODY = 2 * 1024 * 1024;
+  private static final int MAX_BODY = boundedLimit("RES_MAX_BODY_BYTES", 16 * 1024 * 1024, 2 * 1024 * 1024, 64 * 1024 * 1024);
+  private static final int MAX_DRL_CHARS = boundedLimit("RES_MAX_DRL_CHARS", 12 * 1024 * 1024, 200000, 48 * 1024 * 1024);
+  private static final int MAX_TOTAL_DRL_CHARS = boundedLimit("RES_MAX_TOTAL_DRL_CHARS", 48 * 1024 * 1024, 1 * 1024 * 1024, 96 * 1024 * 1024);
   private static final int MAX_FIRES_PER_STEP = 100;
   private static final Path DATA_DIR = Path.of(System.getenv().getOrDefault("RES_DATA_DIR", "data/releases"));
   private static final Path ACTIVE_ROUTES_FILE = DATA_DIR.resolve("active-services.routes");
   private static final Path CONFIG_FILE = Path.of(System.getenv().getOrDefault("RES_CONFIG_FILE", "config/res.properties"));
+  private static final String NODE_ID = System.getenv().getOrDefault("RES_NODE_ID", "local");
+  private static final String MANAGEMENT_API_KEY = System.getenv().getOrDefault("RES_MANAGEMENT_API_KEY", "").trim();
+  private static final String EXECUTION_API_KEY = System.getenv().getOrDefault("RES_EXECUTION_API_KEY", "").trim();
   private static final int SESSION_POOL_SIZE = loadSessionPoolSize();
   private static final Map<String, Deployment> DEPLOYMENTS = new ConcurrentHashMap<>();
   private static final Map<String, String> ACTIVE_RELEASES = new ConcurrentHashMap<>();
+  private static final Map<String, Long> ACTIVE_GENERATIONS = new ConcurrentHashMap<>();
+  private static final Map<String, AtomicInteger> IN_FLIGHT = new ConcurrentHashMap<>();
+  private static final Map<String, DrainState> DRAINING_RELEASES = new ConcurrentHashMap<>();
   private static final Object DEPLOY_LOCK = new Object();
+
+  enum Plane { MANAGEMENT, EXECUTION, COMBINED }
+
+  record AuthConfig(String managementApiKey, String executionApiKey) {
+    AuthConfig {
+      managementApiKey = managementApiKey == null ? "" : managementApiKey.trim();
+      executionApiKey = executionApiKey == null ? "" : executionApiKey.trim();
+      if (!managementApiKey.isEmpty() && managementApiKey.equals(executionApiKey)) {
+        throw new IllegalArgumentException("RES 管理面与执行面必须使用不同凭据");
+      }
+    }
+  }
 
   // factTypes: 从编译后 DRL 的 declare RuleInput 反射得到的字段名→Java 类型映射。
   // RES 不保存 BOM 副本，DRL 里的 declare 块就是字段表的冻结快照。
@@ -63,6 +85,8 @@ public final class ResServer {
       for (KieContainerSessionsPool pool : sessionPools) pool.shutdown();
     }
   }
+  private record DrainState(String decisionService, String releaseId, long generation, String startedAt) {}
+  private record PinnedDeployment(Deployment deployment, String releaseId, long generation) {}
   private record RoundResult(List<Map<String, Object>> trace, int count, boolean limitReached,
       Map<String, Object> path, List<Map<String, Object>> paths) {}
   private record StepResult(int count, boolean limitReached) {}
@@ -90,25 +114,74 @@ public final class ResServer {
     loadDeployments();
     loadActiveRoutes();
     Runtime.getRuntime().addShutdownHook(new Thread(ResServer::shutdownDeployments));
-    int port = Integer.parseInt(System.getenv().getOrDefault("RES_PORT", "8790"));
-    startServer(port, true);
-    System.out.println("Rule Execution Server listening on " + port + ", loaded " + DEPLOYMENTS.size() + " release(s)");
+    int executionPort = Integer.parseInt(System.getenv().getOrDefault("RES_PORT", "8790"));
+    int managementPort = Integer.parseInt(System.getenv().getOrDefault("RES_MANAGEMENT_PORT", "8793"));
+    if (executionPort == managementPort) throw new IllegalArgumentException("RES_PORT 与 RES_MANAGEMENT_PORT 必须不同");
+    AuthConfig auth = new AuthConfig(MANAGEMENT_API_KEY, EXECUTION_API_KEY);
+    startServer(executionPort, true, Plane.EXECUTION, auth);
+    startServer(managementPort, true, Plane.MANAGEMENT, auth);
+    warnIfAuthenticationDisabled(auth);
+    System.out.println("Rule Execution Server listening on execution port " + executionPort
+        + " and management port " + managementPort + ", loaded " + DEPLOYMENTS.size() + " release(s)");
   }
 
   static HttpServer startServer(int port, boolean pooledExecutor) throws IOException {
-    Files.createDirectories(DATA_DIR);
-    HttpServer server = HttpServer.create(new InetSocketAddress("0.0.0.0", port), 0);
-    server.createContext("/health", ResServer::health);
-    server.createContext("/deployments", ResServer::listDeployments);
-    server.createContext("/deploy", ResServer::deploy);
-    server.createContext("/activate", ResServer::activate);
-    server.createContext("/undeploy", ResServer::undeploy);
-    server.createContext("/execute", ResServer::execute);
-    server.createContext("/services", ResServer::executeService);
-    server.createContext("/openapi.json", ResServer::openapi);
+    return startServer(port, pooledExecutor, Plane.COMBINED, new AuthConfig("", ""));
+  }
+
+  static HttpServer startServer(int port, boolean pooledExecutor, Plane plane, AuthConfig auth) throws IOException {
+    HttpServer server = createServer(port, plane, auth);
     if (pooledExecutor) server.setExecutor(Executors.newFixedThreadPool(Math.max(4, Runtime.getRuntime().availableProcessors())));
     server.start();
     return server;
+  }
+
+  static HttpServer createServer(int port) throws IOException {
+    return createServer(port, Plane.COMBINED, new AuthConfig("", ""));
+  }
+
+  static HttpServer createServer(int port, Plane plane, AuthConfig auth) throws IOException {
+    Files.createDirectories(DATA_DIR);
+    HttpServer server = HttpServer.create(new InetSocketAddress("0.0.0.0", port), 0);
+    server.createContext("/health", ResServer::health);
+    if (plane != Plane.EXECUTION) {
+      server.createContext("/status", authenticated(ResServer::status, auth.managementApiKey()));
+      server.createContext("/deployments", authenticated(ResServer::listDeployments, auth.managementApiKey()));
+      server.createContext("/deploy", authenticated(ResServer::deploy, auth.managementApiKey()));
+      server.createContext("/prepare", authenticated(ResServer::prepare, auth.managementApiKey()));
+      server.createContext("/activate", authenticated(ResServer::activate, auth.managementApiKey()));
+      server.createContext("/undeploy", authenticated(ResServer::undeploy, auth.managementApiKey()));
+    }
+    if (plane != Plane.MANAGEMENT) {
+      server.createContext("/execute", authenticated(ResServer::execute, auth.executionApiKey()));
+      server.createContext("/services", authenticated(ResServer::executeService, auth.executionApiKey()));
+    }
+    server.createContext("/openapi.json", exchange -> openapi(exchange, plane, auth));
+    return server;
+  }
+
+  private static HttpHandler authenticated(HttpHandler handler, String apiKey) {
+    return exchange -> {
+      if (!apiKey.isEmpty() && !authorized(exchange, apiKey)) {
+        exchange.getResponseHeaders().set("WWW-Authenticate", "Bearer realm=\"res\"");
+        send(exchange, 401, Map.of("error", "未提供有效的 RES 服务凭据"));
+        return;
+      }
+      handler.handle(exchange);
+    };
+  }
+
+  private static boolean authorized(HttpExchange exchange, String expected) {
+    String authorization = exchange.getRequestHeaders().getFirst("Authorization");
+    if (authorization == null || !authorization.regionMatches(true, 0, "Bearer ", 0, 7)) return false;
+    byte[] actual = authorization.substring(7).trim().getBytes(StandardCharsets.UTF_8);
+    byte[] wanted = expected.getBytes(StandardCharsets.UTF_8);
+    return MessageDigest.isEqual(actual, wanted);
+  }
+
+  private static void warnIfAuthenticationDisabled(AuthConfig auth) {
+    if (auth.managementApiKey().isEmpty()) System.err.println("警告：RES 管理面鉴权未启用，请配置 RES_MANAGEMENT_API_KEY");
+    if (auth.executionApiKey().isEmpty()) System.err.println("警告：RES 执行面鉴权未启用，请配置 RES_EXECUTION_API_KEY");
   }
 
 
@@ -131,6 +204,15 @@ public final class ResServer {
     }
   }
 
+  private static int boundedLimit(String name, int fallback, int minimum, int maximum) {
+    try {
+      int value = Integer.parseInt(System.getenv().getOrDefault(name, String.valueOf(fallback)));
+      return Math.max(minimum, Math.min(maximum, value));
+    } catch (NumberFormatException exception) {
+      return fallback;
+    }
+  }
+
   private static void shutdownDeployments() {
     for (Deployment deployment : DEPLOYMENTS.values()) deployment.shutdown();
   }
@@ -139,11 +221,44 @@ public final class ResServer {
     if (!method(exchange, "GET")) return;
     send(exchange, 200, Map.of(
         "service", "Rule Execution Server",
+        "nodeId", NODE_ID,
+        "status", "ready",
         "engine", "Drools",
         "version", DROOLS_VERSION,
         "sessionPoolSize", SESSION_POOL_SIZE,
         "deployments", DEPLOYMENTS.size(),
         "activeServices", ACTIVE_RELEASES.size()));
+  }
+
+  private static void status(HttpExchange exchange) throws IOException {
+    if (!method(exchange, "GET")) return;
+    List<Map<String, Object>> deployments = DEPLOYMENTS.values().stream()
+        .map(deployment -> deploymentSummary(deployment.release(), deployment.deployedAt()))
+        .sorted((left, right) -> String.valueOf(left.get("decisionService")).compareTo(String.valueOf(right.get("decisionService"))))
+        .toList();
+    List<Map<String, Object>> draining = DRAINING_RELEASES.values().stream()
+        .map(state -> Map.<String, Object>of(
+            "decisionService", state.decisionService(),
+            "releaseId", state.releaseId(),
+            "generation", state.generation(),
+            "inFlight", inFlight(state.releaseId()),
+            "startedAt", state.startedAt()))
+        .toList();
+    Map<String, Object> routes = new TreeMap<>();
+    for (Map.Entry<String, String> entry : ACTIVE_RELEASES.entrySet()) {
+      routes.put(entry.getKey(), Map.of(
+          "releaseId", entry.getValue(),
+          "generation", ACTIVE_GENERATIONS.getOrDefault(entry.getKey(), 0L)));
+    }
+    send(exchange, 200, Map.of(
+        "nodeId", NODE_ID,
+        "status", "ready",
+        "engine", "Drools",
+        "engineVersion", DROOLS_VERSION,
+        "activeRoutes", routes,
+        "deployments", deployments,
+        "draining", draining,
+        "observedAt", Instant.now().toString()));
   }
 
   private static void listDeployments(HttpExchange exchange) throws IOException {
@@ -155,7 +270,7 @@ public final class ResServer {
     send(exchange, 200, result);
   }
 
-  private static void openapi(HttpExchange exchange) throws IOException {
+  private static void openapi(HttpExchange exchange, Plane plane, AuthConfig auth) throws IOException {
     if (!method(exchange, "GET")) return;
     ObjectNode root = JSON.createObjectNode();
     root.put("openapi", "3.0.3");
@@ -163,19 +278,40 @@ public final class ResServer {
     info.put("title", "DWX Rule Execution Server");
     info.put("version", "1.0.0");
     ObjectNode paths = root.putObject("paths");
-    for (String path : List.of("/deploy", "/activate", "/undeploy", "/execute", "/services/{decisionService}/execute")) {
+    List<String> postPaths = new ArrayList<>();
+    if (plane != Plane.EXECUTION) postPaths.addAll(List.of("/prepare", "/deploy", "/activate", "/undeploy"));
+    if (plane != Plane.MANAGEMENT) postPaths.addAll(List.of("/execute", "/services/{decisionService}/execute"));
+    for (String path : postPaths) {
       ObjectNode operation = paths.putObject(path).putObject("post");
       operation.put("summary", switch (path) {
-        case "/deploy" -> "部署冻结 Release";
+        case "/prepare" -> "部署、编译并预热冻结 Release，不切换服务路由";
+        case "/deploy" -> "部署冻结 Release；兼容模式下首次部署自动激活";
         case "/activate" -> "切换决策服务当前生效 Release";
         case "/undeploy" -> "卸载 Release";
         case "/services/{decisionService}/execute" -> "按稳定决策服务标识执行当前生效 Release";
         default -> "按 Release ID 或 decisionService 执行，支持可选多轮收敛";
       });
       operation.putObject("responses").putObject("200").put("description", "成功");
+      boolean secured = plane == Plane.MANAGEMENT ? !auth.managementApiKey().isEmpty()
+          : plane == Plane.EXECUTION ? !auth.executionApiKey().isEmpty()
+          : List.of("/prepare", "/deploy", "/activate", "/undeploy").contains(path)
+              ? !auth.managementApiKey().isEmpty() : !auth.executionApiKey().isEmpty();
+      if (secured) operation.putArray("security").addObject().putArray("bearerAuth");
     }
-    paths.putObject("/deployments").putObject("get").putObject("responses").putObject("200").put("description", "已部署 Release 列表");
-    ObjectNode schemas = root.putObject("components").putObject("schemas");
+    if (plane != Plane.EXECUTION) {
+      ObjectNode deployments = paths.putObject("/deployments").putObject("get");
+      deployments.putObject("responses").putObject("200").put("description", "已部署 Release 列表");
+      ObjectNode statusOperation = paths.putObject("/status").putObject("get");
+      statusOperation.putObject("responses").putObject("200").put("description", "节点、代次、在途请求与排空状态");
+      if (!auth.managementApiKey().isEmpty()) {
+        deployments.putArray("security").addObject().putArray("bearerAuth");
+        statusOperation.putArray("security").addObject().putArray("bearerAuth");
+      }
+    }
+    ObjectNode components = root.putObject("components");
+    components.putObject("securitySchemes").putObject("bearerAuth")
+        .put("type", "http").put("scheme", "bearer");
+    ObjectNode schemas = components.putObject("schemas");
     ObjectNode step = schemas.putObject("ReleaseStep");
     step.put("type", "object");
     ObjectNode properties = step.putObject("properties");
@@ -190,6 +326,14 @@ public final class ResServer {
   }
 
   private static void deploy(HttpExchange exchange) throws IOException {
+    deploy(exchange, true);
+  }
+
+  private static void prepare(HttpExchange exchange) throws IOException {
+    deploy(exchange, false);
+  }
+
+  private static void deploy(HttpExchange exchange, boolean activateFirst) throws IOException {
     if (!method(exchange, "POST")) return;
     JsonNode release;
     try { release = readBody(exchange); }
@@ -204,7 +348,7 @@ public final class ResServer {
         if (!existing.release().path("checksum").asText().equals(release.path("checksum").asText())) {
           send(exchange, 409, Map.of("error", "相同 Release ID 已存在不同内容")); return;
         }
-        activateFirstDeployment(existing.release());
+        if (activateFirst) activateFirstDeployment(existing.release());
         send(exchange, 200, deploymentResponse(existing.release(), existing.deployedAt())); return;
       }
 
@@ -218,7 +362,7 @@ public final class ResServer {
         throw exception;
       }
       DEPLOYMENTS.put(id, deployment);
-      activateFirstDeployment(release);
+      if (activateFirst) activateFirstDeployment(release);
       send(exchange, 201, deploymentResponse(release, deployment.deployedAt()));
     }
   }
@@ -235,14 +379,42 @@ public final class ResServer {
       String decisionService = deployment.release().path("decisionService").asText();
       String requestedService = request.path("decisionService").asText(decisionService);
       if (!decisionService.equals(requestedService)) { send(exchange, 409, Map.of("error", "Release 不属于指定决策服务")); return; }
-      ACTIVE_RELEASES.put(decisionService, releaseId);
-      persistActiveRoutes();
-      send(exchange, 200, Map.of(
-          "ok", true,
-          "decisionService", decisionService,
-          "releaseId", releaseId,
-          "version", deployment.release().path("version").asInt(),
-          "activatedAt", Instant.now().toString()));
+      long currentGeneration = ACTIVE_GENERATIONS.getOrDefault(decisionService, 0L);
+      boolean cas = request.has("expectedGeneration") || request.has("generation");
+      long expectedGeneration = request.path("expectedGeneration").asLong(-1);
+      long generation = request.has("generation") ? request.path("generation").asLong(-1) : expectedGeneration + 1;
+      boolean bootstrap = request.path("bootstrap").asBoolean(false)
+          && currentGeneration == 0 && !ACTIVE_RELEASES.containsKey(decisionService);
+      if (cas && (expectedGeneration < 0 || generation < 1 || (!bootstrap && generation != expectedGeneration + 1))) {
+        send(exchange, 400, Map.of("error", "generation 必须等于 expectedGeneration + 1")); return;
+      }
+      if (cas && currentGeneration == generation && releaseId.equals(ACTIVE_RELEASES.get(decisionService))) {
+        send(exchange, 200, activationResponse(deployment, generation, false, Instant.now().toString())); return;
+      }
+      if (cas && currentGeneration != expectedGeneration) {
+        send(exchange, 409, Map.of(
+            "error", "generation CAS 冲突",
+            "decisionService", decisionService,
+            "expectedGeneration", expectedGeneration,
+            "actualGeneration", currentGeneration,
+            "activeReleaseId", ACTIVE_RELEASES.getOrDefault(decisionService, "")));
+        return;
+      }
+      long nextGeneration = cas ? generation : currentGeneration + 1;
+      String previousReleaseId = ACTIVE_RELEASES.put(decisionService, releaseId);
+      ACTIVE_GENERATIONS.put(decisionService, nextGeneration);
+      try {
+        persistActiveRoutes();
+      } catch (IOException exception) {
+        if (previousReleaseId == null) ACTIVE_RELEASES.remove(decisionService); else ACTIVE_RELEASES.put(decisionService, previousReleaseId);
+        if (currentGeneration == 0) ACTIVE_GENERATIONS.remove(decisionService); else ACTIVE_GENERATIONS.put(decisionService, currentGeneration);
+        throw exception;
+      }
+      if (previousReleaseId != null && !previousReleaseId.equals(releaseId) && inFlight(previousReleaseId) > 0) {
+        DRAINING_RELEASES.put(previousReleaseId, new DrainState(decisionService, previousReleaseId, currentGeneration, Instant.now().toString()));
+      }
+      DRAINING_RELEASES.remove(releaseId);
+      send(exchange, 200, activationResponse(deployment, nextGeneration, previousReleaseId != null && !previousReleaseId.equals(releaseId), Instant.now().toString()));
     }
   }
 
@@ -257,7 +429,12 @@ public final class ResServer {
     synchronized (DEPLOY_LOCK) {
       Deployment deployment = DEPLOYMENTS.remove(releaseId);
       Files.deleteIfExists(DATA_DIR.resolve(releaseId + ".json"));
+      List<String> removedServices = ACTIVE_RELEASES.entrySet().stream()
+          .filter(entry -> releaseId.equals(entry.getValue())).map(Map.Entry::getKey).toList();
       ACTIVE_RELEASES.entrySet().removeIf(entry -> releaseId.equals(entry.getValue()));
+      for (String service : removedServices) ACTIVE_GENERATIONS.remove(service);
+      DRAINING_RELEASES.remove(releaseId);
+      IN_FLIGHT.remove(releaseId);
       persistActiveRoutes();
       if (deployment != null) deployment.shutdown();
       send(exchange, 200, Map.of(
@@ -298,17 +475,36 @@ public final class ResServer {
   }
 
   private static void executeRequest(HttpExchange exchange, JsonNode request, long started) throws IOException {
-    String releaseId = request.path("releaseId").asText("");
-    if (releaseId.isBlank()) {
-      String decisionService = request.path("decisionService").asText("");
-      if (!decisionService.matches("[a-z0-9][a-z0-9._/-]{2,79}")) {
-        send(exchange, 400, Map.of("error", "必须提供有效的 releaseId 或 decisionService")); return;
+    PinnedDeployment pinned;
+    synchronized (DEPLOY_LOCK) {
+      String releaseId = request.path("releaseId").asText("");
+      long generation = 0;
+      if (releaseId.isBlank()) {
+        String decisionService = request.path("decisionService").asText("");
+        if (!decisionService.matches("[a-z0-9][a-z0-9._/-]{2,79}")) {
+          send(exchange, 400, Map.of("error", "必须提供有效的 releaseId 或 decisionService")); return;
+        }
+        releaseId = ACTIVE_RELEASES.getOrDefault(decisionService, "");
+        generation = ACTIVE_GENERATIONS.getOrDefault(decisionService, 0L);
+        if (releaseId.isBlank()) { send(exchange, 404, Map.of("error", "决策服务没有当前生效 Release")); return; }
       }
-      releaseId = ACTIVE_RELEASES.getOrDefault(decisionService, "");
-      if (releaseId.isBlank()) { send(exchange, 404, Map.of("error", "决策服务没有当前生效 Release")); return; }
+      Deployment deployment = DEPLOYMENTS.get(releaseId);
+      if (deployment == null) { send(exchange, 404, Map.of("error", "Release 未部署")); return; }
+      String service = deployment.release().path("decisionService").asText();
+      if (releaseId.equals(ACTIVE_RELEASES.get(service))) generation = ACTIVE_GENERATIONS.getOrDefault(service, generation);
+      IN_FLIGHT.computeIfAbsent(releaseId, ignored -> new AtomicInteger()).incrementAndGet();
+      pinned = new PinnedDeployment(deployment, releaseId, generation);
     }
-    Deployment deployment = DEPLOYMENTS.get(releaseId);
-    if (deployment == null) { send(exchange, 404, Map.of("error", "Release 未部署")); return; }
+    try {
+      executePinnedRequest(exchange, request, started, pinned);
+    } finally {
+      releasePinned(pinned.releaseId());
+    }
+  }
+
+  private static void executePinnedRequest(HttpExchange exchange, JsonNode request, long started, PinnedDeployment pinned) throws IOException {
+    String releaseId = pinned.releaseId();
+    Deployment deployment = pinned.deployment();
     JsonNode input = request.path("facts");
     if (!input.isObject()) { send(exchange, 400, Map.of("error", "facts 必须是对象")); return; }
     String requiredError = requiredFactError(deployment.release(), input);
@@ -382,6 +578,7 @@ public final class ResServer {
     response.put("ok", true);
     response.put("requestId", requestId);
     response.put("releaseId", releaseId);
+    response.put("generation", pinned.generation());
     response.put("decisionService", deployment.release().path("decisionService").asText());
     response.put("version", deployment.release().path("version").asInt());
     response.put("facts", facts);
@@ -425,7 +622,7 @@ public final class ResServer {
       for (int position = 0; position <= commonStepCount && !limitReached; position++) {
         JsonNode gatewayConfig = gatewaysAt.get(position);
         if (gatewayConfig != null) {
-          JsonNode selectedBranch = selectBranch(gatewayConfig.path("branches"), facts);
+          JsonNode selectedBranch = selectBranch(gatewayConfig.path("branches"), facts, variables);
           String gatewayId = chained ? gatewayConfig.path("id").asText() : "gateway";
           String gatewayName = chained ? gatewayConfig.path("name").asText("排他网关") : "条件网关";
           Map<String, Object> gateway = new LinkedHashMap<>();
@@ -437,6 +634,7 @@ public final class ResServer {
           gateway.put("default", selectedBranch != null && selectedBranch.path("default").asBoolean(false));
           gateway.put("count", 0);
           gateway.put("facts", new LinkedHashMap<>(facts));
+          gateway.put("variables", new LinkedHashMap<>(variables));
           trace.add(gateway);
           Map<String, Object> path = new LinkedHashMap<>();
           path.put("gatewayId", gatewayId);
@@ -499,7 +697,7 @@ public final class ResServer {
         continue;
       }
       if ("gateway".equals(type)) {
-        JsonNode selectedBranch = selectBranch(node.path("branches"), facts);
+        JsonNode selectedBranch = selectBranch(node.path("branches"), facts, variables);
         String gatewayName = node.path("name").asText("排他网关");
         Map<String, Object> gateway = new LinkedHashMap<>();
         gateway.put("name", gatewayName);
@@ -510,6 +708,7 @@ public final class ResServer {
         gateway.put("default", selectedBranch != null && selectedBranch.path("default").asBoolean(false));
         gateway.put("count", 0);
         gateway.put("facts", new LinkedHashMap<>(facts));
+        gateway.put("variables", new LinkedHashMap<>(variables));
         trace.add(gateway);
         Map<String, Object> path = new LinkedHashMap<>();
         path.put("gatewayId", nodeId);
@@ -683,12 +882,12 @@ public final class ResServer {
     return true;
   }
 
-  private static JsonNode selectBranch(JsonNode branches, Map<String, Object> facts) {
+  private static JsonNode selectBranch(JsonNode branches, Map<String, Object> facts, Map<String, Object> variables) {
     JsonNode fallback = null;
     for (JsonNode branch : branches) {
       if (branch.path("default").asBoolean(false)) {
         fallback = branch;
-      } else if (conditionMatches(branch.path("condition"), facts)) {
+      } else if (conditionMatches(branch.path("condition"), facts, variables)) {
         return branch;
       }
     }
@@ -714,8 +913,9 @@ public final class ResServer {
     return trace;
   }
 
-  private static boolean conditionMatches(JsonNode condition, Map<String, Object> facts) {
-    Object actual = facts.get(condition.path("field").asText());
+  private static boolean conditionMatches(JsonNode condition, Map<String, Object> facts, Map<String, Object> variables) {
+    Map<String, Object> values = "variable".equals(condition.path("fieldSource").asText("bom")) ? variables : facts;
+    Object actual = values.get(condition.path("field").asText());
     if (actual == null) return false;
     JsonNode expected = condition.path("value");
     String operator = condition.path("operator").asText();
@@ -740,6 +940,21 @@ public final class ResServer {
     };
   }
 
+  private static boolean validRoutingCondition(JsonNode condition, JsonNode release) {
+    if (!condition.isObject() || condition.path("field").asText("").isBlank()
+        || !List.of("==", "!=", ">", ">=", "<", "<=").contains(condition.path("operator").asText())
+        || condition.path("value").isMissingNode() || condition.path("value").isNull()) return false;
+    String field = condition.path("field").asText();
+    String source = condition.path("fieldSource").asText("bom");
+    JsonNode definitions = "variable".equals(source) ? release.path("variables") : release.path("model").path("fields");
+    if (!"variable".equals(source) && !"bom".equals(source) || !definitions.isArray()) return false;
+    for (JsonNode definition : definitions) {
+      String key = "variable".equals(source) ? definition.path("name").asText() : definition.path("key").asText();
+      if (field.equals(key)) return true;
+    }
+    return false;
+  }
+
   private static Deployment buildDeployment(JsonNode release, String deployedAt) throws CompileFailure {
     List<KieContainer> containers = compile(release);
     Map<String, Class<?>> factTypes = reflectFactTypes(containers.get(0));
@@ -757,7 +972,21 @@ public final class ResServer {
     List<KieContainerSessionsPool> pools = containers.stream()
         .map(container -> container.newKieSessionsPool(SESSION_POOL_SIZE))
         .toList();
-    return new Deployment(release.deepCopy(), pools, factTypes, variableTypes, deployedAt);
+    Deployment deployment = new Deployment(release.deepCopy(), pools, factTypes, variableTypes, deployedAt);
+    prewarm(deployment);
+    return deployment;
+  }
+
+  private static void prewarm(Deployment deployment) throws CompileFailure {
+    try {
+      for (KieContainerSessionsPool pool : deployment.sessionPools()) {
+        KieSession session = pool.newKieSession();
+        session.dispose();
+      }
+    } catch (RuntimeException exception) {
+      deployment.shutdown();
+      throw new CompileFailure(List.of("Release 预热失败：" + exception.getMessage()));
+    }
   }
 
   private static List<KieContainer> compile(JsonNode release) throws CompileFailure {
@@ -834,11 +1063,11 @@ public final class ResServer {
       // rule-group 是规则集里的"整包执行"步骤：快照已把成员规则合成为完整 DRL，
       // 执行方式与 rule/table 完全相同，因此这里只需放行类型。
       if (!List.of("rule", "table", "rule-group").contains(step.path("type").asText())) return "发布包步骤类型无效";
-      if (!step.path("drl").isTextual() || step.path("drl").asText().length() > 200_000) return "发布包 DRL 无效或过大";
+      if (!step.path("drl").isTextual() || step.path("drl").asText().length() > MAX_DRL_CHARS) return "发布包 DRL 无效或过大";
       if (!validStepMappings(step, release.path("model"))) return "发布包步骤字段映射无效";
       totalDrl += step.path("drl").asText().length();
     }
-    if (totalDrl > 1_000_000) return "发布包总大小超限";
+    if (totalDrl > MAX_TOTAL_DRL_CHARS) return "发布包总大小超限";
     if (release.has("routing")) {
       JsonNode routing = release.path("routing");
       boolean directedGraph = List.of("exclusive-dag", "decision-dag").contains(routing.path("type").asText());
@@ -869,9 +1098,7 @@ public final class ResServer {
               else {
                 conditions++;
                 JsonNode condition = branch.path("condition");
-                if (!condition.isObject() || condition.path("field").asText("").isBlank()
-                    || !List.of("==", "!=", ">", ">=", "<", "<=").contains(condition.path("operator").asText())
-                    || condition.path("value").isMissingNode() || condition.path("value").isNull()) return "发布包图分支条件无效";
+                if (!validRoutingCondition(condition, release)) return "发布包图分支条件无效或未在冻结模型/变量中定义";
               }
             }
             if (conditions == 0 || defaults > 1) return "发布包图网关定义不完整";
@@ -954,9 +1181,7 @@ public final class ResServer {
           else {
             conditions++;
             JsonNode condition = branch.path("condition");
-            if (!condition.isObject() || condition.path("field").asText("").isBlank()
-                || !List.of("==", "!=", ">", ">=", "<", "<=").contains(condition.path("operator").asText())
-                || condition.path("value").isMissingNode() || condition.path("value").isNull()) return "发布包路由条件无效";
+            if (!validRoutingCondition(condition, release)) return "发布包路由条件无效或未在冻结模型/变量中定义";
           }
         }
         if (conditions == 0 || defaults > 1) return "发布包路由定义不完整";
@@ -1215,7 +1440,10 @@ public final class ResServer {
 
   private static void activateFirstDeployment(JsonNode release) throws IOException {
     String decisionService = release.path("decisionService").asText();
-    if (ACTIVE_RELEASES.putIfAbsent(decisionService, release.path("id").asText()) == null) persistActiveRoutes();
+    if (ACTIVE_RELEASES.putIfAbsent(decisionService, release.path("id").asText()) == null) {
+      ACTIVE_GENERATIONS.put(decisionService, 1L);
+      persistActiveRoutes();
+    }
   }
 
   private static void persistActiveRoutes() throws IOException {
@@ -1224,7 +1452,13 @@ public final class ResServer {
       return;
     }
     Path temporary = DATA_DIR.resolve("active-services." + ProcessHandle.current().pid() + ".tmp");
-    JSON.writerWithDefaultPrettyPrinter().writeValue(temporary.toFile(), new TreeMap<>(ACTIVE_RELEASES));
+    Map<String, Object> routes = new TreeMap<>();
+    for (Map.Entry<String, String> entry : ACTIVE_RELEASES.entrySet()) {
+      routes.put(entry.getKey(), Map.of(
+          "releaseId", entry.getValue(),
+          "generation", ACTIVE_GENERATIONS.getOrDefault(entry.getKey(), 0L)));
+    }
+    JSON.writerWithDefaultPrettyPrinter().writeValue(temporary.toFile(), routes);
     try { Files.move(temporary, ACTIVE_ROUTES_FILE, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING); }
     catch (AtomicMoveNotSupportedException exception) { Files.move(temporary, ACTIVE_ROUTES_FILE, StandardCopyOption.REPLACE_EXISTING); }
   }
@@ -1250,9 +1484,13 @@ public final class ResServer {
     if (Files.isRegularFile(ACTIVE_ROUTES_FILE)) {
       JsonNode routes = JSON.readTree(ACTIVE_ROUTES_FILE.toFile());
       routes.fields().forEachRemaining(entry -> {
-        Deployment deployment = DEPLOYMENTS.get(entry.getValue().asText());
+        JsonNode route = entry.getValue();
+        String releaseId = route.isTextual() ? route.asText() : route.path("releaseId").asText();
+        long generation = route.isTextual() ? 0 : route.path("generation").asLong(0);
+        Deployment deployment = DEPLOYMENTS.get(releaseId);
         if (deployment != null && entry.getKey().equals(deployment.release().path("decisionService").asText())) {
-          ACTIVE_RELEASES.put(entry.getKey(), entry.getValue().asText());
+          ACTIVE_RELEASES.put(entry.getKey(), releaseId);
+          ACTIVE_GENERATIONS.put(entry.getKey(), generation);
         }
       });
       return;
@@ -1265,6 +1503,7 @@ public final class ResServer {
     }
     for (Map.Entry<String, Deployment> entry : latest.entrySet()) {
       ACTIVE_RELEASES.put(entry.getKey(), entry.getValue().release().path("id").asText());
+      ACTIVE_GENERATIONS.put(entry.getKey(), 1L);
     }
     if (!ACTIVE_RELEASES.isEmpty()) persistActiveRoutes();
   }
@@ -1282,7 +1521,39 @@ public final class ResServer {
     result.put("sessionPoolSize", SESSION_POOL_SIZE);
     result.put("deployedAt", deployedAt);
     result.put("active", release.path("id").asText().equals(ACTIVE_RELEASES.get(release.path("decisionService").asText())));
+    result.put("state", DRAINING_RELEASES.containsKey(release.path("id").asText()) ? "draining"
+        : Boolean.TRUE.equals(result.get("active")) ? "active" : "ready");
+    result.put("generation", Boolean.TRUE.equals(result.get("active"))
+        ? ACTIVE_GENERATIONS.getOrDefault(release.path("decisionService").asText(), 0L) : 0L);
+    result.put("inFlight", inFlight(release.path("id").asText()));
     return result;
+  }
+
+  private static Map<String, Object> activationResponse(Deployment deployment, long generation, boolean draining, String activatedAt) {
+    Map<String, Object> response = new LinkedHashMap<>();
+    response.put("ok", true);
+    response.put("decisionService", deployment.release().path("decisionService").asText());
+    response.put("releaseId", deployment.release().path("id").asText());
+    response.put("version", deployment.release().path("version").asInt());
+    response.put("generation", generation);
+    response.put("previousGenerationDraining", draining);
+    response.put("activatedAt", activatedAt);
+    return response;
+  }
+
+  private static int inFlight(String releaseId) {
+    AtomicInteger counter = IN_FLIGHT.get(releaseId);
+    return counter == null ? 0 : Math.max(0, counter.get());
+  }
+
+  private static void releasePinned(String releaseId) {
+    AtomicInteger counter = IN_FLIGHT.get(releaseId);
+    if (counter == null) return;
+    int remaining = counter.decrementAndGet();
+    if (remaining <= 0) {
+      IN_FLIGHT.remove(releaseId, counter);
+      DRAINING_RELEASES.remove(releaseId);
+    }
   }
 
   private static Map<String, Object> deploymentResponse(JsonNode release, String deployedAt) {

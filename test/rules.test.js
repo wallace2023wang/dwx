@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { generateDrl, newRule, validateRule } from '../shared/rules.js';
+import {
+  generateDrl,
+  migrateLegacyRuleOperators,
+  newRule,
+  validateRule,
+  validateRuleBomCompatibility,
+} from '../shared/rules.js';
 import { defaultBom } from '../shared/bom.js';
 
 // 语法测试用的宽松 BOM：去掉枚举值域，避免业务约束干扰字符串转义等语言层测试。
@@ -200,6 +206,75 @@ test('legacy BAL literal conditions keep their original validation and DRL outpu
   assert.equal(rule.conditions[0].valueSource, undefined);
   assert.equal(validateRule(rule), null);
   assert.match(generateDrl([rule]), /RuleInput\( customerAge >= 18 \)/);
+});
+
+test('legacy List<String> equality operators migrate immutably to membership operators', () => {
+  const bom = operatorBom();
+  const legacy = {
+    ...newRule(),
+    conditions: [
+      { field: 'listValue', operator: '==', value: '高风险' },
+      { field: 'listValue', operator: '!=', value: '已失效', connector: 'and' },
+    ],
+  };
+  const original = structuredClone(legacy);
+
+  const migrated = migrateLegacyRuleOperators(legacy, bom);
+
+  assert.deepEqual(legacy, original);
+  assert.notEqual(migrated.rule, legacy);
+  assert.deepEqual(migrated.rule.conditions.map(condition => condition.operator), ['contains', 'not contains']);
+  assert.deepEqual(migrated.migrations, [
+    '标签列表：== 已转换为 contains',
+    '标签列表：!= 已转换为 not contains',
+  ]);
+  assert.equal(validateRuleBomCompatibility(legacy, bom), '标签列表不支持 == 操作符');
+  assert.equal(validateRuleBomCompatibility(migrated.rule, bom), null);
+  assert.equal(validateRule(migrated.rule, bom), null);
+  const drl = generateDrl([migrated.rule], bom);
+  assert.match(drl, /listValue != null && listValue\.contains\("高风险"\)/);
+  assert.match(drl, /listValue != null && !listValue\.contains\("已失效"\)/);
+});
+
+test('legacy List<String> equality operators migrate inside nested condition trees', () => {
+  const bom = operatorBom();
+  const legacy = {
+    ...newRule(),
+    conditions: [],
+    conditionTree: {
+      type: 'group',
+      operator: 'and',
+      children: [
+        { type: 'condition', condition: { field: 'listValue', operator: '==', value: '高风险' } },
+        { type: 'condition', condition: { field: 'listValue', operator: '!=', value: '已失效' } },
+      ],
+    },
+  };
+
+  const { rule, migrations } = migrateLegacyRuleOperators(legacy, bom);
+
+  assert.deepEqual(rule.conditionTree.children.map(node => node.condition.operator), ['contains', 'not contains']);
+  assert.equal(migrations.length, 2);
+  assert.equal(validateRuleBomCompatibility(rule, bom), null);
+  assert.equal(validateRule(rule, bom), null);
+});
+
+test('legacy operator migration leaves ambiguous and unrelated conditions unchanged', () => {
+  const bom = operatorBom();
+  const conditions = [
+    { field: 'textValue', operator: '==', value: '高风险' },
+    { field: 'listValue', operator: '==', valueSource: 'field', valueField: 'textOther', value: '' },
+    { fieldSource: 'variable', field: 'flag', operator: '==', value: 'true' },
+    { field: 'listValue', operator: 'starts with', value: '高' },
+    { field: 'removedField', operator: '==', value: '高风险' },
+  ];
+  const legacy = { ...newRule(), conditions };
+
+  const migrated = migrateLegacyRuleOperators(legacy, bom);
+
+  assert.equal(migrated.rule, legacy);
+  assert.deepEqual(migrated.rule.conditions, conditions);
+  assert.deepEqual(migrated.migrations, []);
 });
 
 test('BAL range, date, string, enum, and serialized-list operators generate executable constraints', () => {

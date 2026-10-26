@@ -152,8 +152,8 @@ export class PostgresStore {
       GREATEST((SELECT count(*)::int FROM packages pkg WHERE pkg.project_id = p.id),
         (SELECT count(DISTINCT COALESCE(a.draft->>'category', '未分类'))::int FROM assets a WHERE a.project_id = p.id AND NOT a.archived)) AS package_count,
       (SELECT count(*)::int FROM assets a WHERE a.project_id = p.id AND NOT a.archived) AS asset_count,
-      (SELECT count(DISTINCT d.environment)::int FROM releases r JOIN deployments d ON d.release_id = r.id
-        WHERE r.project_id = p.id AND COALESCE(d.receipt->>'status', 'deployed') <> 'stopped') AS environment_count
+      (SELECT count(DISTINCT d.environment_id)::int FROM deployments d
+        WHERE d.project_id = p.id AND d.status NOT IN ('stopped', 'failed')) AS environment_count
       FROM projects p WHERE ($1 OR NOT p.archived) ORDER BY p.updated_at DESC`, [includeArchived]);
     return result.rows.map(row => ({
       id: row.id, name: row.name, description: row.description, icon: row.icon, engine: row.engine || 'rules',
@@ -180,6 +180,11 @@ export class PostgresStore {
         project.id, project.name, project.description, project.icon, project.engine || 'rules', project.version, project.defaultEnvironment,
         JSON.stringify(project.variables || []), JSON.stringify(project.approvalPolicy || {}), project.createdAt, project.updatedBy,
       ]);
+      await client.query(`INSERT INTO environments (project_id, id, name, kind, is_default)
+        VALUES ($1, 'local', '本地环境', 'dev', true),
+               ($1, 'test', '测试环境', 'test', false),
+               ($1, 'production', '生产环境', 'prod', false)
+        ON CONFLICT (project_id, id) DO NOTHING`, [project.id]);
       for (const pkg of packages) await client.query(`INSERT INTO packages (project_id, name, label, parent_id, created_at)
         VALUES ($1, $2, $3, $4, $5)`, [project.id, pkg.name, pkg.label, pkg.parentId || null, pkg.createdAt]);
       await this.saveBom(bom, null, client, project.id);
@@ -207,9 +212,9 @@ export class PostgresStore {
   }
 
   async deleteProject(id) {
-    const production = await this.pool.query(`SELECT 1 FROM releases r JOIN deployments d ON d.release_id = r.id
-      WHERE r.project_id = $1 AND d.environment = 'production'
-        AND COALESCE(d.receipt->>'status', 'deployed') <> 'stopped' LIMIT 1`, [id]);
+    const production = await this.pool.query(`SELECT 1 FROM deployments
+      WHERE project_id = $1 AND environment_id = 'production'
+        AND status NOT IN ('stopped', 'failed') LIMIT 1`, [id]);
     if (production.rowCount) return { blocked: true };
     const client = await this.pool.connect();
     try {
@@ -217,6 +222,7 @@ export class PostgresStore {
       await client.query('DELETE FROM change_sets WHERE project_id = $1', [id]);
       await client.query('DELETE FROM audit_events WHERE project_id = $1', [id]);
       await client.query('DELETE FROM test_suites WHERE project_id = $1', [id]);
+      await client.query('DELETE FROM application_packages WHERE project_id = $1', [id]);
       await client.query('DELETE FROM deployments WHERE release_id IN (SELECT id FROM releases WHERE project_id = $1)', [id]);
       await client.query('DELETE FROM releases WHERE project_id = $1', [id]);
       await client.query('DELETE FROM bom_versions WHERE project_id = $1', [id]);
@@ -307,12 +313,23 @@ export class PostgresStore {
 
   async listReleases(projectId = 'default') {
     const releases = await this.pool.query('SELECT * FROM releases WHERE project_id = $1 ORDER BY created_at DESC', [projectId]);
-    if (!releases.rows.length) return [];
-    const ids = releases.rows.map(row => row.id);
-    const deployments = await this.pool.query('SELECT release_id, receipt FROM deployments WHERE release_id = ANY($1::text[]) ORDER BY deployed_at', [ids]);
+    const deployments = await this.listDeployments(projectId);
     return releases.rows.map(row => this.remember({
       ...row.content,
-      deployments: deployments.rows.filter(entry => entry.release_id === row.id).map(entry => entry.receipt),
+      deployments: deployments.filter(deployment => deployment.releaseId === row.id).map(deployment => ({
+        id: deployment.id,
+        environment: deployment.environmentId,
+        deployedAt: deployment.createdAt,
+        checksum: deployment.checksum,
+        modelVersion: deployment.modelVersion,
+        engine: deployment.engine,
+        engineVersion: deployment.engineVersion,
+        status: deployment.status === 'ready' ? 'deployed' : deployment.status,
+        ...(deployment.activatedAt ? { activatedAt: deployment.activatedAt } : {}),
+        ...(deployment.activatedBy ? { activatedBy: deployment.activatedBy } : {}),
+        ...(deployment.stoppedAt ? { stoppedAt: deployment.stoppedAt } : {}),
+        ...(deployment.stoppedBy ? { stoppedBy: deployment.stoppedBy } : {}),
+      })),
     }, Number(row.row_revision)));
   }
 
@@ -340,12 +357,6 @@ export class PostgresStore {
           release.id, projectId, release.decisionService, release.version, release.target.type, release.target.id,
           release.checksum, content, rowRevision, release.createdAt,
         ]);
-        for (const deployment of release.deployments || []) {
-          await client.query(`INSERT INTO deployments (id, release_id, environment, deployed_at, receipt)
-            VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO UPDATE SET
-              environment = EXCLUDED.environment, deployed_at = EXCLUDED.deployed_at, receipt = EXCLUDED.receipt`,
-          [deployment.id, release.id, deployment.environment, deployment.deployedAt, deployment]);
-        }
         this.snapshots.set(release, { revision: rowRevision, fingerprint: fingerprint(release) });
       }
       if (ownsTransaction) await client.query('COMMIT');
@@ -353,6 +364,305 @@ export class PostgresStore {
       if (ownsTransaction) await client.query('ROLLBACK');
       throw error;
     } finally { if (ownsTransaction) client.release(); }
+  }
+
+  async listDeployments(projectId = 'default') {
+    const result = await this.pool.query(`SELECT deployment.*, COALESCE(jsonb_agg(
+      jsonb_build_object(
+        'id', event.id, 'deploymentId', event.deployment_id, 'type', event.event_type,
+        'actor', event.actor, 'details', event.details, 'occurredAt', event.occurred_at
+      ) ORDER BY event.occurred_at
+    ) FILTER (WHERE event.id IS NOT NULL), '[]'::jsonb) AS events
+      FROM deployments deployment
+      LEFT JOIN deployment_events event ON event.deployment_id = deployment.id
+      WHERE deployment.project_id = $1
+      GROUP BY deployment.id ORDER BY deployment.deployed_at`, [projectId]);
+    return result.rows.map(row => ({
+      id: row.id,
+      releaseId: row.release_id,
+      decisionService: row.decision_service,
+      environmentId: row.environment_id,
+      engine: row.engine,
+      checksum: row.checksum,
+      status: row.status,
+      modelVersion: row.model_version,
+      engineVersion: row.engine_version,
+      createdAt: iso(row.deployed_at),
+      updatedAt: iso(row.updated_at),
+      ...(row.activated_at ? { activatedAt: iso(row.activated_at) } : {}),
+      ...(row.activated_by ? { activatedBy: row.activated_by } : {}),
+      ...(row.stopped_at ? { stoppedAt: iso(row.stopped_at) } : {}),
+      ...(row.stopped_by ? { stoppedBy: row.stopped_by } : {}),
+      events: row.events.map(event => ({ ...event, occurredAt: iso(event.occurredAt) })),
+    }));
+  }
+
+  async saveDeployments(deployments, projectId = 'default', transactionClient = null) {
+    const client = transactionClient || await this.pool.connect();
+    const ownsTransaction = !transactionClient;
+    try {
+      if (ownsTransaction) await client.query('BEGIN');
+      const ids = deployments.map(item => item.id);
+      await client.query('DELETE FROM deployments WHERE project_id = $1 AND NOT (id = ANY($2::text[]))', [projectId, ids]);
+      await client.query("UPDATE deployments SET status = 'ready' WHERE project_id = $1 AND status = 'active'", [projectId]);
+      for (const deployment of deployments) {
+        const receipt = {
+          id: deployment.id, environment: deployment.environmentId, deployedAt: deployment.createdAt,
+          checksum: deployment.checksum, status: deployment.status === 'ready' ? 'deployed' : deployment.status,
+        };
+        await client.query(`INSERT INTO deployments
+          (id, release_id, environment, deployed_at, receipt, project_id, decision_service, environment_id,
+           engine, checksum, status, model_version, engine_version, updated_at, activated_at, activated_by, stopped_at, stopped_by)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+          ON CONFLICT (id) DO UPDATE SET
+            receipt=EXCLUDED.receipt, status=EXCLUDED.status, updated_at=EXCLUDED.updated_at,
+            activated_at=EXCLUDED.activated_at, activated_by=EXCLUDED.activated_by,
+            stopped_at=EXCLUDED.stopped_at, stopped_by=EXCLUDED.stopped_by`, [
+          deployment.id, deployment.releaseId, deployment.environmentId, deployment.createdAt, receipt,
+          projectId, deployment.decisionService, deployment.environmentId, deployment.engine,
+          deployment.checksum, deployment.status, deployment.modelVersion, deployment.engineVersion,
+          deployment.updatedAt, deployment.activatedAt || null, deployment.activatedBy || null,
+          deployment.stoppedAt || null, deployment.stoppedBy || null,
+        ]);
+        for (const event of deployment.events || []) {
+          await client.query(`INSERT INTO deployment_events (id, deployment_id, event_type, actor, details, occurred_at)
+            VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (id) DO NOTHING`, [
+            event.id, deployment.id, event.type, event.actor, event.details || {}, event.occurredAt,
+          ]);
+        }
+      }
+      if (ownsTransaction) await client.query('COMMIT');
+    } catch (error) {
+      if (ownsTransaction) await client.query('ROLLBACK');
+      throw error;
+    } finally { if (ownsTransaction) client.release(); }
+  }
+
+  async listApplicationPackages(projectId = 'default') {
+    const packages = await this.pool.query(
+      'SELECT * FROM application_packages WHERE project_id = $1 ORDER BY updated_at DESC',
+      [projectId],
+    );
+    if (!packages.rows.length) return [];
+    const ids = packages.rows.map(row => row.id);
+    const manifests = await this.pool.query(
+      'SELECT * FROM application_package_manifests WHERE application_package_id = ANY($1::text[]) ORDER BY manifest_version',
+      [ids],
+    );
+    return packages.rows.map(row => ({
+      schemaVersion: 1,
+      id: row.id,
+      projectId: row.project_id,
+      name: row.name,
+      decisionService: row.decision_service,
+      rulesetPath: row.ruleset_path,
+      targetType: row.target_type,
+      engine: row.engine,
+      createdAt: iso(row.created_at),
+      updatedAt: iso(row.updated_at),
+      createdBy: row.created_by,
+      manifests: manifests.rows.filter(manifest => manifest.application_package_id === row.id).map(manifest => ({
+        schemaVersion: 1,
+        id: manifest.id,
+        applicationPackageId: row.id,
+        version: Number(manifest.manifest_version),
+        decisionService: row.decision_service,
+        rulesetPath: row.ruleset_path,
+        targetType: row.target_type,
+        engine: row.engine,
+        releaseId: manifest.release_id,
+        releaseVersion: Number(manifest.release_version),
+        releaseDisplayVersion: manifest.release_display_version,
+        releaseChecksum: manifest.release_checksum,
+        checksum: manifest.checksum,
+        createdAt: iso(manifest.created_at),
+        createdBy: manifest.created_by,
+      })),
+    }));
+  }
+
+  async saveApplicationPackages(applicationPackages, projectId = 'default', transactionClient = null) {
+    const client = transactionClient || await this.pool.connect();
+    const ownsTransaction = !transactionClient;
+    try {
+      if (ownsTransaction) await client.query('BEGIN');
+      const ids = applicationPackages.map(item => item.id);
+      await client.query('DELETE FROM application_packages WHERE project_id = $1 AND NOT (id = ANY($2::text[]))', [projectId, ids]);
+      for (const applicationPackage of applicationPackages) {
+        const existing = await client.query('SELECT * FROM application_packages WHERE id = $1 FOR UPDATE', [applicationPackage.id]);
+        if (existing.rowCount) {
+          const row = existing.rows[0];
+          if (row.project_id !== projectId
+              || row.decision_service !== applicationPackage.decisionService
+              || row.ruleset_path !== applicationPackage.rulesetPath
+              || row.target_type !== applicationPackage.targetType
+              || row.engine !== applicationPackage.engine) {
+            throw new Error('应用包固定边界不可修改');
+          }
+          await client.query('UPDATE application_packages SET name = $2, updated_at = $3 WHERE id = $1', [
+            applicationPackage.id, applicationPackage.name, applicationPackage.updatedAt,
+          ]);
+        } else {
+          await client.query(`INSERT INTO application_packages
+            (id, project_id, name, decision_service, ruleset_path, target_type, engine, created_at, updated_at, created_by)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, [
+            applicationPackage.id, projectId, applicationPackage.name, applicationPackage.decisionService,
+            applicationPackage.rulesetPath, applicationPackage.targetType, applicationPackage.engine,
+            applicationPackage.createdAt, applicationPackage.updatedAt, applicationPackage.createdBy,
+          ]);
+        }
+        for (const manifest of applicationPackage.manifests || []) {
+          const stored = await client.query('SELECT checksum FROM application_package_manifests WHERE id = $1', [manifest.id]);
+          if (stored.rowCount) {
+            if (stored.rows[0].checksum !== manifest.checksum) throw new Error('应用包 manifest 不可修改');
+            continue;
+          }
+          await client.query(`INSERT INTO application_package_manifests
+            (id, application_package_id, manifest_version, release_id, release_version, release_display_version,
+             release_checksum, checksum, created_at, created_by)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, [
+            manifest.id, applicationPackage.id, manifest.version, manifest.releaseId, manifest.releaseVersion,
+            manifest.releaseDisplayVersion, manifest.releaseChecksum, manifest.checksum,
+            manifest.createdAt, manifest.createdBy,
+          ]);
+        }
+      }
+      if (ownsTransaction) await client.query('COMMIT');
+    } catch (error) {
+      if (ownsTransaction) await client.query('ROLLBACK');
+      throw error;
+    } finally { if (ownsTransaction) client.release(); }
+  }
+
+  async listTargets(projectId = 'default') {
+    const result = await this.pool.query('SELECT * FROM deployment_targets WHERE project_id = $1 ORDER BY name, id', [projectId]);
+    return result.rows.map(row => ({
+      id: row.id,
+      name: row.name,
+      environmentId: row.environment_id,
+      engine: row.engine,
+      endpoint: row.endpoint,
+      enabled: row.enabled,
+      status: row.status,
+      nodeId: row.node_id || null,
+      engineVersion: row.engine_version || null,
+      lastSeenAt: iso(row.last_seen_at) || null,
+      lastError: row.last_error || null,
+      createdAt: iso(row.created_at),
+      updatedAt: iso(row.updated_at),
+      createdBy: row.created_by,
+    }));
+  }
+
+  async saveTargets(targets, projectId = 'default', transactionClient = null) {
+    const client = transactionClient || await this.pool.connect();
+    const ownsTransaction = !transactionClient;
+    try {
+      if (ownsTransaction) await client.query('BEGIN');
+      const ids = targets.map(item => item.id);
+      await client.query('DELETE FROM deployment_targets WHERE project_id = $1 AND NOT (id = ANY($2::text[]))', [projectId, ids]);
+      for (const target of targets) {
+        await client.query(`INSERT INTO deployment_targets
+          (id, project_id, name, environment_id, engine, endpoint, enabled, status, node_id,
+           engine_version, last_seen_at, last_error, created_at, updated_at, created_by)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+          ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, endpoint=EXCLUDED.endpoint,
+            enabled=EXCLUDED.enabled, status=EXCLUDED.status, node_id=EXCLUDED.node_id,
+            engine_version=EXCLUDED.engine_version, last_seen_at=EXCLUDED.last_seen_at,
+            last_error=EXCLUDED.last_error, updated_at=EXCLUDED.updated_at`, [
+          target.id, projectId, target.name, target.environmentId, target.engine, target.endpoint,
+          target.enabled !== false, target.status || 'unknown', target.nodeId || null,
+          target.engineVersion || null, target.lastSeenAt || null, target.lastError || null,
+          target.createdAt, target.updatedAt, target.createdBy,
+        ]);
+      }
+      if (ownsTransaction) await client.query('COMMIT');
+    } catch (error) {
+      if (ownsTransaction) await client.query('ROLLBACK');
+      throw error;
+    } finally { if (ownsTransaction) client.release(); }
+  }
+
+  async listActivationGenerations(projectId = 'default') {
+    const result = await this.pool.query(
+      'SELECT * FROM activation_generations WHERE project_id = $1 ORDER BY generation DESC, created_at DESC', [projectId],
+    );
+    return result.rows.map(row => ({
+      id: row.id,
+      applicationPackageId: row.application_package_id,
+      manifestId: row.manifest_id,
+      releaseId: row.release_id,
+      decisionService: row.decision_service,
+      environmentId: row.environment_id,
+      generation: Number(row.generation),
+      expectedGeneration: Number(row.expected_generation),
+      status: row.status,
+      targets: row.targets || [],
+      createdAt: iso(row.created_at),
+      updatedAt: iso(row.updated_at),
+      createdBy: row.created_by,
+      activatedAt: iso(row.activated_at) || null,
+      failedAt: iso(row.failed_at) || null,
+      error: row.error || null,
+    }));
+  }
+
+  async saveActivationGenerations(generations, projectId = 'default', transactionClient = null) {
+    const client = transactionClient || await this.pool.connect();
+    const ownsTransaction = !transactionClient;
+    try {
+      if (ownsTransaction) await client.query('BEGIN');
+      for (const generation of generations) {
+        if (generation.status === 'active') {
+          await client.query(`UPDATE activation_generations SET status = 'draining', updated_at = $4
+            WHERE project_id = $1 AND decision_service = $2 AND environment_id = $3 AND status = 'active' AND id <> $5`, [
+            projectId, generation.decisionService, generation.environmentId, generation.updatedAt, generation.id,
+          ]);
+        }
+        await client.query(`INSERT INTO activation_generations
+          (id, project_id, application_package_id, manifest_id, release_id, decision_service,
+           environment_id, generation, expected_generation, status, targets, created_at,
+           updated_at, created_by, activated_at, failed_at, error)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+          ON CONFLICT (id) DO UPDATE SET status=EXCLUDED.status, targets=EXCLUDED.targets,
+            updated_at=EXCLUDED.updated_at, activated_at=EXCLUDED.activated_at,
+            failed_at=EXCLUDED.failed_at, error=EXCLUDED.error`, [
+          generation.id, projectId, generation.applicationPackageId, generation.manifestId,
+          generation.releaseId, generation.decisionService, generation.environmentId,
+          generation.generation, generation.expectedGeneration, generation.status,
+          JSON.stringify(generation.targets || []), generation.createdAt, generation.updatedAt,
+          generation.createdBy, generation.activatedAt || null, generation.failedAt || null,
+          generation.error || null,
+        ]);
+      }
+      if (ownsTransaction) await client.query('COMMIT');
+    } catch (error) {
+      if (ownsTransaction) await client.query('ROLLBACK');
+      throw error;
+    } finally { if (ownsTransaction) client.release(); }
+  }
+
+  async listEnvironments(projectId = 'default') {
+    const result = await this.pool.query('SELECT * FROM environments WHERE project_id = $1 ORDER BY is_default DESC, name', [projectId]);
+    return result.rows.map(row => ({ id: row.id, name: row.name, kind: row.kind, isDefault: row.is_default }));
+  }
+
+  async saveEnvironments(environments, projectId = 'default') {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const environment of environments) {
+        await client.query(`INSERT INTO environments (project_id, id, name, kind, is_default)
+          VALUES ($1,$2,$3,$4,$5) ON CONFLICT (project_id, id) DO UPDATE SET
+          name=EXCLUDED.name, kind=EXCLUDED.kind, is_default=EXCLUDED.is_default`, [
+          projectId, environment.id, environment.name, environment.kind, Boolean(environment.isDefault),
+        ]);
+      }
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally { client.release(); }
   }
 
   async listChangeSets(projectId = 'default') {

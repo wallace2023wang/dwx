@@ -292,6 +292,7 @@ export interface AssetDetail extends Asset {
   decisionTable?: DecisionTableDefinition
   decisionTreeLeaves?: DecisionTreeLeaf[]
   validationWarnings?: string[]
+  migrationWarnings?: string[]
   changeSetId?: string
   versions?: Array<{ number: number; createdAt?: string; bomVersion: number | null; engineVersion: string | null }>
   publishedBomVersion?: number | null
@@ -517,6 +518,7 @@ export interface FlowBranchDraft {
   default?: boolean
   condition?: {
     field: string
+    fieldSource?: 'bom' | 'variable'
     operator: string
     value: string
   }
@@ -545,7 +547,7 @@ export interface FlowGraphGatewayNodeDraft {
     id: string
     name: string
     default?: boolean
-    condition?: { field: string; operator: string; value: string }
+    condition?: { field: string; fieldSource?: 'bom' | 'variable'; operator: string; value: string }
     next: string
   }>
 }
@@ -614,6 +616,7 @@ export interface FlowDetail extends Ruleset {
   description: string
   category: string
   draft: FlowDraft
+  projectVariables: RuleSetVariable[]
   availableAssets: FlowAssetOption[]
   availablePackages: FlowPackageOption[]
   availableFlows?: FlowSubflowOption[]
@@ -684,6 +687,117 @@ export interface TestSuite {
 export type ReleaseEnvironment = 'dev' | 'test' | 'staging' | 'production' | 'local'
 export type ReleaseState = 'active' | 'deployed' | 'built' | 'stopped' | 'running' | 'rolled-back' | 'archived'
 export type ReleaseType = 'patch' | 'minor' | 'major'
+export type DeploymentState = 'pending' | 'parsing' | 'ready' | 'active' | 'draining' | 'stopped' | 'failed'
+
+export interface DeploymentEvent {
+  id: string
+  deploymentId: string
+  type: 'created' | 'ready' | 'activated' | 'deactivated' | 'stopped' | 'failed'
+  actor: string
+  details: Record<string, unknown>
+  occurredAt: string
+}
+
+export interface DeploymentRecord {
+  id: string
+  releaseId: string
+  decisionService: string
+  environmentId: string
+  engine?: string | null
+  checksum: string
+  status: DeploymentState
+  modelVersion?: number | null
+  engineVersion?: string | null
+  createdAt: string
+  updatedAt: string
+  activatedAt?: string
+  activatedBy?: string
+  stoppedAt?: string
+  stoppedBy?: string
+  events: DeploymentEvent[]
+}
+
+export interface DeploymentEnvironment {
+  id: string
+  name: string
+  kind: 'dev' | 'test' | 'staging' | 'prod'
+  isDefault: boolean
+}
+
+export interface DeploymentTarget {
+  id: string
+  name: string
+  environmentId: string
+  engine: 'drools' | 'esper'
+  endpoint: string
+  enabled: boolean
+  status: 'unknown' | 'ready' | 'unreachable' | 'mismatch'
+  nodeId?: string | null
+  engineVersion?: string | null
+  lastSeenAt?: string | null
+  lastError?: string | null
+  managed?: boolean
+}
+
+export interface ActivationTargetState {
+  targetId: string
+  status: 'pending' | 'ready' | 'active' | 'failed'
+  error?: string | null
+  updatedAt: string
+}
+
+export interface ActivationGeneration {
+  id: string
+  applicationPackageId: string
+  manifestId: string
+  releaseId: string
+  decisionService: string
+  environmentId: string
+  generation: number
+  expectedGeneration: number
+  status: 'preparing' | 'activating' | 'active' | 'draining' | 'failed'
+  targets: ActivationTargetState[]
+  createdAt: string
+  updatedAt: string
+  activatedAt?: string | null
+  failedAt?: string | null
+  error?: string | null
+}
+
+export interface ApplicationPackageManifest {
+  id: string
+  applicationPackageId: string
+  version: number
+  decisionService: string
+  rulesetPath: string
+  targetType: 'flow' | 'event-stream'
+  engine: 'drools' | 'esper'
+  releaseId: string
+  releaseVersion: number
+  releaseDisplayVersion: string
+  releaseChecksum: string
+  checksum: string
+  createdAt: string
+  createdBy: string
+  deployment: { id: string; environmentId: string; status: DeploymentState } | null
+  deployments: Array<{ id: string; environmentId: string; status: DeploymentState }>
+}
+
+export interface ApplicationPackageRecord {
+  id: string
+  projectId: string
+  name: string
+  decisionService: string
+  rulesetPath: string
+  targetType: 'flow' | 'event-stream'
+  engine: 'drools' | 'esper'
+  createdAt: string
+  updatedAt: string
+  createdBy: string
+  manifests: ApplicationPackageManifest[]
+  activeManifestId: string | null
+  activeManifestIds: Record<string, string>
+}
 
 export interface ReleaseWebhookConfig {
   enabled: boolean
@@ -760,6 +874,8 @@ export interface AdminRole {
 
 export interface AdminEnvironment {
   id: string
+  name: string
+  kind: DeploymentEnvironment['kind']
   purpose: string
   endpoint: string
   deploymentPolicy: string
@@ -782,6 +898,7 @@ export interface AdminOverview {
   users: AdminUser[]
   roles: AdminRole[]
   environments: AdminEnvironment[]
+  targets: DeploymentTarget[]
   services: ServiceHealth[]
   fetchedAt: string
 }

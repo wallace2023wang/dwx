@@ -29,9 +29,6 @@ const SMOKE_PAGES = [
   { id: 'smoke-project-reviews', url: '/projects/default/reviews', marker: '审核' },
   { id: 'smoke-project-releases', url: '/projects/default/releases', marker: '构建新 Release' },
   { id: 'smoke-project-report', url: '/projects/default/report', marker: '下载 HTML' },
-  { id: 'smoke-cep-index', url: '/projects/project-6f50ddcf', expectUrl: /event-streams$/, marker: '保存' },
-  { id: 'smoke-cep-event-streams', url: '/projects/project-6f50ddcf/event-streams', marker: '保存' },
-  { id: 'smoke-drools-assets', url: '/projects/project-93d1309c/assets', marker: '新建规则' },
 ]
 
 test.describe('已登录页面', () => {

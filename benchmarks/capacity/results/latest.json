@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-09T17:41:03.566Z",
+  "sizes": [
+    1000
+  ],
+  "quick": true,
+  "environment": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "node": "v26.8.1",
+    "cpus": 10,
+    "memoryBytes": 25769803776
+  },
+  "status": "completed-with-failures",
+  "tiers": [
+    {
+      "size": 1000,
+      "status": "ok",
+      "validation": {
+        "error": null,
+        "warnings": [
+          "启用行超过 500，已跳过同步重叠、不可达和缺口分析；请运行离线完整分析"
+        ],
+        "durationMs": 1.6419169999990118
+      },
+      "generation": {
+        "tableGenerationMs": 6.927749999998923,
+        "tableDrlBytes": 251088,
+        "ruleGroupGenerationMs": 3.7784579999988637,
+        "ruleGroupDrlBytes": 181192
+      },
+      "controlPlane": {
+        "projectApi": {
+          "samples": 3,
+          "minMs": 6.498999999999796,
+          "p50Ms": 7.517041999999492,
+          "p95Ms": 10.34245799999917,
+          "p99Ms": 10.34245799999917,
+          "maxMs": 10.34245799999917,
+          "responseBytes": 540
+        },
+        "packagesApi": {
+          "samples": 3,
+          "minMs": 8.70995799999946,
+          "p50Ms": 8.852791999999681,
+          "p95Ms": 9.53229199999987,
+          "p99Ms": 9.53229199999987,
+          "maxMs": 9.53229199999987,
+          "responseBytes": 412977
+        },
+        "browser": {
+          "status": "ok",
+          "interactiveMs": 440.1063749999994,
+          "searchMs": 44.09108300000116,
+          "renderedRows": 1000
+        }
+      },
+      "runtime": {
+        "status": "ok",
+        "engineStartupMs": 355.8762079999997,
+        "resStartupMs": 395.1660840000004,
+        "enginePeakMemoryBytes": 360395571.2,
+        "resPeakMemoryBytes": 347602944,
+        "tableCompile": {
+          "status": 200,
+          "durationMs": 945.3788750000003,
+          "error": null
+        },
+        "ruleGroupCompile": {
+          "status": 200,
+          "durationMs": 309.618375,
+          "error": null
+        },
+        "deploy": {
+          "status": 201,
+          "durationMs": 1477.773583000002,
+          "error": null
+        },
+        "activateStatus": 200,
+        "artifactBytes": 271903,
+        "hotExecution": {
+          "samples": 5,
+          "minMs": 14.274333000001207,
+          "p50Ms": 54.36420799999905,
+          "p95Ms": 78.34591699999874,
+          "p99Ms": 78.34591699999874,
+          "maxMs": 78.34591699999874,
+          "error": null
+        }
+      }
+    }
+  ],
+  "acceptance": [
+    {
+      "label": "1,000 资产 API P95 < 500ms",
+      "passed": true,
+      "detail": "10.3ms"
+    },
+    {
+      "label": "1,000 普通搜索交互 < 300ms",
+      "passed": true,
+      "detail": "44.1ms"
+    },
+    {
+      "label": "1,000 热执行 P95 < 50ms",
+      "passed": false,
+      "detail": "78.3ms"
+    }
+  ],
+  "conclusion": "基准已完整执行，但 1 项目标未达到；结果用于驱动后续规模化改造，不能宣称容量目标已通过。"
+}

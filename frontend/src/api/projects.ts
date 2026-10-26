@@ -239,7 +239,7 @@ export interface CreateProjectInput {
   description: string
   icon: Project['icon']
   engine?: Project['engine']
-  bomTemplate: 'blank' | 'loan' | 'risk' | 'grain' | 'copy'
+  bomTemplate: 'blank' | 'loan' | 'risk' | 'copy'
   copyProjectId?: string
 }
 

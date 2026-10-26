@@ -4,6 +4,7 @@ import test from 'node:test';
 import pg from 'pg';
 import { importJson } from '../server/import-json.js';
 import { PostgresStore, StorageConflictError } from '../server/postgres-store.js';
+import { createApplicationPackage } from '../shared/application-packages.js';
 
 const postgresTestUrl = process.env.POSTGRES_TEST_URL;
 
@@ -168,7 +169,7 @@ test('PG-STORE-01: JSON 导入、持久化和数据库级乐观锁', { skip: !po
         version: 1,
         name: '隔离项目 Release',
         description: 'PostgreSQL 项目发布隔离',
-        target: { type: 'rule', id: changed.id, assetVersion: 1 },
+        target: { type: 'flow', id: changed.id, assetVersion: 1 },
         engine: { type: 'drools', drools: '10.2.0' },
         model: structuredClone(currentBom),
         steps: [{ name: '隔离规则', type: 'rule', assetId: changed.id, assetVersion: 1, drl: 'package workbench' }],
@@ -180,19 +181,66 @@ test('PG-STORE-01: JSON 导入、持久化和数据库级乐观锁', { skip: !po
       assert.deepEqual((await first.listReleases(isolatedProject.id)).map(item => item.id), [isolatedRelease.id]);
       assert.equal((await first.listReleases('default')).some(item => item.id === isolatedRelease.id), false);
 
+      const applicationPackage = createApplicationPackage({
+        id: crypto.randomUUID(), manifestId: crypto.randomUUID(), projectId: isolatedProject.id,
+        name: '隔离项目应用包', release: isolatedRelease, createdAt: now, createdBy: 'pg-test',
+      });
+      await first.saveApplicationPackages([applicationPackage], isolatedProject.id);
+      const storedApplicationPackage = (await first.listApplicationPackages(isolatedProject.id))[0];
+      assert.equal(storedApplicationPackage.decisionService, isolatedRelease.decisionService);
+      assert.equal(storedApplicationPackage.manifests[0].releaseChecksum, isolatedRelease.checksum);
+      assert.equal((await first.listApplicationPackages('default')).some(item => item.id === applicationPackage.id), false);
+
+      const target = {
+        id: crypto.randomUUID(), name: '隔离项目 RES', environmentId: 'local', engine: 'drools',
+        endpoint: 'http://127.0.0.1:18790', enabled: true, status: 'ready', nodeId: 'pg-node',
+        engineVersion: '10.2.0', lastSeenAt: now, lastError: null,
+        createdAt: now, updatedAt: now, createdBy: 'pg-test',
+      };
+      await first.saveTargets([target], isolatedProject.id);
+      assert.equal((await first.listTargets(isolatedProject.id))[0].nodeId, 'pg-node');
+      assert.deepEqual(await first.listTargets('default'), []);
+      const activationGeneration = {
+        id: crypto.randomUUID(), applicationPackageId: applicationPackage.id,
+        manifestId: applicationPackage.manifests[0].id, releaseId: isolatedRelease.id,
+        decisionService: isolatedRelease.decisionService, environmentId: 'local',
+        generation: 1, expectedGeneration: 0, status: 'preparing',
+        targets: [{ targetId: target.id, status: 'ready', updatedAt: now }],
+        createdAt: now, updatedAt: now, createdBy: 'pg-test',
+        activatedAt: null, failedAt: null, error: null,
+      };
+      await first.saveActivationGenerations([activationGeneration], isolatedProject.id);
+      activationGeneration.status = 'active';
+      activationGeneration.activatedAt = now;
+      await first.saveActivationGenerations([activationGeneration], isolatedProject.id);
+      const storedGeneration = (await first.listActivationGenerations(isolatedProject.id))[0];
+      assert.equal(storedGeneration.status, 'active');
+      assert.equal(storedGeneration.targets[0].targetId, target.id);
+
       isolatedRelease.deployments.push({
         id: `local:${isolatedRelease.id}`, environment: 'local', deployedAt: now,
         checksum: isolatedRelease.checksum, modelVersion: currentBom.version, status: 'deployed',
       });
-      await first.saveReleases([isolatedRelease], null, isolatedProject.id);
+      await first.saveDeployments([{
+        id: `local:${isolatedRelease.id}`, releaseId: isolatedRelease.id,
+        decisionService: isolatedRelease.decisionService, environmentId: 'local',
+        checksum: isolatedRelease.checksum, modelVersion: currentBom.version,
+        engine: 'drools', engineVersion: '10.2.0', status: 'ready',
+        createdAt: now, updatedAt: now, events: [],
+      }], isolatedProject.id);
       assert.equal((await first.listReleases(isolatedProject.id))[0].deployments[0].status, 'deployed');
-      isolatedRelease.deployments[0].status = 'active';
-      isolatedRelease.deployments[0].activatedAt = now;
-      await first.saveReleases([isolatedRelease], null, isolatedProject.id);
+      const isolatedDeployment = (await first.listDeployments(isolatedProject.id))[0];
+      isolatedDeployment.status = 'active';
+      isolatedDeployment.activatedAt = now;
+      isolatedDeployment.updatedAt = now;
+      await first.saveDeployments([isolatedDeployment], isolatedProject.id);
       assert.equal((await first.listReleases(isolatedProject.id))[0].deployments[0].status, 'active');
 
       assert.deepEqual(await first.deleteProject(isolatedProject.id), { deleted: true });
       assert.deepEqual(await first.listReleases(isolatedProject.id), []);
+      assert.deepEqual(await first.listApplicationPackages(isolatedProject.id), []);
+      assert.deepEqual(await first.listTargets(isolatedProject.id), []);
+      assert.deepEqual(await first.listActivationGenerations(isolatedProject.id), []);
       assert.deepEqual(await first.listTestSuites(isolatedProject.id), []);
       assert.equal(Number((await first.pool.query('SELECT count(*) FROM test_runs WHERE suite_id = $1', [isolatedSuite.id])).rows[0].count), 0);
       assert.equal(await first.getProject(isolatedProject.id), null);

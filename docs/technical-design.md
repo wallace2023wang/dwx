@@ -318,6 +318,14 @@ RES 使用部署时已经编译的容器和会话池依次执行步骤。每一�
 
 RES 会话池大小由 `res/config/res.properties` 的 `kie.session.pool.size` 配置，默认值为 `2`；也可用 `RES_CONFIG_FILE` 指向其他配置文件。
 
+RES 执行面默认监听 `RES_PORT=8790`，只注册 `/execute` 和 `/services/{decisionService}/execute`；管理面默认监听 `RES_MANAGEMENT_PORT=8793`，只注册 `/prepare`、`/deploy`、`/activate`、`/undeploy`、`/deployments` 和 `/status`。除两个端口各自的 `/health` 与 `/openapi.json` 外，接口分别校验 `RES_EXECUTION_API_KEY` 和 `RES_MANAGEMENT_API_KEY` 的 Bearer 凭据，并使用常量时间比较。两套凭据不能跨面使用。空密钥保留给本地迁移兼容并输出启动警告，受控环境必须配置不同的非空密钥；Team Server 不把凭据写入 Target 记录，而是从环境变量读取并在调用时注入。
+
+### 3.8 容量基准与大制品边界
+
+容量专项 runner 位于 `benchmarks/capacity/run.mjs`，固定执行 1k、5k、10k 三档（可用 `--sizes` 覆盖），分别测量 Team Server API P95、浏览器资产列表首次可交互与搜索、DRL 生成时间/大小、Drools 编译、JVM/容器近似峰值内存、RES 启动/部署和热执行 P50/P95/P99。每档使用临时 JSON 数据集并写入带时间戳和 `latest` 报告；浏览器、Docker 或某个档位失败时保留失败状态，不把缺失数据判为通过。
+
+决策表 `rows` 上限为 10,000。同步校验对不超过 500 个启用行执行精确重叠、不可达和缺口分析；超过该阈值仍逐行验证字段、单元格和动作，但跳过同步二次方分析并返回警告，完整分析交由离线任务。Build Service 和 RES 的请求边界由启动环境变量控制：`ENGINE_MAX_BODY_BYTES`（默认 16 MiB，256 KiB–64 MiB）、`ENGINE_MAX_DRL_CHARS`（默认 12 MiB，200,000–48 MiB）、`RES_MAX_BODY_BYTES`（默认 16 MiB，2 MiB–64 MiB）、`RES_MAX_DRL_CHARS`（默认 12 MiB，200,000–48 MiB）和 `RES_MAX_TOTAL_DRL_CHARS`（默认 48 MiB，1–96 MiB）。这些配置仅提供大制品传输空间，不构成并发、超时、熔断、资源配额或生产容量承诺。
+
 ### CEP 告警状态
 
 CEP Runtime 在每次语句输出时，以 `releaseId:statement:eventType:correlationKey` 作为告警实例 ID；关联键依次取输出数据的 `eventKey`、`warehouseId`、`sensorId`，都不存在时使用 `default`。状态机仅包含 `ACTIVE`、`ACKED`、`CLEARED`：首次命中与清除后重开进入 `ACTIVE`，`POST /alerts/{alertId}` 在同时匹配请求 `releaseId` 时迁移到 `ACKED`，调度器超过 `clearedAfterMs` 后迁移到 `CLEARED`。ACK 不修改 `lastFiredAt`，因此不会重置消退计时；`ACKED` 状态再次命中只刷新最近命中时间，`CLEARED` 状态再次命中则清空旧确认信息。
@@ -408,7 +416,7 @@ MVP 的本机端口仅绑定 `127.0.0.1`。生产前必须完成：
 
 - Team Server 到 RES 的双向 TLS 或工作负载身份认证。
 - Release 签名，不仅校验未损坏，还校验发布者身份。
-- RES 管理端口和执行端口隔离。
+- RES 管理端口和执行端口已隔离，并使用独立工作负载凭据；生产部署仍应在入口层补充 TLS 或 mTLS。
 - 禁用生产环境的原始 `/compile` 和 `/test`。
 - 请求体、规则数、执行次数、超时和内存上限。
 - DRL 高级模式进入受限审核流程；结构化生成器使用允许列表。

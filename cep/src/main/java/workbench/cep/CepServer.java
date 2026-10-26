@@ -57,6 +57,7 @@ public final class CepServer {
   private static final Path DATA_DIR = Path.of(System.getenv().getOrDefault("CEP_DATA_DIR", "data/cep"));
   private static final Path ALERTS_FILE = DATA_DIR.resolve("alerts.json");
   private static final String API_KEY = System.getenv().getOrDefault("CEP_API_KEY", "").trim();
+  private static final String NODE_ID = System.getenv().getOrDefault("CEP_NODE_ID", "local-cep");
   private static final Map<String, Deployment> DEPLOYMENTS = new ConcurrentHashMap<>();
   private static final Map<String, AlertState> ALERTS = new ConcurrentHashMap<>();
   private static final Object DEPLOY_LOCK = new Object();
@@ -102,6 +103,7 @@ public final class CepServer {
     int port = Integer.parseInt(System.getenv().getOrDefault("CEP_PORT", "8791"));
     HttpServer server = HttpServer.create(new InetSocketAddress("0.0.0.0", port), 0);
     server.createContext("/health", CepServer::health);
+    server.createContext("/status", CepServer::status);
     server.createContext("/compile", CepServer::compile);
     server.createContext("/test", CepServer::test);
     server.createContext("/deployments", CepServer::listDeployments);
@@ -121,7 +123,23 @@ public final class CepServer {
 
   private static void health(HttpExchange exchange) throws IOException {
     if (!method(exchange, "GET")) return;
-    send(exchange, 200, Map.of("service", "CEP Runtime", "engine", "Esper", "version", ESPER_VERSION, "deployments", DEPLOYMENTS.size()));
+    send(exchange, 200, Map.of("service", "CEP Runtime", "nodeId", NODE_ID, "status", "ready", "engine", "Esper", "version", ESPER_VERSION, "deployments", DEPLOYMENTS.size()));
+  }
+
+  private static void status(HttpExchange exchange) throws IOException {
+    if (!method(exchange, "GET")) return;
+    List<Map<String, Object>> deployments = DEPLOYMENTS.values().stream()
+        .map(deployment -> deploymentResponse(deployment.release(), deployment.deployedAt()))
+        .toList();
+    send(exchange, 200, Map.of(
+        "nodeId", NODE_ID,
+        "status", "ready",
+        "engine", "Esper",
+        "engineVersion", ESPER_VERSION,
+        "activeRoutes", Map.of(),
+        "deployments", deployments,
+        "draining", List.of(),
+        "observedAt", Instant.now().toString()));
   }
 
   private static void compile(HttpExchange exchange) throws IOException {

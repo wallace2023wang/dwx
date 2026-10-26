@@ -43,6 +43,11 @@ export async function startTestEnv(options = {}) {
   process.env.RULES_TABLES_FILE = path.join(dir, 'tables.json');
   process.env.RULES_FLOWS_FILE = path.join(dir, 'flows.json');
   process.env.RULES_RELEASES_FILE = path.join(dir, 'releases.json');
+  process.env.RULES_APPLICATION_PACKAGES_FILE = path.join(dir, 'application-packages.json');
+  process.env.RULES_TARGETS_FILE = path.join(dir, 'targets.json');
+  process.env.RULES_ACTIVATION_GENERATIONS_FILE = path.join(dir, 'activation-generations.json');
+  process.env.RULES_DEPLOYMENTS_FILE = path.join(dir, 'deployments.json');
+  process.env.RULES_ENVIRONMENTS_FILE = path.join(dir, 'environments.json');
   process.env.RULES_TEST_SUITES_FILE = path.join(dir, 'test-suites.json');
   process.env.RULES_BOM_FILE = path.join(dir, 'bom.json');
   process.env.RULES_ADMIN_USERS_FILE = path.join(dir, 'admin-users.json');
@@ -81,14 +86,24 @@ export async function startTestEnv(options = {}) {
   process.env.ENGINE_URL = `http://127.0.0.1:${engine.address().port}`;
 
   const resCalls = [];
+  const resActiveRoutes = {};
   const resServer = http.createServer(async (req, res) => {
     let body = '';
     for await (const chunk of req) body += chunk;
     const payload = JSON.parse(body || '{}');
     resCalls.push({ path: req.url, body: payload });
-    const status = options.resBehavior?.deployStatus ?? 200;
+    let status = ['/deploy', '/prepare'].includes(req.url)
+      ? options.resBehavior?.deployStatus ?? 200
+      : req.url === '/activate'
+        ? options.resBehavior?.activateStatuses?.[resCalls.filter(call => call.path === '/activate').length - 1]
+          ?? options.resBehavior?.activateStatus ?? 200
+        : 200;
+    const activeRoute = resActiveRoutes[payload.decisionService];
+    if (req.url === '/activate' && status === 200 && payload.expectedGeneration !== undefined
+        && Number(activeRoute?.generation || 0) !== Number(payload.expectedGeneration)
+        && !(payload.bootstrap && !activeRoute)) status = 409;
     res.writeHead(status, { 'content-type': 'application/json' });
-    if (req.url === '/deploy') {
+    if (['/deploy', '/prepare'].includes(req.url)) {
       if (status === 409) {
         res.end(JSON.stringify({ error: '相同 Release ID 已存在不同内容' }));
         return;
@@ -99,9 +114,20 @@ export async function startTestEnv(options = {}) {
         steps: payload.steps?.length ?? 0, modelVersion: payload.model?.version ?? null,
       }));
     } else if (req.url === '/activate') {
+      if (status !== 200) {
+        res.end(JSON.stringify({ error: 'mock: RES 激活失败' }));
+        return;
+      }
+      const current = activeRoute;
+      if (status === 409) {
+        res.end(JSON.stringify({ error: 'generation CAS 冲突', actualGeneration: current?.generation || 0 }));
+        return;
+      }
+      const generation = payload.generation ?? Number(current?.generation || 0) + 1;
+      resActiveRoutes[payload.decisionService] = { releaseId: payload.releaseId, generation };
       res.end(JSON.stringify({
         ok: true, releaseId: payload.releaseId, decisionService: payload.decisionService,
-        activatedAt: '2026-09-29T01:30:00.000Z',
+        generation, activatedAt: '2026-09-29T01:30:00.000Z',
       }));
     } else if (req.url === '/execute') {
       const facts = options.resBehavior?.executeFacts ? { ...options.resBehavior.executeFacts, ...payload.facts } : { ...payload.facts, riskLevel: '高' };
@@ -113,6 +139,11 @@ export async function startTestEnv(options = {}) {
       res.end(JSON.stringify({ ok: true, releaseId: payload.releaseId, removed: true, stoppedAt: '2026-09-29T02:00:00.000Z' }));
     } else if (req.url === '/health') {
       res.end(JSON.stringify({ service: 'RES', version: '10.2.0', deployments: resCalls.filter(c => c.path === '/deploy').length }));
+    } else if (req.url === '/status') {
+      res.end(JSON.stringify({
+        nodeId: 'mock-rules-res', status: 'ready', engine: 'Drools', engineVersion: '10.2.0',
+        activeRoutes: resActiveRoutes, deployments: [], draining: [], observedAt: new Date().toISOString(),
+      }));
     } else {
       res.writeHead(404); res.end();
     }
@@ -165,6 +196,11 @@ export async function startTestEnv(options = {}) {
       res.end(JSON.stringify({ ok: true, releaseId: payload.releaseId, removed, stoppedAt: '2026-09-29T02:00:00.000Z' }));
     } else if (req.url === '/health') {
       res.end(JSON.stringify({ service: 'CEP', engine: 'Esper', version: '8.8.0', deployments: cepDeployments.size }));
+    } else if (req.url === '/deployments') {
+      res.end(JSON.stringify([...cepDeployments.values()].map(release => ({
+        deploymentId: `local:${release.id}`, releaseId: release.id,
+        engine: 'Esper', engineVersion: '8.8.0', checksum: release.checksum,
+      }))));
     } else {
       res.writeHead(404); res.end();
     }
@@ -191,13 +227,14 @@ export async function startTestEnv(options = {}) {
 
   return {
     base, request, dir, engineCalls, resCalls, cepCalls, cepAlerts,
+    cepUrl: `http://127.0.0.1:${cepServer.address().port}`,
     async stop() {
       await new Promise(r => server.close(r));
       await new Promise(r => engine.close(r));
       await new Promise(r => resServer.close(r));
       await new Promise(r => cepServer.close(r));
       await fs.rm(dir, { recursive: true, force: true });
-      for (const key of ['RULES_DATA_FILE', 'RULES_TABLES_FILE', 'RULES_FLOWS_FILE', 'RULES_RELEASES_FILE', 'RULES_TEST_SUITES_FILE', 'RULES_BOM_FILE', 'RULES_ADMIN_USERS_FILE', 'RULES_CHANGE_SETS_FILE', 'RULES_AUDIT_FILE', 'ENGINE_URL', 'RES_URL', 'CEP_BUILD_URL', 'CEP_RES_URL', 'CEP_API_KEY', 'AUTH_MODE', 'OIDC_ISSUER', 'OIDC_AUDIENCE', 'OIDC_JWKS_URI', 'OIDC_CLIENT_ID', 'OIDC_CLIENT_SECRET', 'OIDC_ROLES_CLAIM', 'AUTHZ_POLICY']) {
+      for (const key of ['RULES_DATA_FILE', 'RULES_TABLES_FILE', 'RULES_FLOWS_FILE', 'RULES_RELEASES_FILE', 'RULES_DEPLOYMENTS_FILE', 'RULES_ENVIRONMENTS_FILE', 'RULES_TEST_SUITES_FILE', 'RULES_BOM_FILE', 'RULES_ADMIN_USERS_FILE', 'RULES_CHANGE_SETS_FILE', 'RULES_AUDIT_FILE', 'ENGINE_URL', 'RES_URL', 'CEP_BUILD_URL', 'CEP_RES_URL', 'CEP_API_KEY', 'AUTH_MODE', 'OIDC_ISSUER', 'OIDC_AUDIENCE', 'OIDC_JWKS_URI', 'OIDC_CLIENT_ID', 'OIDC_CLIENT_SECRET', 'OIDC_ROLES_CLAIM', 'AUTHZ_POLICY']) {
         delete process.env[key];
       }
     },
