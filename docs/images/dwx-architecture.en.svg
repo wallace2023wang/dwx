@@ -1,0 +1,218 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 900" width="1280" height="900" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f6f8fb"/>
+      <stop offset="1" stop-color="#eef2f8"/>
+    </linearGradient>
+    <linearGradient id="brainGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1f6feb"/>
+      <stop offset="1" stop-color="#0d4fbf"/>
+    </linearGradient>
+    <linearGradient id="agentGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8250df"/>
+      <stop offset="1" stop-color="#5b2bb5"/>
+    </linearGradient>
+    <linearGradient id="droolsGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2da44e"/>
+      <stop offset="1" stop-color="#1a7f37"/>
+    </linearGradient>
+    <linearGradient id="esperGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#bf8700"/>
+      <stop offset="1" stop-color="#9a6700"/>
+    </linearGradient>
+    <linearGradient id="clientGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#57606a"/>
+      <stop offset="1" stop-color="#32383f"/>
+    </linearGradient>
+    <linearGradient id="cardTop" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#fafbfd"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="3" stdDeviation="6" flood-color="#0d1b3d" flood-opacity="0.10"/>
+    </filter>
+    <filter id="shadowSoft" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0d1b3d" flood-opacity="0.08"/>
+    </filter>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#57606a"/>
+    </marker>
+    <marker id="arrBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#1f6feb"/>
+    </marker>
+    <marker id="arrPurple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8250df"/>
+    </marker>
+    <marker id="arrGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2da44e"/>
+    </marker>
+    <marker id="arrGold" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#bf8700"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1280" height="900" fill="url(#bg)" rx="16"/>
+
+  <!-- Title -->
+  <text x="640" y="46" text-anchor="middle" font-size="26" font-weight="700" fill="#0d1b3d">DWX Decision Workbench</text>
+  <text x="640" y="74" text-anchor="middle" font-size="15" fill="#57606a">Dual-Engine · Dual-Brain Architecture</text>
+
+  <!-- ============ Layer 1: Client ============ -->
+  <rect x="60" y="96" width="1160" height="118" rx="12" fill="url(#cardTop)" stroke="#d0d7de" filter="url(#shadowSoft)"/>
+  <rect x="60" y="96" width="1160" height="30" rx="12" fill="#eaeef5"/>
+  <rect x="60" y="112" width="1160" height="14" fill="#eaeef5"/>
+  <text x="80" y="117" font-size="14" font-weight="600" fill="#57606a">CLIENT LAYER</text>
+
+  <!-- Web Console -->
+  <rect x="96" y="140" width="340" height="56" rx="10" fill="url(#clientGrad)" filter="url(#shadow)"/>
+  <circle cx="128" cy="168" r="12" fill="#ffffff" opacity="0.92"/>
+  <path d="M121,168 h14 M128,161 v14 M122,165 l6,-4 l6,4 M122,171 l6,4 l6,-4" stroke="#32383f" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <text x="150" y="163" font-size="15" font-weight="600" fill="#ffffff">Web Console</text>
+  <text x="150" y="181" font-size="11.5" fill="#d3d9e0">React + Vite · Browser BFF Session (OIDC PKCE)</text>
+
+  <!-- Business Systems -->
+  <rect x="880" y="140" width="300" height="56" rx="10" fill="#ffffff" stroke="#57606a" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="884" y="144" width="8" height="48" rx="4" fill="#57606a"/>
+  <text x="908" y="163" font-size="15" font-weight="600" fill="#24292f">Business Systems</text>
+  <text x="908" y="181" font-size="11.5" fill="#57606a">REST API / Events / Webhook consumption</text>
+
+  <!-- Middle connector bar -->
+  <rect x="450" y="150" width="410" height="36" rx="18" fill="#f1f4f9" stroke="#d0d7de"/>
+  <text x="655" y="173" text-anchor="middle" font-size="12.5" fill="#57606a">HTTPS / API — Unified Entry (Team Server Proxy &amp; BFF)</text>
+
+  <!-- ============ Layer 2: Brains ============ -->
+  <rect x="60" y="232" width="1160" height="330" rx="12" fill="url(#cardTop)" stroke="#d0d7de" filter="url(#shadowSoft)"/>
+  <rect x="60" y="232" width="1160" height="30" rx="12" fill="#eaeef5"/>
+  <rect x="60" y="248" width="1160" height="14" fill="#eaeef5"/>
+  <text x="80" y="253" font-size="14" font-weight="600" fill="#57606a">BRAIN LAYER · DUAL BRAINS</text>
+
+  <!-- Brain: Decision Platform -->
+  <rect x="96" y="280" width="700" height="262" rx="14" fill="#ffffff" stroke="#1f6feb" stroke-width="2" filter="url(#shadow)"/>
+  <rect x="96" y="280" width="700" height="52" rx="14" fill="url(#brainGrad)"/>
+  <rect x="96" y="314" width="700" height="18" fill="url(#brainGrad)"/>
+  <circle cx="130" cy="306" r="14" fill="#ffffff" opacity="0.95"/>
+  <path d="M121,306 a7,7 0 0 1 14,0 a3,3 0 0 0 3,-3 a3,3 0 0 0 3,3 a7,7 0 0 1 -14,0" stroke="#1f6feb" stroke-width="1.6" fill="none"/>
+  <path d="M128,309 l0,5 M128,317 l0,2" stroke="#1f6feb" stroke-width="1.8" stroke-linecap="round"/>
+  <text x="156" y="301" font-size="17" font-weight="700" fill="#ffffff">Decision Platform Brain</text>
+  <text x="156" y="320" font-size="12" fill="#dbe7ff">Team Server — Governance Core: Manage · Route · Audit</text>
+
+  <!-- Asset core chips -->
+  <g font-size="12" fill="#24292f">
+    <rect x="120" y="350" width="196" height="40" rx="8" fill="#eff4ff" stroke="#c8d8f8"/>
+    <text x="132" y="367" font-weight="600" fill="#1f6feb">BOM Field Model</text>
+    <text x="132" y="382" font-size="10.5" fill="#57606a">Versioned</text>
+
+    <rect x="332" y="350" width="196" height="40" rx="8" fill="#eff4ff" stroke="#c8d8f8"/>
+    <text x="344" y="367" font-weight="600" fill="#1f6feb">Rules / Decision Tables / RuleFlow</text>
+    <text x="344" y="382" font-size="10.5" fill="#57606a">Deterministic reasoning assets</text>
+
+    <rect x="544" y="350" width="228" height="40" rx="8" fill="#eff4ff" stroke="#c8d8f8"/>
+    <text x="556" y="367" font-weight="600" fill="#1f6feb">CEP EventStream</text>
+    <text x="556" y="382" font-size="10.5" fill="#57606a">Windows · Pattern · Timer statements</text>
+
+    <rect x="120" y="402" width="196" height="40" rx="8" fill="#eff4ff" stroke="#c8d8f8"/>
+    <text x="132" y="419" font-weight="600" fill="#1f6feb">Test Suites / Coverage</text>
+    <text x="132" y="434" font-size="10.5" fill="#57606a">Parameterized · Release gates</text>
+
+    <rect x="332" y="402" width="196" height="40" rx="8" fill="#eff4ff" stroke="#c8d8f8"/>
+    <text x="344" y="419" font-weight="600" fill="#1f6feb">Change Set / Review</text>
+    <text x="344" y="434" font-size="10.5" fill="#57606a">Freeze · Approval state flow</text>
+
+    <rect x="544" y="402" width="228" height="40" rx="8" fill="#eff4ff" stroke="#c8d8f8"/>
+    <text x="556" y="419" font-weight="600" fill="#1f6feb">Release / Deploy / Audit</text>
+    <text x="556" y="434" font-size="10.5" fill="#57606a">Version freeze · Checksum · Receipts</text>
+  </g>
+
+  <!-- Storage -->
+  <rect x="120" y="462" width="652" height="56" rx="10" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="138" y="484" font-size="12.5" font-weight="600" fill="#24292f">Storage</text>
+  <rect x="300" y="468" width="200" height="36" rx="8" fill="#ffffff" stroke="#c8d8f8"/>
+  <text x="400" y="491" text-anchor="middle" font-size="12.5" fill="#1f6feb">JSON File Mode</text>
+  <rect x="520" y="468" width="220" height="36" rx="8" fill="#ffffff" stroke="#c8d8f8"/>
+  <text x="630" y="491" text-anchor="middle" font-size="12.5" fill="#1f6feb">PostgreSQL Mode</text>
+
+  <!-- Brain: LLM Agent (future) -->
+  <rect x="824" y="280" width="372" height="262" rx="14" fill="#ffffff" stroke="#8250df" stroke-width="2" stroke-dasharray="7 5" filter="url(#shadow)"/>
+  <rect x="824" y="280" width="372" height="52" rx="14" fill="url(#agentGrad)" opacity="0.92"/>
+  <rect x="824" y="314" width="372" height="18" fill="url(#agentGrad)" opacity="0.92"/>
+  <circle cx="856" cy="306" r="14" fill="#ffffff" opacity="0.95"/>
+  <path d="M849,302 a7,7 0 0 1 14,0 l0,2 a7,7 0 0 0 -14,0 z M849,304 l-3,-2 l0,4 z M863,304 l3,-2 l0,4 z" fill="#8250df"/>
+  <text x="884" y="301" font-size="17" font-weight="700" fill="#ffffff">LLM Agent Brain</text>
+  <text x="884" y="320" font-size="12" fill="#eadcff">Intelligent rule operations (Roadmap)</text>
+
+  <g font-size="12" fill="#24292f">
+    <rect x="848" y="350" width="324" height="40" rx="8" fill="#f6efff" stroke="#d9c9f7"/>
+    <text x="860" y="367" font-weight="600" fill="#5b2bb5">Hit Analysis</text>
+    <text x="860" y="382" font-size="10.5" fill="#57606a">Hit rate · Miss distribution · Alerts</text>
+
+    <rect x="848" y="402" width="324" height="40" rx="8" fill="#f6efff" stroke="#d9c9f7"/>
+    <text x="860" y="419" font-weight="600" fill="#5b2bb5">Tuning Suggestions</text>
+    <text x="860" y="434" font-size="10.5" fill="#57606a">Redundant · Conflicting · Stale rules</text>
+
+    <rect x="848" y="454" width="324" height="40" rx="8" fill="#f6efff" stroke="#d9c9f7"/>
+    <text x="860" y="471" font-weight="600" fill="#5b2bb5">Human Confirm</text>
+    <text x="860" y="486" font-size="10.5" fill="#57606a">Approved suggestions flow back</text>
+  </g>
+  <text x="1010" y="528" text-anchor="middle" font-size="11" fill="#8250df" font-weight="600">Decide → Analyze → Suggest → Optimize</text>
+
+  <!-- ============ Layer 3: Engines ============ -->
+  <rect x="60" y="580" width="1160" height="220" rx="12" fill="url(#cardTop)" stroke="#d0d7de" filter="url(#shadowSoft)"/>
+  <rect x="60" y="580" width="1160" height="30" rx="12" fill="#eaeef5"/>
+  <rect x="60" y="596" width="1160" height="14" fill="#eaeef5"/>
+  <text x="80" y="617" font-size="14" font-weight="600" fill="#57606a">ENGINE LAYER · DUAL ENGINES</text>
+
+  <!-- Drools -->
+  <rect x="96" y="630" width="520" height="150" rx="14" fill="#ffffff" stroke="#2da44e" stroke-width="2" filter="url(#shadow)"/>
+  <rect x="96" y="630" width="520" height="46" rx="14" fill="url(#droolsGrad)"/>
+  <rect x="96" y="658" width="520" height="18" fill="url(#droolsGrad)"/>
+  <text x="118" y="659" font-size="16" font-weight="700" fill="#ffffff">Rule Engine — Drools 10.2.0</text>
+  <rect x="132" y="692" width="220" height="66" rx="9" fill="#effbf1" stroke="#b5e3c0"/>
+  <text x="242" y="716" text-anchor="middle" font-size="13" font-weight="600" fill="#1a7f37">Build Service</text>
+  <text x="242" y="736" text-anchor="middle" font-size="11" fill="#57606a">Design-time · DRL compile &amp; validate</text>
+  <path d="M368,725 L408,725" stroke="#2da44e" stroke-width="2" marker-end="url(#arrGreen)"/>
+  <rect x="420" y="692" width="172" height="66" rx="9" fill="#effbf1" stroke="#b5e3c0"/>
+  <text x="506" y="716" text-anchor="middle" font-size="13" font-weight="600" fill="#1a7f37">RES · Execution</text>
+  <text x="506" y="736" text-anchor="middle" font-size="11" fill="#57606a">Runtime rule execution</text>
+
+  <!-- Esper -->
+  <rect x="664" y="630" width="520" height="150" rx="14" fill="#ffffff" stroke="#bf8700" stroke-width="2" filter="url(#shadow)"/>
+  <rect x="664" y="630" width="520" height="46" rx="14" fill="url(#esperGrad)"/>
+  <rect x="664" y="658" width="520" height="18" fill="url(#esperGrad)"/>
+  <text x="686" y="659" font-size="16" font-weight="700" fill="#ffffff">Event Engine — Esper 8.8.0</text>
+  <rect x="700" y="692" width="220" height="66" rx="9" fill="#fff8e6" stroke="#f0d9a0"/>
+  <text x="810" y="716" text-anchor="middle" font-size="13" font-weight="600" fill="#9a6700">cep-build · Build/Test</text>
+  <text x="810" y="736" text-anchor="middle" font-size="11" fill="#57606a">Design-time · EPL compile &amp; verify</text>
+  <path d="M936,725 L976,725" stroke="#bf8700" stroke-width="2" marker-end="url(#arrGold)"/>
+  <rect x="988" y="692" width="172" height="66" rx="9" fill="#fff8e6" stroke="#f0d9a0"/>
+  <text x="1074" y="716" text-anchor="middle" font-size="13" font-weight="600" fill="#9a6700">cep-res · Runtime</text>
+  <text x="1074" y="736" text-anchor="middle" font-size="11" fill="#57606a">Real-time event processing</text>
+
+  <!-- Bottom infra strip -->
+  <rect x="96" y="812" width="1088" height="52" rx="10" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="118" y="835" font-size="12" font-weight="600" fill="#57606a">Infrastructure</text>
+  <text x="118" y="852" font-size="11" fill="#8b949e">Docker Compose · Prometheus Metrics · Webhook Alerts · OpenAPI</text>
+  <text x="1150" y="844" text-anchor="end" font-size="11" fill="#8b949e">Local dev / Validation / Demo</text>
+
+  <!-- ============ Arrows ============ -->
+  <!-- Console -> Brain -->
+  <path d="M266,196 L266,280" stroke="#1f6feb" stroke-width="2.5" marker-end="url(#arrBlue)"/>
+  <text x="278" y="244" font-size="11" fill="#1f6feb">API / BFF</text>
+  <!-- Business -> Brain -->
+  <path d="M1030,196 L1030,280" stroke="#57606a" stroke-width="2.5" marker-end="url(#arr)"/>
+  <!-- Brain -> Drools -->
+  <path d="M446,542 L300,630" stroke="#2da44e" stroke-width="2.5" marker-end="url(#arrGreen)"/>
+  <text x="300" y="572" font-size="11" fill="#2da44e" font-weight="600">Rule requests</text>
+  <!-- Brain -> Esper -->
+  <path d="M590,542 L960,630" stroke="#bf8700" stroke-width="2.5" marker-end="url(#arrGold)"/>
+  <text x="700" y="572" font-size="11" fill="#bf8700" font-weight="600">Event stream requests</text>
+  <!-- Brain <-> LLM Agent (bidirectional: hit data in, suggestions out) -->
+  <path d="M796,450 L824,450" stroke="#8250df" stroke-width="2" stroke-dasharray="6 4" marker-start="url(#arrPurple)" marker-end="url(#arrPurple)"/>
+  <text x="810" y="271" text-anchor="middle" font-size="11" fill="#8250df">Hit analysis ⇄ Suggestions (after human confirmation)</text>
+
+  <!-- Legend -->
+  <g font-size="11" fill="#57606a">
+    <circle cx="700" cy="886" r="4" fill="#8250df"/>
+    <text x="710" y="890">Dashed = Roadmap / Feedback loop</text>
+  </g>
+</svg>

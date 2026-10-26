@@ -20,7 +20,7 @@ The product evolves along three boundaries: the rule design center, the rule gov
 
 ## Architecture
 
-![DWX Dual-Engine, Dual-Brain Architecture](docs/images/dwx-architecture.svg)
+![DWX Dual-Engine, Dual-Brain Architecture](docs/images/dwx-architecture.en.svg)
 
 As shown above, DWX follows a three-layer architecture: **client layer** (web console / business systems) → **brain layer** (decision platform brain and LLM agent brain) → **engine layer** (Drools rule engine and Esper event engine). The decision platform brain centrally governs BOM, rules, tests and release assets, routing rule requests to Drools and CEP event-stream requests to Esper per project; the LLM agent brain (roadmap) analyzes rule-hit behavior and provides tuning suggestions that flow back into the decision platform brain after human confirmation, forming a "decide → analyze → suggest → optimize" loop.
 
