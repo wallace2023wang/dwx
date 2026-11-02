@@ -2,6 +2,8 @@
 
 > **English** | [中文](README.md)
 
+**Open-source decision engine / BRMS workbench**: Drools rule engine + Esper CEP, with decision tables, RuleFlow, rule governance, test gates, versioned releases and a standalone Rule Execution Center (RES).
+
 DWX (Decision Workbench) is a decision workbench built on a **dual-engine, dual-brain architecture**.
 
 **Dual Engines**: the **rule engine** (Drools 10.2.0) handles deterministic reasoning over rules, decision tables and decision flows; the **complex event processing engine** (Esper 8.8.0) handles real-time CEP over event streams.
